@@ -88,6 +88,25 @@
 
             </div>
         </div>
+        <!-- Example of a single "Sleek" Comparison Row -->
+<div class="grid grid-cols-[1fr_auto_1fr] items-center py-3 px-4 hover:bg-white/5 transition-colors rounded-xl">
+    
+    <!-- Attacker Value (Green if Higher) -->
+    <input type="number" 
+           class="bg-transparent text-right text-lg font-mono focus:outline-none text-emerald-400" 
+           value="1234.5">
+
+    <!-- Center Label -->
+    <div class="px-6 flex flex-col items-center">
+        <span class="text-[10px] uppercase tracking-tighter text-slate-500 font-black">Infantry</span>
+        <span class="text-xs font-bold text-slate-300">Attack</span>
+    </div>
+
+    <!-- Defender Value (Dimmed if Lower) -->
+    <input type="number" 
+           class="bg-transparent text-left text-lg font-mono focus:outline-none text-slate-600" 
+           value="1000.0">
+</div>
     </main>
 
     <!-- Simulation Controls (Sticky Bottom) -->
