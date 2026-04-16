@@ -3,94 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kingshot Combat</title>
+    <title>Kingshot Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        .hero-slot { @apply border-2 border-dashed border-gray-600 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all; }
-        .leader-slot { @apply border-blue-900 bg-blue-900/10; }
-        .joiner-slot { @apply border-gray-700 bg-gray-800/10; }
+        body { background-color: #0f172a; color: #e2e8f0; }
+        .stat-input { @apply bg-slate-900 border-none text-center w-full py-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all; }
+        .hero-circle { @apply w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center cursor-pointer hover:border-blue-400; }
+        .leader { @apply border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]; }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+<body class="font-sans">
 
-    <!-- Header -->
-    <header class="bg-slate-800 border-b border-slate-700 p-4 shadow-xl">
-        <h1 class="text-2xl font-bold text-blue-400">Kingshot Combat</h1>
-    </header>
-
-    <!-- Main Tabs -->
-    <nav class="flex bg-slate-800 px-4 gap-4">
-        <button class="px-4 py-2 border-b-2 border-blue-500 font-bold">Combat Sim</button>
-        <button class="px-4 py-2 border-b-2 border-transparent hover:border-slate-500 text-slate-400">Formation Optimizer</button>
-        <button class="px-4 py-2 border-b-2 border-transparent hover:border-slate-500 text-slate-400">Bear Trap</button>
+    <!-- Navigation Bar -->
+    <nav class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4">
+        <div class="max-w-4xl mx-auto flex items-center justify-between h-14">
+            <span class="font-black text-blue-500 tracking-tighter text-xl">KINGSHOT</span>
+            <div class="flex gap-6 text-sm font-medium">
+                <a href="#" class="text-blue-400 border-b-2 border-blue-400 py-4">Combat</a>
+                <a href="#" class="text-slate-400 hover:text-white transition py-4">Formation</a>
+                <a href="#" class="text-slate-400 hover:text-white transition py-4">Bear Trap</a>
+            </div>
+        </div>
     </nav>
 
-    <main class="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+    <main class="max-w-4xl mx-auto p-4 pb-32">
         
-        <!-- Attacker Panel -->
-        <section class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-            <h2 class="text-xl font-bold mb-4 flex justify-between">
-                <span>Attacker Configuration</span>
-                <span class="text-red-400 text-sm">Rally Leader</span>
-            </h2>
+        <!-- Hero Matchup Section -->
+        <div class="flex items-center justify-between mb-8 px-2">
+            <!-- Attacker Heroes -->
+            <div class="flex -space-x-3">
+                <div class="hero-circle leader" title="Leader 1"><i class="fa-solid fa-plus text-slate-500"></i></div>
+                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
+                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
+            </div>
             
-            <div class="grid grid-cols-3 gap-4 mb-6">
-                <!-- 3 Leaders -->
-                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 0)">
-                    <span class="text-xs text-blue-400 uppercase">Leader 1</span>
-                    <div class="font-bold">Select Hero</div>
-                </div>
-                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 1)">
-                    <span class="text-xs text-blue-400 uppercase">Leader 2</span>
-                    <div class="font-bold">Select Hero</div>
-                </div>
-                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 2)">
-                    <span class="text-xs text-blue-400 uppercase">Leader 3</span>
-                    <div class="font-bold">Select Hero</div>
-                </div>
+            <div class="text-slate-500 font-black italic text-2xl px-4">VS</div>
+
+            <!-- Defender Heroes -->
+            <div class="flex -space-x-3 flex-row-reverse">
+                <div class="hero-circle leader" title="Leader 1"><i class="fa-solid fa-plus text-slate-500"></i></div>
+                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
+                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
             </div>
+        </div>
 
-            <div class="grid grid-cols-4 gap-2">
-                <!-- 4 Joiners -->
-                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 3)">Joiner 1</div>
-                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 4)">Joiner 2</div>
-                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 5)">Joiner 3</div>
-                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 6)">Joiner 4</div>
+        <!-- Stat Comparison Table -->
+        <div class="bg-slate-900/50 rounded-2xl p-4 border border-slate-800">
+            <div class="grid grid-cols-[1fr_1.5fr_1fr] gap-x-4 gap-y-3 items-center">
+                
+                <!-- Table Header -->
+                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Attacker</div>
+                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Stat Category</div>
+                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Defender</div>
+
+                <!-- Infantry Section -->
+                <input type="number" class="stat-input text-green-400" placeholder="1200" value="1200">
+                <div class="text-center text-sm font-semibold text-slate-400">Infantry Attack</div>
+                <input type="number" class="stat-input text-red-400" placeholder="1000" value="1000">
+
+                <input type="number" class="stat-input text-green-400" value="1100">
+                <div class="text-center text-sm font-semibold text-slate-400">Infantry Defense</div>
+                <input type="number" class="stat-input text-red-400" value="1050">
+
+                <!-- Divider -->
+                <div class="col-span-3 border-b border-slate-800 my-2"></div>
+
+                <!-- Cavalry Section -->
+                <input type="number" class="stat-input text-green-400" value="1500">
+                <div class="text-center text-sm font-semibold text-slate-400">Cavalry Attack</div>
+                <input type="number" class="stat-input text-red-400" value="1300">
+
+                <input type="number" class="stat-input text-green-400" value="1400">
+                <div class="text-center text-sm font-semibold text-slate-400">Cavalry Defense</div>
+                <input type="number" class="stat-input text-red-400" value="1250">
+
+                <!-- Divider -->
+                <div class="col-span-3 border-b border-slate-800 my-2"></div>
+
+                <!-- Archer Section -->
+                <input type="number" class="stat-input text-green-400" value="1800">
+                <div class="text-center text-sm font-semibold text-slate-400">Archer Attack</div>
+                <input type="number" class="stat-input text-red-400" value="1400">
+
             </div>
-
-            <!-- Manual Stat Inputs -->
-            <div class="mt-8 grid grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs text-slate-400 uppercase font-bold">Infantry Attack %</label>
-                    <input type="number" class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1" value="1000">
-                </div>
-                <!-- ... other stats ... -->
-            </div>
-        </section>
-
-        <!-- Defender Panel -->
-        <section class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-            <h2 class="text-xl font-bold mb-4 flex justify-between">
-                <span>Defender Configuration</span>
-                <span class="text-blue-400 text-sm">Garrison</span>
-            </h2>
-            <!-- Mirror the Attacker Hero Grid here -->
-        </section>
-
+        </div>
     </main>
 
-    <!-- Modal for Hero Configuration (Hidden by default) -->
-    <div id="heroModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center p-4">
-        <div class="bg-slate-800 w-full max-w-md rounded-xl p-6 border border-slate-600">
-            <h3 class="text-xl font-bold mb-4">Edit Hero</h3>
-            <!-- Star Select (0-5) -->
-            <!-- Substage Select (0-5) -->
-            <!-- Skill 1, 2, 3 Level Select (1-5) -->
-            <!-- Widget Level Select (0-10) -->
-            <button onclick="closeHeroModal()" class="w-full bg-blue-600 py-2 rounded mt-4">Save Configuration</button>
+    <!-- Simulation Controls (Sticky Bottom) -->
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-lg">
+        <div class="max-w-4xl mx-auto flex gap-4">
+            <div class="flex-grow">
+                <label class="text-[10px] text-slate-500 uppercase font-black">Simulation Mode</label>
+                <select class="w-full bg-slate-800 border-none rounded-lg p-2 text-sm">
+                    <option>Average (Expected Value)</option>
+                    <option>Luck Bounds (Min/Max RNG)</option>
+                    <option>Full Stochastic (Monte Carlo)</option>
+                </select>
+            </div>
+            <button class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 rounded-xl transition-all shadow-lg shadow-blue-900/20">
+                RUN SIMULATION
+            </button>
         </div>
     </div>
 
-    <script type="module" src="./js/ui.js"></script>
 </body>
 </html>
