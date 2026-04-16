@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kingshot Combat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hero-slot { @apply border-2 border-dashed border-gray-600 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all; }
+        .leader-slot { @apply border-blue-900 bg-blue-900/10; }
+        .joiner-slot { @apply border-gray-700 bg-gray-800/10; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 p-4 shadow-xl">
+        <h1 class="text-2xl font-bold text-blue-400">Kingshot Combat</h1>
+    </header>
+
+    <!-- Main Tabs -->
+    <nav class="flex bg-slate-800 px-4 gap-4">
+        <button class="px-4 py-2 border-b-2 border-blue-500 font-bold">Combat Sim</button>
+        <button class="px-4 py-2 border-b-2 border-transparent hover:border-slate-500 text-slate-400">Formation Optimizer</button>
+        <button class="px-4 py-2 border-b-2 border-transparent hover:border-slate-500 text-slate-400">Bear Trap</button>
+    </nav>
+
+    <main class="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+        
+        <!-- Attacker Panel -->
+        <section class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <h2 class="text-xl font-bold mb-4 flex justify-between">
+                <span>Attacker Configuration</span>
+                <span class="text-red-400 text-sm">Rally Leader</span>
+            </h2>
+            
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <!-- 3 Leaders -->
+                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 0)">
+                    <span class="text-xs text-blue-400 uppercase">Leader 1</span>
+                    <div class="font-bold">Select Hero</div>
+                </div>
+                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 1)">
+                    <span class="text-xs text-blue-400 uppercase">Leader 2</span>
+                    <div class="font-bold">Select Hero</div>
+                </div>
+                <div class="hero-slot leader-slot" onclick="openHeroModal('atk', 2)">
+                    <span class="text-xs text-blue-400 uppercase">Leader 3</span>
+                    <div class="font-bold">Select Hero</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2">
+                <!-- 4 Joiners -->
+                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 3)">Joiner 1</div>
+                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 4)">Joiner 2</div>
+                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 5)">Joiner 3</div>
+                <div class="hero-slot joiner-slot text-xs" onclick="openHeroModal('atk', 6)">Joiner 4</div>
+            </div>
+
+            <!-- Manual Stat Inputs -->
+            <div class="mt-8 grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase font-bold">Infantry Attack %</label>
+                    <input type="number" class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1" value="1000">
+                </div>
+                <!-- ... other stats ... -->
+            </div>
+        </section>
+
+        <!-- Defender Panel -->
+        <section class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <h2 class="text-xl font-bold mb-4 flex justify-between">
+                <span>Defender Configuration</span>
+                <span class="text-blue-400 text-sm">Garrison</span>
+            </h2>
+            <!-- Mirror the Attacker Hero Grid here -->
+        </section>
+
+    </main>
+
+    <!-- Modal for Hero Configuration (Hidden by default) -->
+    <div id="heroModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center p-4">
+        <div class="bg-slate-800 w-full max-w-md rounded-xl p-6 border border-slate-600">
+            <h3 class="text-xl font-bold mb-4">Edit Hero</h3>
+            <!-- Star Select (0-5) -->
+            <!-- Substage Select (0-5) -->
+            <!-- Skill 1, 2, 3 Level Select (1-5) -->
+            <!-- Widget Level Select (0-10) -->
+            <button onclick="closeHeroModal()" class="w-full bg-blue-600 py-2 rounded mt-4">Save Configuration</button>
+        </div>
+    </div>
+
+    <script type="module" src="./js/ui.js"></script>
+</body>
+</html>
