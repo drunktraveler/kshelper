@@ -1,4 +1,5 @@
 import { HEROES } from '../heroes.js';
+import { runCombatSim } from './engine.js';
 
 let activeSlot = { side: null, index: null };
 let state = {
@@ -127,6 +128,27 @@ document.getElementById('heroModal').addEventListener('mousedown', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') window.closeHeroModal();
 });
+
+window.handleSimulation = function() {
+    const setup = {
+        settings: { atkWidgets: 3, defWidgets: 3 },
+        atk: {
+            troops: { 
+                inf: parseFloat(document.getElementById('atk-inf').value),
+                cav: parseFloat(document.getElementById('atk-cav').value),
+                arc: parseFloat(document.getElementById('atk-arc').value)
+            },
+            tier: document.getElementById('atk-tier').value,
+            tg: document.getElementById('atk-tg').value,
+            stats: collectStats('atk'), // Helper to grab from your table
+            heroes: state.atk.heroes
+        },
+        def: { /* mirrored ... */ }
+    };
+
+    const results = runCombatSim(setup);
+    displayResults(results); // Create a popup or section to show survivors
+}
 
 // Start everything
 document.addEventListener('DOMContentLoaded', init);
