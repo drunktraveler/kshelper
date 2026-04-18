@@ -3,128 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kingshot Studio</title>
+    <title>Kingshot Combat Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #0f172a; color: #e2e8f0; }
-        .stat-input { @apply bg-slate-900 border-none text-center w-full py-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all; }
-        .hero-circle { @apply w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center cursor-pointer hover:border-blue-400; }
-        .leader { @apply border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]; }
+        body { font-family: 'Inter', sans-serif; background-color: #0b0f1a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .input-focus:focus { box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); border-color: #3b82f6; }
     </style>
 </head>
-<body class="font-sans">
+<body class="p-4 md:p-8">
 
-    <!-- Navigation Bar -->
-    <nav class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4">
-        <div class="max-w-4xl mx-auto flex items-center justify-between h-14">
-            <span class="font-black text-blue-500 tracking-tighter text-xl">KINGSHOT</span>
-            <div class="flex gap-6 text-sm font-medium">
-                <a href="#" class="text-blue-400 border-b-2 border-blue-400 py-4">Combat</a>
-                <a href="#" class="text-slate-400 hover:text-white transition py-4">Formation</a>
-                <a href="#" class="text-slate-400 hover:text-white transition py-4">Bear Trap</a>
-            </div>
+    <!-- Sticky Navigation -->
+    <nav class="max-w-4xl mx-auto mb-8 flex justify-between items-center bg-slate-900/80 p-4 rounded-2xl border border-slate-800 sticky top-4 z-50">
+        <div class="font-black text-xl tracking-tighter text-blue-500">KINGSHOT<span class="text-slate-400 font-light ml-1 text-sm uppercase tracking-widest">Studio</span></div>
+        <div class="flex gap-4">
+            <button class="text-blue-400 font-bold border-b-2 border-blue-400 pb-1">Combat</button>
+            <button class="text-slate-500 hover:text-white transition">Optimizer</button>
+            <button class="text-slate-500 hover:text-white transition">Bear Trap</button>
         </div>
     </nav>
 
-    <main class="max-w-4xl mx-auto p-4 pb-32">
+    <div class="max-w-4xl mx-auto space-y-6">
         
-        <!-- Hero Matchup Section -->
-        <div class="flex items-center justify-between mb-8 px-2">
-            <!-- Attacker Heroes -->
-            <div class="flex -space-x-3">
-                <div class="hero-circle leader" title="Leader 1"><i class="fa-solid fa-plus text-slate-500"></i></div>
-                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
-                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
+        <!-- Troop Section (Screenshot 4 vibe but cleaner) -->
+        <div class="glass-panel rounded-3xl p-6">
+            <div class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+                <h2 class="text-sm font-black uppercase tracking-widest text-slate-500">Troop Deployment</h2>
+                <div class="flex gap-2 text-xs">
+                    <span class="bg-blue-600/20 text-blue-400 px-2 py-1 rounded">Rally Mode</span>
+                </div>
             </div>
             
-            <div class="text-slate-500 font-black italic text-2xl px-4">VS</div>
-
-            <!-- Defender Heroes -->
-            <div class="flex -space-x-3 flex-row-reverse">
-                <div class="hero-circle leader" title="Leader 1"><i class="fa-solid fa-plus text-slate-500"></i></div>
-                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
-                <div class="hero-circle leader"><i class="fa-solid fa-plus text-slate-500"></i></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Inf, Cav, Arc Blocks -->
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-slate-400 uppercase">Infantry (T11)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-emerald-400 text-lg font-bold input-focus" placeholder="Atk Count">
+                        <div class="h-4 w-px bg-slate-800"></div>
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-red-400 text-lg font-bold input-focus" placeholder="Def Count">
+                    </div>
+                </div>
+                <!-- ... Repeat for Cav and Arc ... -->
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-slate-400 uppercase">Cavalry (T11)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-emerald-400 text-lg font-bold input-focus" placeholder="Atk Count">
+                        <div class="h-4 w-px bg-slate-800"></div>
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-red-400 text-lg font-bold input-focus" placeholder="Def Count">
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-slate-400 uppercase">Archers (T11)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-emerald-400 text-lg font-bold input-focus" placeholder="Atk Count">
+                        <div class="h-4 w-px bg-slate-800"></div>
+                        <input type="number" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-red-400 text-lg font-bold input-focus" placeholder="Def Count">
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Stat Comparison Table -->
-        <div class="bg-slate-900/50 rounded-2xl p-4 border border-slate-800">
-            <div class="grid grid-cols-[1fr_1.5fr_1fr] gap-x-4 gap-y-3 items-center">
+        <!-- Comparison Table (Screenshot 1 & 4 hybrid) -->
+        <div class="glass-panel rounded-3xl overflow-hidden shadow-2xl">
+            <!-- Table Header -->
+            <div class="grid grid-cols-[1fr_auto_1fr] bg-slate-800/50 p-4 border-b border-slate-700">
+                <div class="text-center text-[10px] font-black uppercase text-emerald-400 tracking-widest">Attacker</div>
+                <div class="text-center text-[10px] font-black uppercase text-slate-500 tracking-widest px-8">Stat Bonus</div>
+                <div class="text-center text-[10px] font-black uppercase text-red-400 tracking-widest">Defender</div>
+            </div>
+
+            <!-- Stat Rows -->
+            <div class="p-2 space-y-1">
+                <!-- Example Row: Infantry Attack -->
+                <div class="grid grid-cols-[1fr_auto_1fr] items-center p-3 rounded-xl hover:bg-white/5 transition group">
+                    <input type="number" class="bg-transparent text-center text-xl font-black text-emerald-400 outline-none w-full" value="1200">
+                    <div class="w-32 text-center">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-tighter">Infantry Attack</span>
+                    </div>
+                    <input type="number" class="bg-transparent text-center text-xl font-black text-slate-600 outline-none w-full group-hover:text-red-400 transition" value="1000">
+                </div>
                 
-                <!-- Table Header -->
-                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Attacker</div>
-                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Stat Category</div>
-                <div class="text-center text-[10px] uppercase tracking-widest text-slate-500 font-bold">Defender</div>
-
-                <!-- Infantry Section -->
-                <input type="number" class="stat-input text-green-400" placeholder="1200" value="1200">
-                <div class="text-center text-sm font-semibold text-slate-400">Infantry Attack</div>
-                <input type="number" class="stat-input text-red-400" placeholder="1000" value="1000">
-
-                <input type="number" class="stat-input text-green-400" value="1100">
-                <div class="text-center text-sm font-semibold text-slate-400">Infantry Defense</div>
-                <input type="number" class="stat-input text-red-400" value="1050">
-
-                <!-- Divider -->
-                <div class="col-span-3 border-b border-slate-800 my-2"></div>
-
-                <!-- Cavalry Section -->
-                <input type="number" class="stat-input text-green-400" value="1500">
-                <div class="text-center text-sm font-semibold text-slate-400">Cavalry Attack</div>
-                <input type="number" class="stat-input text-red-400" value="1300">
-
-                <input type="number" class="stat-input text-green-400" value="1400">
-                <div class="text-center text-sm font-semibold text-slate-400">Cavalry Defense</div>
-                <input type="number" class="stat-input text-red-400" value="1250">
-
-                <!-- Divider -->
-                <div class="col-span-3 border-b border-slate-800 my-2"></div>
-
-                <!-- Archer Section -->
-                <input type="number" class="stat-input text-green-400" value="1800">
-                <div class="text-center text-sm font-semibold text-slate-400">Archer Attack</div>
-                <input type="number" class="stat-input text-red-400" value="1400">
-
+                <!-- Repeat for other stats... -->
+                <div class="grid grid-cols-[1fr_auto_1fr] items-center p-3 rounded-xl hover:bg-white/5 transition group border-t border-slate-800/50">
+                    <input type="number" class="bg-transparent text-center text-xl font-black text-emerald-400 outline-none w-full" value="850">
+                    <div class="w-32 text-center">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-tighter">Infantry Defense</span>
+                    </div>
+                    <input type="number" class="bg-transparent text-center text-xl font-black text-slate-600 outline-none w-full group-hover:text-red-400 transition" value="950">
+                </div>
             </div>
         </div>
-        <!-- Example of a single "Sleek" Comparison Row -->
-<div class="grid grid-cols-[1fr_auto_1fr] items-center py-3 px-4 hover:bg-white/5 transition-colors rounded-xl">
-    
-    <!-- Attacker Value (Green if Higher) -->
-    <input type="number" 
-           class="bg-transparent text-right text-lg font-mono focus:outline-none text-emerald-400" 
-           value="1234.5">
+        
+        <!-- Simulate Button -->
+        <button class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-6 rounded-3xl shadow-xl shadow-blue-900/20 transition-all active:scale-[0.98]">
+            RUN COMBAT SIMULATION
+        </button>
 
-    <!-- Center Label -->
-    <div class="px-6 flex flex-col items-center">
-        <span class="text-[10px] uppercase tracking-tighter text-slate-500 font-black">Infantry</span>
-        <span class="text-xs font-bold text-slate-300">Attack</span>
     </div>
-
-    <!-- Defender Value (Dimmed if Lower) -->
-    <input type="number" 
-           class="bg-transparent text-left text-lg font-mono focus:outline-none text-slate-600" 
-           value="1000.0">
-</div>
-    </main>
-
-    <!-- Simulation Controls (Sticky Bottom) -->
-    <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-lg">
-        <div class="max-w-4xl mx-auto flex gap-4">
-            <div class="flex-grow">
-                <label class="text-[10px] text-slate-500 uppercase font-black">Simulation Mode</label>
-                <select class="w-full bg-slate-800 border-none rounded-lg p-2 text-sm">
-                    <option>Average (Expected Value)</option>
-                    <option>Luck Bounds (Min/Max RNG)</option>
-                    <option>Full Stochastic (Monte Carlo)</option>
-                </select>
-            </div>
-            <button class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 rounded-xl transition-all shadow-lg shadow-blue-900/20">
-                RUN SIMULATION
-            </button>
-        </div>
-    </div>
-
 </body>
 </html>
