@@ -1,79 +1,161 @@
-// data/constants.js
+import { WIDGET_GROWTH } from './constants.js';
 
-// Indices 0-5 (Star 0), 6-11 (Star 1), ..., 30 (Star 5)
-export const GROWTH_TEMPLATES = {
-    SEASON_1: [ //Saul, Helga, Jabel
-        25.25, 27.60, 29.95, 32.30, 34.65, 37.00,       // Star 0 substages
-        41.23, 44.52, 47.81, 51.10, 54.39, 57.68,   // Star 1
-        63.60, 68.20, 72.81, 77.42, 82.02, 86.63,  // Star 2 (Growth starts accelerating)
-        94.92, 101.37, 107.81, 114.26, 120.71, 127.16, // Star 3
-        138.77, 147.79, 156.82, 165.85, 174.88, 183.91, // Star 4
-        200.16                       // Star 5 (Final)
-    ],
-    SEASON_2: [ //Marlin, Zoe, Hilde
-      30.30, 33.12, 35.94, 38.76, 41.58, 44.40,
-      49.47, 53.42, 57.37, 61.32, 65.26, 69.21,
-      76.32, 81.84, 87.37, 92.90, 98.42, 103.95,
-      113.90, 121.64, 129.37, 137.11, 144.85, 152.59,
-      166.52, 177.34, 188.18, 192.02, 209.85, 220.69,
-      240.10
-    ],
-    SEASON_3: [ //Jaeger, Eric, Petra
-      36.61, 40.02, 43.42, 46.83, 50.24, 53.65,
-      59.78, 64.55, 69.32, 74.09, 78.86, 83.63,
-      92.22, 98.89, 105.57, 112.25, 118.98, 125.61,
-      137.63, 146.98, 156.32, 165.67, 175.02, 184.38,
-      201.21, 214.29, 227.38, 240.48, 253.57, 266.66,
-      290.23
-    ],
-    SEASON_4: [ //Rosa, Alcar, Margot
-      46.71, 51.06, 55.40, 59.75, 64.10, 68.45,
-      76.27, 82.36, 88.44, 94.53, 100.62, 106.70,
-      117.66, 126.17, 134.69, 143.22, 151.73, 160.26,
-      175.60, 187.53, 199.44, 211.38, 223.31, 235.24,
-      256.72, 273.41, 290.11, 306.82, 323.52, 340.23,
-      370.29
-    ],
-    SEASON_5: [ //Vivian, Long Fei, Thrud
-      56.05, 61.27, 66.48, 71.70, 76.92, 82.14,
-      91.53, 98.83, 106.13, 113.44, 120.74, 128.04,
-      141.19, 151.40, 161.63, 171.87, 182.08, 192.31,
-      210.72, 225.04, 239.33, 253.65, 267.97, 282.29,
-      308.06, 328.09, 348.14, 368.18, 388.23, 408.28,
-      444.35
-    ],
-    AMADEUS: [
-      32.82, 35.88, 38.93, 41.99, 45.04, 48.10,
-      53.59, 57.87, 62.15, 66.43, 70.70, 74.98,
-      82.68, 88.66, 94.65, 100.64, 106.62, 112.61,
-      123.39, 131.78, 140.15, 148.53, 156.92, 165.30,
-      180.40, 192.12, 203.86, 215.60, 227.34, 239.08,
-      260.20
-    ],
-    DIANA: [
-      13.88, 15.18, 16.47, 17.76, 19.05, 20.35,
-      22.67, 24.48, 26.29, 28.10, 29.91, 31.72,
-      34.98, 37.51, 40.04, 42.58, 45.11, 47.64,
-      52.50, 55.75, 59.29, 62.84, 66.39, 69.93,
-      73.32, 81.28, 86.25, 91.21, 96.18, 101.15,
-      110.08
-    ],
-    SR: [ //Quinn, Amane, Yeonwoo, Howard, Chenko, Gordon, Fahd
-      17.76, 19.32, 20.96, 22.61, 24.25, 25.90,
-      28.86, 31.16, 33.46, 35.77, 38.07, 40.37,
-      44.52, 47.74, 50.96, 54.19, 57.41, 60.64,
-      66.44, 70.95, 75.46, 79.98, 84.49, 89.01,
-      97.13, 103.45, 109.77, 116.09, 122.41, 128.73,
-      140.11
-    ],
-    R: [ //Olive, Forrest, Seth, Edwin
-      11.36, 12.42, 13.47, 14.53, 15.59, 16.65,
-      18.55, 20.03, 21.51, 22.99, 24.47, 25.95, 
-      28.62, 30.69, 32.76, 34.83, 36.90, 38.98,
-      42.71, 45.61, 48.51, 51.41, 54.31, 57.22,
-      62.44, 66.50, 70.56, 74.63, 78.69, 82.75,
-      90.07
-    ]
+/**
+ * Standardized Heroes Database
+ * Contexts: "off" (Offense/Rally), "def" (Defense/Garrison)
+ */
+
+export const HEROES = {
+    "Zoe": {
+        type: "Inf",
+        template: "SEASON_2",
+        widget: { stat: "attack", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Sundering", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => 0.20, getMagnitude: (X) => X / 100, duration: 3 },
+            { name: "Charisma", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Infinite", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.50, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Marlin": {
+        type: "Arc",
+        template: "SEASON_2",
+        widget: { stat: "lethality", context: "off", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Wild Card", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
+            { name: "Rumhead", ids: [202], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
+            { name: "Dynamo", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Jabel": {
+        type: "Cav",
+        template: "SEASON_1",
+        widget: { stat: "lethality", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Rally Flag", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
+            { name: "Hero's Domain", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Youthful Rage", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Howard": {
+        type: "Inf",
+        template: "SR",
+        skills: [
+            { name: "Defender", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Weaken", ids: [202], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Chenko": {
+        type: "Cav",
+        template: "SR",
+        skills: [
+            { name: "Stand of Arms", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Shield Wall", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Quinn": {
+        type: "Arc",
+        template: "SR",
+        skills: [
+            { name: "Sixth Sense", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Precision Shot", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Gordon": {
+        type: "Cav",
+        template: "SR",
+        skills: [
+            { name: "Super Nutrients", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Trash Talk", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Petra": {
+        type: "Cav",
+        template: "SEASON_3",
+        widget: { stat: "attack", context: "off", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Evil Eye", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "The Favor", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "The Shield", ids: [201], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.4, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Amane": {
+        type: "Arc",
+        template: "SR",
+        skills: [
+            { name: "Tri-Phalanx", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Yeonwoo": {
+        type: "Arc",
+        template: "SR",
+        skills: [
+            { name: "On Guard", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Saul": {
+        type: "Arc",
+        template: "SEASON_1",
+        widget: { stat: "attack", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Taskforce", ids: [204, 203], group: "den", values: [[2, 3], [4, 6], [6, 9], [8, 12], [10, 15]], getChance: (X) => 1.0, getMagnitude: (X) => [X[0] / 100, X[1] / 100], duration: 0 },
+            { name: "Positional", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Fahd": {
+        type: "Cav",
+        template: "SR",
+        skills: [
+            { name: "Desert Eclipse", ids: [205], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Hilde": {
+        type: "Cav",
+        template: "SEASON_2",
+        widget: { stat: "health", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Noble Path", ids: [102, 204], group: "num", values: [[3, 2], [6, 4], [9, 6], [12, 8], [15, 10]], getChance: (X) => 1.0, getMagnitude: (X) => [X[0] / 100, X[1] / 100], duration: 0 },
+            { name: "Elixir of Strength", ids: [102], group: "num", values: [120, 140, 160, 180, 200], getChance: (X) => 0.25, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Trial by Fire", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 }
+        ]
+    },
+    "Eric": {
+        type: "Inf",
+        template: "SEASON_3",
+        widget: { stat: "defense", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Holy Warrior", ids: [202], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Conviction", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Exhortation", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Amadeus": {
+        type: "Inf",
+        template: "AMADEUS",
+        widget: { stat: "attack", context: "off", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Battle Ready", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Way of the Blade", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Unrighteous Strike", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 }
+        ]
+    },
+    "Helga": {
+        type: "Inf",
+        template: "SEASON_1",
+        widget: { stat: "lethality", context: "off", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Oath of Guardian", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
+            { name: "Echoes of Valhalla", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Nature's Balance", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Jaeger": {
+        type: "Arc",
+        template: "SEASON_3",
+        widget: { stat: "health", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "The Tempest", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 3 },
+            { name: "The Resistance", ids: [202], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
+            { name: "The Celebration", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    }
 };
-
-export const WIDGET_GROWTH = [0, 0, 0.05, 0.05, 0.075, 0.075, 0.1, 0.1, 0.125, 0.125, 0.15]; // 10 levels
