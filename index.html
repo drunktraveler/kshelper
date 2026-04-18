@@ -7,167 +7,220 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; overflow-x: hidden; }
         .glass-card { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1.5rem; }
-        .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.75rem; padding: 0.5rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; }
-        .input-dark:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
-        .stat-label { font-size: 0.7rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
-        .val-higher { color: #10b981 !important; } /* Emerald-500 */
-        .val-lower { color: #ef4444 !important; }  /* Red-500 */
-        .val-neutral { color: #94a3b8; }           /* Slate-400 */
+        .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.75rem; padding: 0.5rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; font-size: 0.9rem; }
+        .input-dark:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
         
-        /* Remove arrows from number inputs */
+        /* Formation Bar Styling */
+        .f-bar { height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: #1e293b; }
+        .f-inf { background: #3b82f6; transition: width 0.4s ease; }
+        .f-cav { background: #f59e0b; transition: width 0.4s ease; }
+        .f-arc { background: #10b981; transition: width 0.4s ease; }
+
+        /* Hero Slots */
+        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-center; cursor: pointer; transition: all 0.2s; font-size: 0.7rem; font-weight: bold; color: #475569; position: relative; }
+        .hero-circle:hover { border-color: #3b82f6; color: white; }
+        .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
+        .hero-leader { border-color: rgba(245, 158, 11, 0.3); }
+        
+        .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; }
+        .val-higher { color: #10b981 !important; }
+        .val-lower { color: #ef4444 !important; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
     <div class="max-w-5xl mx-auto">
-        <!-- Header -->
+        <!-- (Header Section - same as before) -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
             <div>
                 <h1 class="text-2xl font-black tracking-tighter text-blue-500">KINGSHOT<span class="text-white font-light ml-2 uppercase tracking-widest text-sm">Studio</span></h1>
-                <p class="text-xs text-slate-500 font-medium">Next-Gen Combat Simulation & Optimization</p>
             </div>
             <nav class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
-                <button class="px-6 py-2 bg-blue-600 rounded-lg text-sm font-bold shadow-lg">Battle</button>
-                <button class="px-6 py-2 text-slate-400 hover:text-white text-sm transition">Formation</button>
-                <button class="px-6 py-2 text-slate-400 hover:text-white text-sm transition">Trap</button>
+                <button class="px-6 py-2 bg-blue-600 rounded-lg text-sm font-bold">Battle</button>
+                <button class="px-6 py-2 text-slate-400 text-sm">Formation</button>
+                <button class="px-6 py-2 text-slate-400 text-sm">Trap</button>
             </nav>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             
-            <!-- ATTACKER COMMAND CARD -->
-            <div class="glass-card p-6 border-l-4 border-l-emerald-500/50">
-                <div class="flex justify-between items-end mb-6">
-                    <h2 class="text-lg font-bold text-emerald-400">Attacker Setup</h2>
-                    <div class="flex gap-2">
-                        <select class="bg-slate-950 text-xs border border-slate-700 rounded-md px-2 py-1 outline-none">
-                            <option>Tier 11</option><option selected>Tier 10</option><option>Tier 9</option>
-                        </select>
-                        <select class="bg-slate-950 text-xs border border-slate-700 rounded-md px-2 py-1 outline-none">
-                            <option>TG 5</option><option selected>TG 3</option><option>TG 0</option>
-                        </select>
+            <!-- ATTACKER CARD -->
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-sm font-black uppercase tracking-widest text-emerald-500">Attacker Command</h2>
+                        <div class="flex gap-2">
+                            <select class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 uppercase font-bold text-slate-400">
+                                <option>T11</option><option selected>T10</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Troop Inputs -->
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Infantry</label>
+                            <input type="number" id="atk-inf" oninput="updateFormation('atk')" class="input-dark font-bold" value="500000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Cavalry</label>
+                            <input type="number" id="atk-cav" oninput="updateFormation('atk')" class="input-dark font-bold" value="200000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Archers</label>
+                            <input type="number" id="atk-arc" oninput="updateFormation('atk')" class="input-dark font-bold" value="300000">
+                        </div>
+                    </div>
+
+                    <!-- Formation Visualizer -->
+                    <div class="mb-8">
+                        <div class="f-bar mb-2" id="atk-f-bar">
+                            <div class="f-inf" style="width: 50%"></div>
+                            <div class="f-cav" style="width: 20%"></div>
+                            <div class="f-arc" style="width: 30%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] font-bold text-slate-500">
+                            <span id="atk-inf-pct">50%</span>
+                            <span id="atk-cav-pct">20%</span>
+                            <span id="atk-arc-pct">30%</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="space-y-4">
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Infantry Count</label>
-                        <input type="number" id="atk-inf-count" class="input-dark text-lg font-bold" value="500000">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Cavalry Count</label>
-                        <input type="number" id="atk-cav-count" class="input-dark text-lg font-bold" value="200000">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Archer Count</label>
-                        <input type="number" id="atk-arc-count" class="input-dark text-lg font-bold" value="300000">
+                <!-- Hero Grid -->
+                <div>
+                    <p class="text-[9px] font-black text-slate-600 uppercase mb-3">Hero Configuration</p>
+                    <div class="flex gap-2">
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('atk', 0)">1</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('atk', 1)">2</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('atk', 2)">3</div>
+                        <div class="w-px h-8 bg-slate-800 mx-1"></div>
+                        <div class="hero-circle" onclick="openHeroModal('atk', 3)">4</div>
+                        <div class="hero-circle" onclick="openHeroModal('atk', 4)">5</div>
+                        <div class="hero-circle" onclick="openHeroModal('atk', 5)">6</div>
+                        <div class="hero-circle" onclick="openHeroModal('atk', 6)">7</div>
                     </div>
                 </div>
             </div>
 
-            <!-- DEFENDER COMMAND CARD -->
-            <div class="glass-card p-6 border-r-4 border-r-red-500/50">
-                <div class="flex justify-between items-end mb-6">
-                    <h2 class="text-lg font-bold text-red-400">Defender Setup</h2>
+            <!-- DEFENDER CARD (Mirrored) -->
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-sm font-black uppercase tracking-widest text-red-500">Defender Command</h2>
+                        <select class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400">
+                            <option selected>T10</option>
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div><label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Infantry</label>
+                             <input type="number" id="def-inf" oninput="updateFormation('def')" class="input-dark font-bold" value="500000"></div>
+                        <div><label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Cavalry</label>
+                             <input type="number" id="def-cav" oninput="updateFormation('def')" class="input-dark font-bold" value="200000"></div>
+                        <div><label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Archers</label>
+                             <input type="number" id="def-arc" oninput="updateFormation('def')" class="input-dark font-bold" value="300000"></div>
+                    </div>
+
+                    <div class="mb-8">
+                        <div class="f-bar mb-2" id="def-f-bar">
+                            <div class="f-inf" style="width: 50%"></div>
+                            <div class="f-cav" style="width: 20%"></div>
+                            <div class="f-arc" style="width: 30%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] font-bold text-slate-500">
+                            <span id="def-inf-pct">50%</span><span id="def-cav-pct">20%</span><span id="def-arc-pct">30%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <p class="text-[9px] font-black text-slate-600 uppercase mb-3">Hero Configuration</p>
                     <div class="flex gap-2">
-                        <select class="bg-slate-950 text-xs border border-slate-700 rounded-md px-2 py-1 outline-none">
-                            <option>Tier 11</option><option selected>Tier 10</option><option>Tier 9</option>
-                        </select>
-                        <select class="bg-slate-950 text-xs border border-slate-700 rounded-md px-2 py-1 outline-none">
-                            <option>TG 5</option><option selected>TG 3</option><option>TG 0</option>
-                        </select>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 0)">1</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 1)">2</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 2)">3</div>
+                        <div class="w-px h-8 bg-slate-800 mx-1"></div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 3)">4</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 4)">5</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 5)">6</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 6)">7</div>
                     </div>
-                </div>
-
-                <div class="space-y-4">
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Infantry Count</label>
-                        <input type="number" id="def-inf-count" class="input-dark text-lg font-bold text-right" value="500000">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Cavalry Count</label>
-                        <input type="number" id="def-cav-count" class="input-dark text-lg font-bold text-right" value="200000">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-2">Archer Count</label>
-                        <input type="number" id="def-arc-count" class="input-dark text-lg font-bold text-right" value="300000">
-                    </div>
-                </div>
-            </div>
-
-            <!-- STAT COMPARISON TABLE (Center-Spanning) -->
-            <div class="lg:col-span-2 glass-card overflow-hidden">
-                <div class="grid grid-cols-3 bg-slate-900/50 py-3 px-6 border-b border-slate-800">
-                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Atk Bonus</span>
-                    <span class="text-center text-[10px] font-black uppercase text-slate-500 tracking-widest">Stat Category</span>
-                    <span class="text-right text-[10px] font-black uppercase text-red-500 tracking-widest">Def Bonus</span>
-                </div>
-
-                <div class="p-4 space-y-1" id="stat-comparison-container">
-                    <!-- This block is repeated for each stat in JavaScript -->
-                    <div class="grid grid-cols-[1fr_2fr_1fr] items-center px-4 py-2 hover:bg-white/5 transition rounded-xl">
-                        <input type="number" data-side="atk" data-stat="inf_att" class="bg-transparent text-sm font-black outline-none stat-input" value="1200">
-                        <div class="stat-label">Infantry Attack</div>
-                        <input type="number" data-side="def" data-stat="inf_att" class="bg-transparent text-sm font-black text-right outline-none stat-input" value="1000">
-                    </div>
-                    
-                    <div class="grid grid-cols-[1fr_2fr_1fr] items-center px-4 py-2 hover:bg-white/5 transition rounded-xl border-t border-slate-800/30">
-                        <input type="number" data-side="atk" data-stat="inf_def" class="bg-transparent text-sm font-black outline-none stat-input" value="900">
-                        <div class="stat-label">Infantry Defense</div>
-                        <input type="number" data-side="def" data-stat="inf_def" class="bg-transparent text-sm font-black text-right outline-none stat-input" value="1150">
-                    </div>
-                    <!-- ... more rows ... -->
                 </div>
             </div>
         </div>
 
-        <!-- Action Bar -->
-        <div class="mt-12 flex justify-center">
-            <button class="group relative px-12 py-5 bg-blue-600 rounded-2xl font-black text-lg tracking-tight hover:bg-blue-500 transition-all shadow-2xl shadow-blue-900/40">
-                RUN SIMULATION
-                <div class="absolute inset-0 rounded-2xl border-2 border-white/10 group-hover:scale-105 transition-transform"></div>
-            </button>
+        <!-- STAT TABLE (Minimalist style) -->
+        <div class="glass-card overflow-hidden">
+             <!-- (Stat rows from previous prompt go here) -->
+        </div>
+    </div>
+
+    <!-- HERO SELECT MODAL -->
+    <div id="heroModal" class="modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="bg-slate-900 w-full max-w-sm rounded-3xl p-6 border border-slate-800 shadow-2xl">
+            <h3 class="text-sm font-black uppercase text-slate-500 mb-6 tracking-widest">Configure Hero</h3>
+            
+            <div class="space-y-6">
+                <div>
+                    <label class="text-[10px] font-bold text-blue-500 uppercase block mb-2">Select Hero</label>
+                    <select class="input-dark bg-slate-950">
+                        <option>None</option>
+                        <option>Amadeus</option>
+                        <option>Zoe</option>
+                        <option>Petra</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[10px] font-bold text-blue-500 uppercase block mb-2">Star Level</label>
+                        <select class="input-dark bg-slate-950"><option>5 Star</option></select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-blue-500 uppercase block mb-2">Substage</label>
+                        <select class="input-dark bg-slate-950"><option>0</option></select>
+                    </div>
+                </div>
+
+                <button onclick="closeHeroModal()" class="w-full bg-blue-600 py-4 rounded-2xl font-black text-sm uppercase tracking-widest mt-4">Save Hero</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Simple script to handle dynamic color logic
-        function updateColors() {
-            const container = document.getElementById('stat-comparison-container');
-            const rows = container.querySelectorAll('.grid');
+        function updateFormation(side) {
+            const inf = parseFloat(document.getElementById(`${side}-inf`).value) || 0;
+            const cav = parseFloat(document.getElementById(`${side}-cav`).value) || 0;
+            const arc = parseFloat(document.getElementById(`${side}-arc`).value) || 0;
+            const total = inf + cav + arc;
 
-            rows.forEach(row => {
-                const atkInput = row.querySelector('input[data-side="atk"]');
-                const defInput = row.querySelector('input[data-side="def"]');
-                
-                const atkVal = parseFloat(atkInput.value);
-                const defVal = parseFloat(defInput.value);
+            if (total === 0) return;
 
-                if (atkVal > defVal) {
-                    atkInput.className = atkInput.className.replace(/val-\w+/, '') + ' val-higher';
-                    defInput.className = defInput.className.replace(/val-\w+/, '') + ' val-neutral';
-                } else if (defVal > atkVal) {
-                    defInput.className = defInput.className.replace(/val-\w+/, '') + ' val-lower';
-                    atkInput.className = atkInput.className.replace(/val-\w+/, '') + ' val-neutral';
-                } else {
-                    atkInput.className = atkInput.className.replace(/val-\w+/, '') + ' val-neutral';
-                    defInput.className = defInput.className.replace(/val-\w+/, '') + ' val-neutral';
-                }
-            });
+            const iP = (inf / total) * 100;
+            const cP = (cav / total) * 100;
+            const aP = (arc / total) * 100;
+
+            const bar = document.getElementById(`${side}-f-bar`);
+            bar.children[0].style.width = iP + '%';
+            bar.children[1].style.width = cP + '%';
+            bar.children[2].style.width = aP + '%';
+
+            document.getElementById(`${side}-inf-pct`).innerText = Math.round(iP) + '%';
+            document.getElementById(`${side}-cav-pct`).innerText = Math.round(cP) + '%';
+            document.getElementById(`${side}-arc-pct`).innerText = Math.round(aP) + '%';
         }
 
-        // Listen for all input changes
-        document.addEventListener('input', (e) => {
-            if (e.target.classList.contains('stat-input')) {
-                updateColors();
-            }
-        });
+        function openHeroModal(side, index) {
+            document.getElementById('heroModal').style.display = 'flex';
+        }
 
-        // Initial run
-        updateColors();
+        function closeHeroModal() {
+            document.getElementById('heroModal').style.display = 'none';
+        }
     </script>
 </body>
 </html>
