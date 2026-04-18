@@ -1,12 +1,53 @@
-<!-- ... (Keep Head section with Tailwind and Inter Font) ... -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kingshot Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; overflow-x: hidden; }
+        .glass-card { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1.5rem; }
+        .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.75rem; padding: 0.5rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; font-size: 0.9rem; }
+        .input-dark:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+        
+        /* Formation Bar Styling */
+        .f-bar { height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: #1e293b; }
+        .f-inf { background: #3b82f6; transition: width 0.4s ease; }
+        .f-cav { background: #f59e0b; transition: width 0.4s ease; }
+        .f-arc { background: #10b981; transition: width 0.4s ease; }
+
+        /* Hero Slots */
+        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-center; cursor: pointer; transition: all 0.2s; font-size: 0.7rem; font-weight: bold; color: #475569; position: relative; }
+        .hero-circle:hover { border-color: #3b82f6; color: white; }
+        .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
+        .hero-leader { border-color: rgba(245, 158, 11, 0.3); }
+        
+        .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; }
+        .val-higher { color: #10b981 !important; }
+        .val-lower { color: #ef4444 !important; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
 <body class="p-4 md:p-8 bg-[#080a0f] text-slate-100">
 
     <div class="max-w-5xl mx-auto">
-        <!-- ... (Navigation Bar same as before) ... -->
+        <!-- (Header Section - same as before) -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+            <div>
+                <h1 class="text-2xl font-black tracking-tighter text-blue-500">KINGSHOT<span class="text-white font-light ml-2 uppercase tracking-widest text-sm">Studio</span></h1>
+            </div>
+            <nav class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+                <button class="px-6 py-2 bg-blue-600 rounded-lg text-sm font-bold">Battle</button>
+                <button class="px-6 py-2 text-slate-400 text-sm">Formation</button>
+                <button class="px-6 py-2 text-slate-400 text-sm">Trap</button>
+            </nav>
+        </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             
-            <!-- ATTACKER CARD -->
+             <!-- ATTACKER CARD -->
             <div class="glass-card p-6 flex flex-col justify-between border-l-4 border-l-emerald-500/30">
                 <div>
                     <div class="flex justify-between items-center mb-6">
@@ -26,8 +67,35 @@
                         </div>
                     </div>
 
-                    <!-- Troop Inputs & Formation Bar (Same as before) -->
-                    <!-- ... -->
+                    <!-- Troop Inputs -->
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Infantry</label>
+                            <input type="number" id="atk-inf" oninput="updateFormation('atk')" class="input-dark font-bold" value="500000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Cavalry</label>
+                            <input type="number" id="atk-cav" oninput="updateFormation('atk')" class="input-dark font-bold" value="200000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Archers</label>
+                            <input type="number" id="atk-arc" oninput="updateFormation('atk')" class="input-dark font-bold" value="300000">
+                        </div>
+                    </div>
+
+                    <!-- Formation Visualizer -->
+                    <div class="mb-8">
+                        <div class="f-bar mb-2" id="atk-f-bar">
+                            <div class="f-inf" style="width: 50%"></div>
+                            <div class="f-cav" style="width: 20%"></div>
+                            <div class="f-arc" style="width: 30%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] font-bold text-slate-500">
+                            <span id="atk-inf-pct">50%</span>
+                            <span id="atk-cav-pct">20%</span>
+                            <span id="atk-arc-pct">30%</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Hero Grid (IDs added for JS) -->
@@ -39,11 +107,75 @@
                 </div>
             </div>
 
-            <!-- DEFENDER CARD (Mirror the Attacker Card changes) -->
-            <!-- ... -->
+            <!-- DEFENDER CARD (Mirrored) -->
+            <div class="glass-card p-6 flex flex-col justify-between border-l-4 border-l-emerald-500/30">
+                <div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-sm font-black uppercase tracking-widest text-emerald-500">Defender Command</h2>
+                        <div class="flex gap-2">
+                            <!-- Tier Selector -->
+                            <select id="atk-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 uppercase font-bold text-slate-400 outline-none">
+                                <option value="11">T11</option><option value="10" selected>T10</option>
+                                <option value="9">T9</option>
+                            </select>
+                            <!-- TG Selector -->
+                            <select id="atk-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 uppercase font-bold text-slate-400 outline-none">
+                                <option value="5">TG5</option><option value="4">TG4</option>
+                                <option value="3" selected>TG3</option><option value="2">TG2</option>
+                                <option value="1">TG1</option><option value="0">TG0</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Troop Inputs -->
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Infantry</label>
+                            <input type="number" id="atk-inf" oninput="updateFormation('atk')" class="input-dark font-bold" value="500000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Cavalry</label>
+                            <input type="number" id="atk-cav" oninput="updateFormation('atk')" class="input-dark font-bold" value="200000">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-slate-500 uppercase block mb-1">Archers</label>
+                            <input type="number" id="atk-arc" oninput="updateFormation('atk')" class="input-dark font-bold" value="300000">
+                        </div>
+                    </div>
+
+                    <!-- Formation Visualizer -->
+                    <div class="mb-8">
+                        <div class="f-bar mb-2" id="def-f-bar">
+                            <div class="f-inf" style="width: 50%"></div>
+                            <div class="f-cav" style="width: 20%"></div>
+                            <div class="f-arc" style="width: 30%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] font-bold text-slate-500">
+                            <span id="def-inf-pct">50%</span><span id="def-cav-pct">20%</span><span id="def-arc-pct">30%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <p class="text-[9px] font-black text-slate-600 uppercase mb-3">Hero Configuration</p>
+                    <div class="flex gap-2">
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 0)">1</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 1)">2</div>
+                        <div class="hero-circle hero-leader" onclick="openHeroModal('def', 2)">3</div>
+                        <div class="w-px h-8 bg-slate-800 mx-1"></div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 3)">4</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 4)">5</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 5)">6</div>
+                        <div class="hero-circle" onclick="openHeroModal('def', 6)">7</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- ... (Stat Comparison Table same as before) ... -->
+        <!-- STAT TABLE (Minimalist style) -->
+        <div class="glass-card overflow-hidden">
+             <!-- (Stat rows from previous prompt go here) -->
+        </div>
     </div>
 
     <!-- HERO CONFIG MODAL (Hidden by default) -->
@@ -74,4 +206,37 @@
     </div>
 
     <script type="module" src="./js/ui-bridge.js"></script>
+
+    <script>
+        function updateFormation(side) {
+            const inf = parseFloat(document.getElementById(`${side}-inf`).value) || 0;
+            const cav = parseFloat(document.getElementById(`${side}-cav`).value) || 0;
+            const arc = parseFloat(document.getElementById(`${side}-arc`).value) || 0;
+            const total = inf + cav + arc;
+
+            if (total === 0) return;
+
+            const iP = (inf / total) * 100;
+            const cP = (cav / total) * 100;
+            const aP = (arc / total) * 100;
+
+            const bar = document.getElementById(`${side}-f-bar`);
+            bar.children[0].style.width = iP + '%';
+            bar.children[1].style.width = cP + '%';
+            bar.children[2].style.width = aP + '%';
+
+            document.getElementById(`${side}-inf-pct`).innerText = Math.round(iP) + '%';
+            document.getElementById(`${side}-cav-pct`).innerText = Math.round(cP) + '%';
+            document.getElementById(`${side}-arc-pct`).innerText = Math.round(aP) + '%';
+        }
+
+        function openHeroModal(side, index) {
+            document.getElementById('heroModal').style.display = 'flex';
+        }
+
+        function closeHeroModal() {
+            document.getElementById('heroModal').style.display = 'none';
+        }
+    </script>
 </body>
+</html>
