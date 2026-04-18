@@ -1,11 +1,29 @@
 import { HEROES } from '../heroes.js';
 import { runCombatSim } from './engine.js';
+import { GROWTH_TEMPLATES } from '../data/constants.js';
 
 let activeSlot = { side: null, index: null };
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1 })) },
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1 })) }
 };
+
+function calculateHeroStarBonus(heroName, star, substage) {
+    const hero = HEROES[heroName];
+    if (!hero || hero.name === "None") return 0;
+
+    // 1. Get the template name (e.g., "SEASON_1")
+    const templateKey = hero.template; 
+
+    // 2. Get the actual array from constants.js
+    const statsArray = GROWTH_TEMPLATES[templateKey]; 
+
+    // 3. Calculate the index (0-30)
+    const index = (star * 6) + substage; 
+
+    // 4. Return the percentage value (e.g., 200.16)
+    return statsArray[index];
+}
 
 // --- INITIALIZE UI ---
 function init() {
