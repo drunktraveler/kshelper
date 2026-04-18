@@ -1,4 +1,4 @@
-import { HEROES } from '../data/heroes.js';
+import { HEROES } from '../heroes.js';
 
 // --- INITIAL STATE ---
 let activeSlot = { side: null, index: null };
