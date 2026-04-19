@@ -93,8 +93,7 @@ export const HEROES = {
         ]
     },
     "Saul": {
-        type: "Arc",
-        template: "SEASON_1",
+        type: "Arc", template: "SEASON_1",
         widget: { stat: "attack", context: "def", values: WIDGET_GROWTH },
         skills: [
             { name: "Taskforce", ids: [204, 203], group: "den", values: [[2, 3], [4, 6], [6, 9], [8, 12], [10, 15]], getChance: (X) => 1.0, getMagnitude: (X) => [X[0] / 100, X[1] / 100], duration: 0 },
@@ -109,7 +108,7 @@ export const HEROES = {
         ]
     },
     "Hilde": {
-        type: "Cav",
+        type: "Cav", 
         template: "SEASON_2",
         widget: { stat: "health", context: "def", values: WIDGET_GROWTH },
         skills: [
