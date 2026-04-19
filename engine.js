@@ -7,10 +7,12 @@ export function runCombatSim(setup) {
     const defP = processBatches(setup.def.batches);
 
     let m_cur = { ...atkP.counts }, e_cur = { ...defP.counts };
-    const sq_min = Math.sqrt(Math.min(Object.values(m_cur).reduce((a, b) => a+b), Object.values(e_cur).reduce((a, b) => a+b)));
+    const sq_min = Math.sqrt(Math.min(Object.values(m_cur).reduce((a, b) => a+b, 0), Object.values(e_cur).reduce((a, b) => a+b, 0)));
 
     const m_skill = getMultipliers(setup.atk, atkP, 'num');
     const e_skill = getMultipliers(setup.def, defP, 'den');
+
+    const widget_mult = Math.pow(1.15, 3); // Standard widget multiplier
 
     let wave = 0;
     while (wave < 150 && isAlive(m_cur) && isAlive(e_cur)) {
@@ -24,12 +26,14 @@ export function runCombatSim(setup) {
             const sProc = side==='atk'?atkP:defP, tProc = side==='atk'?defP:atkP;
             const sCur = side==='atk'?m_cur:e_cur, tCur = side==='atk'?e_cur:m_cur;
             const sSet = setup[side], tSet = setup[target];
-            const sf = side==='atk'?mf:ef, tf = side==='atk'?ef:mf;
+            const tf = side==='atk'?ef:mf;
             const sMod = side==='atk'?m_skill:e_skill, tMod = side==='atk'?e_skill:m_skill;
 
             ['inf','cav','arc'].forEach(u => {
                 if (sCur[u] <= 0) return;
                 const b = sProc.avgBase[u], tb = tProc.avgBase[tf];
+                
+                // Damage formula components
                 let atk = b.atk * (1 + (sSet.stats[u+'_att'] + sMod.star)/100);
                 let leth = b.leth * (1 + sSet.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tSet.stats[tf+'_def'] + tMod.star)/100);
@@ -38,6 +42,8 @@ export function runCombatSim(setup) {
                 let tm = ((u==='inf'&&tf==='cav')||(u==='cav'&&tf==='arc')||(u==='arc'&&tf==='inf'))?1.1:1.0;
                 let abil = 1.0;
                 const weight = sProc.weights[u];
+
+                // Weighted Troop Abilities
                 if (u==='arc') abil *= (1 + (0.1*weight.t7) + (weight.tg5*0.15 + (weight.tg3-weight.tg5)*0.1));
                 if (u==='cav') abil *= (1 + (weight.tg5*0.15 + (weight.tg3-weight.tg5)*0.1));
                 if (tf==='inf') {
@@ -46,13 +52,21 @@ export function runCombatSim(setup) {
                     abil *= (1 - (tw.tg5*0.135 + (tw.tg3-tw.tg5)*0.09));
                 }
 
-                const sM = sMod.units[u]*1.52, tM = tMod.units[tf]*1.52; // Including widgets
+                const sM = sMod.units[u] * widget_mult;
+                const tM = tMod.units[tf] * widget_mult;
 
+                // Cavalry Bypass (Robust weighted calculation)
                 if (u==='cav' && tCur['arc']>1 && tf!=='arc' && weight.t7>0) {
                     const bypass = 0.2 * weight.t7;
+                    // Front damage
                     pending.push({dict: tCur, unit: tf, amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*tm*abil*(1-bypass)*sM)/(df*hp*100*tM)});
-                    const ba = UNITS['archers'][setup[target].batches[0].tier][setup[target].batches[0].tg];
-                    pending.push({dict: tCur, unit: 'arc', amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/( (ba[1]*(1+(tSet.stats.arc_def+tMod.star)/100)) * (ba[3]*(1+tSet.stats.arc_hp/100)) * 100 * (tMod.units.arc*1.52) )});
+                    
+                    // Backline damage (Weighted against Archer Avg Base Stats)
+                    const ba = tProc.avgBase['arc'];
+                    const b_df = ba.def * (1 + (tSet.stats.arc_def + tMod.star)/100);
+                    const b_hp = ba.hp * (1 + tSet.stats.arc_hp/100);
+                    const b_mod = tMod.units.arc * widget_mult;
+                    pending.push({dict: tCur, unit: 'arc', amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/(b_df*b_hp*100*b_mod)});
                 } else {
                     if (u==='cav' && tf==='arc') abil *= 0.8;
                     pending.push({dict: tCur, unit: tf, amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*tm*abil*sM)/(df*hp*100*tM)});
@@ -64,12 +78,14 @@ export function runCombatSim(setup) {
     return { m_cur, e_cur, wave, atk_mults: m_skill.logs, def_mults: e_skill.logs };
 }
 
+// ... processBatches, getMultipliers, isAlive remain the same ...
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
     let weights = {inf:{t7:0,tg3:0,tg5:0},cav:{t7:0,tg3:0,tg5:0},arc:{t7:0,tg3:0,tg5:0}};
     batches.forEach(b => {
         ['inf','cav','arc'].forEach(u => {
-            const stats = UNITS[u==='arc'?'archers':(u==='inf'?'infantry':'cavalry')][b.tier][b.tg];
+            const longU = u==='arc'?'archers':(u==='inf'?'infantry':'cavalry');
+            const stats = UNITS[longU][b.tier][b.tg];
             totals[u] += b[u]; avgBase[u].atk += stats[0]*b[u]; avgBase[u].def += stats[1]*b[u]; avgBase[u].leth += stats[2]*b[u]; avgBase[u].hp += stats[3]*b[u];
             if (b.tier >= 7) weights[u].t7 += b[u];
             if (b.tg >= 3) weights[u].tg3 += b[u];
@@ -86,10 +102,11 @@ function processBatches(batches) {
 }
 
 function getMultipliers(side, proc, type) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Counter-Type Strike (+10% Dmg)"];
+    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
     ['inf','cav','arc'].forEach(u => {
-        if (proc.weights[u].t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(proc.weights[u].t7*100).toFixed(0)}% Effective`);
-        if (proc.weights[u].tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(proc.weights[u].tg3*100).toFixed(0)}% Effective`);
+        const w = proc.weights[u];
+        if (w.t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Effective`);
+        if (w.tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% Effective`);
     });
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
@@ -107,5 +124,4 @@ function getMultipliers(side, proc, type) {
     let m = 1.0; Object.values(pools).forEach(v => m *= (1+v));
     return { units: {inf:m,cav:m,arc:m}, star: starBonus, logs };
 }
-
 function isAlive(a) { return (a.inf + a.cav + a.arc) > 1; }
