@@ -42,7 +42,9 @@ function init() {
             table.appendChild(row);
         });
     });
-
+    
+    window.addBatch('atk', true);
+    window.addBatch('def', true);
     document.getElementById('hero-select').addEventListener('change', (e) => renderSkillsInModal(e.target.value, activeSlot.index));
     window.updateFormation('atk'); window.updateFormation('def'); 
     document.querySelectorAll('#stat-table input').forEach(i => window.updateStatColors(i));
@@ -101,6 +103,33 @@ window.saveHeroConfig = () => {
     updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
+window.addBatch = (side, initial = false) => {
+    const container = document.getElementById(`${side}-batch-container`);
+    const div = document.createElement('div');
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3";
+    
+    div.innerHTML = `
+        <div class="flex justify-between items-center">
+            <div class="flex gap-2">
+                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
+                    ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
+                </select>
+                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
+                    ${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
+                </select>
+            </div>
+            ${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 hover:text-red-400 text-xs font-bold">REMOVE</button>` : ''}
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+            <input type="number" class="batch-inf input-dark !py-1 text-xs text-blue-400" value="500000" oninput="window.updateFormation('${side}')">
+            <input type="number" class="batch-cav input-dark !py-1 text-xs text-amber-400" value="200000" oninput="window.updateFormation('${side}')">
+            <input type="number" class="batch-arc input-dark !py-1 text-xs text-emerald-400" value="300000" oninput="window.updateFormation('${side}')">
+        </div>
+    `;
+    container.appendChild(div);
+    window.updateFormation(side);
+};
+
 function updateGrids() {
     ['atk', 'def'].forEach(side => {
         const container = document.getElementById(`${side}-hero-grid`);
@@ -135,6 +164,15 @@ window.handleSimulation = () => {
     const setup = {
         atk: { troops: { inf: parseFloat(document.getElementById('atk-inf').value)||0, cav: parseFloat(document.getElementById('atk-cav').value)||0, arc: parseFloat(document.getElementById('atk-arc').value)||0 }, tier: parseInt(document.getElementById('atk-tier').value), tg: parseInt(document.getElementById('atk-tg').value), stats: getStats('atk'), heroes: state.atk.heroes },
         def: { troops: { inf: parseFloat(document.getElementById('def-inf').value)||0, cav: parseFloat(document.getElementById('def-cav').value)||0, arc: parseFloat(document.getElementById('def-arc').value)||0 }, tier: parseInt(document.getElementById('def-tier').value), tg: parseInt(document.getElementById('def-tg').value), stats: getStats('def'), heroes: state.def.heroes }
+    };
+    const collect = (side) => {
+        return Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
+            tier: parseInt(el.querySelector('.batch-tier').value),
+            tg: parseInt(el.querySelector('.batch-tg').value),
+            inf: parseFloat(el.querySelector('.batch-inf').value) || 0,
+            cav: parseFloat(el.querySelector('.batch-cav').value) || 0,
+            arc: parseFloat(el.querySelector('.batch-arc').value) || 0
+        }));
     };
     const r = runCombatSim(setup);
     document.getElementById('result-screen').classList.remove('hidden');
