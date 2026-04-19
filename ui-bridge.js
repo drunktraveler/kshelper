@@ -9,38 +9,32 @@ let activeSlot = { side: null, index: null };
 
 function init() {
     const sel = document.getElementById('hero-select');
-    if(sel) {
-        sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => {
-            const o = document.createElement('option'); o.value = n; o.innerText = n; sel.appendChild(o);
-        });
-    }
+    sel.innerHTML = '<option value="None">None</option>';
+    Object.keys(HEROES).sort().forEach(n => {
+        const o = document.createElement('option'); o.value = n; o.innerText = n; sel.appendChild(o);
+    });
 
     const table = document.getElementById('stat-table');
-    if(table) {
-        // Standardized keys to match Engine
-        const categories = [
-            { label: "Attack", key: "att" },
-            { label: "Defense", key: "def" },
-            { label: "Lethality", key: "leth" },
-            { label: "Health", key: "hp" }
-        ];
-        const units = ["Infantry", "Cavalry", "Archer"];
-        
-        units.forEach(u => {
-            categories.forEach(c => {
-                const row = document.createElement('div');
-                row.className = "stat-row";
-                const statKey = `${u.toLowerCase().slice(0,3)}_${c.key}`; // e.g., inf_att, inf_leth
-                row.innerHTML = `
-                    <input type="number" data-side="atk" data-stat="${statKey}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-emerald-400 w-full" value="1000">
-                    <div class="text-[10px] font-black text-slate-500 text-center uppercase w-full">${u} ${c.label}</div>
-                    <input type="number" data-side="def" data-stat="${statKey}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-red-400 text-right w-full" value="1000">
-                `;
-                table.appendChild(row);
-            });
+    const categories = [{ label: "Attack", key: "att" }, { label: "Defense", key: "def" }, { label: "Lethality", key: "leth" }, { label: "Health", key: "hp" }];
+    const units = ["Infantry", "Cavalry", "Archer"];
+    
+    units.forEach(u => {
+        categories.forEach(c => {
+            const row = document.createElement('div');
+            // Strict alignment: grid-cols, items-center, and a fixed height to prevent "stepping"
+            row.className = "grid grid-cols-[1fr_1.5fr_1fr] items-center h-10 px-6 hover:bg-white/5 transition rounded-lg";
+            const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
+            
+            row.innerHTML = `
+                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       class="bg-transparent text-sm font-bold outline-none text-emerald-400 p-0 m-0 border-none focus:ring-0 leading-none" value="1000">
+                <div class="text-[9px] font-black text-slate-500 text-center uppercase whitespace-nowrap m-0 p-0 leading-none">${u} ${c.label}</div>
+                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       class="bg-transparent text-sm font-bold outline-none text-red-400 text-right p-0 m-0 border-none focus:ring-0 leading-none" value="1000">
+            `;
+            table.appendChild(row);
         });
-    }
+    });
     window.updateFormation('atk'); 
     window.updateFormation('def');
     document.querySelectorAll('.stat-row input').forEach(i => window.updateStatColors(i));
@@ -104,17 +98,65 @@ window.updateStatColors = (el) => {
 };
 
 window.openHeroModal = (side, index) => {
-    activeSlot = { side, index }; const h = state[side].heroes[index];
-    document.getElementById('hero-select').value = h.name;
-    const container = document.getElementById('skill-inputs'); container.innerHTML = '';
-    const count = index < 3 ? 3 : 1;
-    for (let i = 1; i <= count; i++) {
+    activeSlot = { side, index };
+    const hData = state[side].heroes[index];
+    const heroSelect = document.getElementById('hero-select');
+    heroSelect.value = hData.name;
+    
+    const container = document.getElementById('skill-inputs');
+    container.innerHTML = '';
+
+    // If a hero is selected, show their specific skills
+    if (hData.name !== "None") {
+        const heroInfo = HEROES[hData.name];
+        // Rules: Leader gets up to 3 skills, Joiner gets exactly 1.
+        const maxSkillsAllowed = (index < 3) ? heroInfo.skills.length : 1;
+
+        for (let i = 0; i < maxSkillsAllowed; i++) {
+            const skill = heroInfo.skills[i];
+            const div = document.createElement('div');
+            div.innerHTML = `
+                <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    <span>${skill.name}</span><span id="lv-${i+1}-disp" class="text-blue-400">${hData['s'+(i+1)]}</span>
+                </div>
+                <input type="range" min="1" max="5" value="${hData['s'+(i+1)]}" class="w-full accent-blue-500" 
+                       oninput="document.getElementById('lv-${i+1}-disp').innerText = this.value">
+            `;
+            container.appendChild(div);
+        }
+    }
+
+    document.getElementById('heroModal').classList.remove('hidden');
+    document.getElementById('heroModal').classList.add('flex');
+};
+
+// Re-render skills when hero dropdown changes in modal
+document.getElementById('hero-select').onchange = (e) => {
+    const tempState = { name: e.target.value, s1: 1, s2: 1, s3: 1 };
+    renderSkillsForModal(activeSlot.index < 3, tempState);
+};
+
+function renderSkillsForModal(isLeader, hData) {
+    const container = document.getElementById('skill-inputs');
+    container.innerHTML = '';
+    if (hData.name === "None") return;
+
+    const heroInfo = HEROES[hData.name];
+    const count = isLeader ? heroInfo.skills.length : 1;
+
+    for (let i = 0; i < count; i++) {
+        const skill = heroInfo.skills[i];
         const div = document.createElement('div');
-        div.innerHTML = `<div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1"><span>Skill ${i}</span><span id="lv-${i}-disp" class="text-blue-400">${h['s'+i]}</span></div><input type="range" min="1" max="5" value="${h['s'+i]}" class="w-full accent-blue-500" oninput="document.getElementById('lv-${i}-disp').innerText = this.value">`;
+        div.innerHTML = `
+            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                <span>${skill.name}</span><span id="lv-${i+1}-disp" class="text-blue-400">1</span>
+            </div>
+            <input type="range" min="1" max="5" value="1" class="w-full accent-blue-500" 
+                   oninput="document.getElementById('lv-${i+1}-disp').innerText = this.value">
+        `;
         container.appendChild(div);
     }
-    document.getElementById('heroModal').classList.remove('hidden'); document.getElementById('heroModal').classList.add('flex');
-};
+}
 
 window.closeHeroModal = () => { document.getElementById('heroModal').classList.remove('flex'); document.getElementById('heroModal').classList.add('hidden'); };
 
@@ -123,6 +165,30 @@ window.saveHeroConfig = () => {
     state[side].heroes[index] = { name: document.getElementById('hero-select').value, s1: parseInt(sliders[0]?.value || 1), s2: parseInt(sliders[1]?.value || 1), s3: parseInt(sliders[2]?.value || 1), star: 5, sub: 0 };
     updateGrids(); window.closeHeroModal();
 };
+
+// --- ICON SUPPORT IN GRID ---
+function updateGrids() {
+    ['atk', 'def'].forEach(side => {
+        const container = document.getElementById(`${side}-hero-grid`);
+        container.innerHTML = '';
+        state[side].heroes.forEach((h, i) => {
+            const div = document.createElement('div');
+            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''} overflow-hidden`;
+            
+            // Logic for Icons
+            if (h.name !== 'None') {
+                // We assume icons are named exactly like the hero, e.g., "Amadeus.png"
+                div.innerHTML = `<img src="./assets/heroes/${h.name}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'">
+                                 <span style="display:none">${h.name[0]}</span>`;
+            } else {
+                div.innerText = (i + 1);
+            }
+
+            div.onclick = () => window.openHeroModal(side, i);
+            container.appendChild(div);
+        });
+    });
+}
 
 function updateGrids() {
     ['atk', 'def'].forEach(side => {
