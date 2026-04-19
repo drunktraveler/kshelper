@@ -1,5 +1,5 @@
-import { UNIT_STATS } from '../units.js';
-import { HEROES } from '../heroes.js';
+import { UNIT_STATS } from './units.js';
+import { HEROES } from './heroes.js';
 
 export function runCombatSim(setup) {
     // 1. Prepare Army Counts
