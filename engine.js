@@ -16,8 +16,8 @@ export function runCombatSim(setup) {
     const m_skill_mults = getMultipliers(setup.atk, atkProc, 'num');
     const e_skill_mults = getMultipliers(setup.def, defProc, 'den');
 
-    const m_widget = Math.pow(1.15, 3);
-    const e_widget = Math.pow(1.15, 3);
+    const m_widget = 0;
+    const e_widget = 0;
 
     let wave = 0;
     while (isAlive(m_cur) && isAlive(e_cur)) {
