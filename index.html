@@ -1,134 +1,45 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kingshot Calculator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; }
-        .glass-card { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1.5rem; }
-        .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.75rem; padding: 0.4rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; font-size: 0.9rem; text-align: center; }
-        .f-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; background: #1e293b; }
-        .f-inf { background: #3b82f6; transition: width 0.4s; }
-        .f-cav { background: #f59e0b; transition: width 0.4s; }
-        .f-arc { background: #10b981; transition: width 0.4s; }
-        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
-        .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
-        .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
-        
-        /* THE ALIGNMENT FIX */
-        .stat-row { display: grid; grid-template-cols: 1fr 1.5fr 1fr; align-items: center; height: 2.2rem; padding: 0 1.5rem; border-radius: 0.5rem; }
-        .stat-row:hover { background: rgba(255,255,255,0.03); }
-        .stat-row input { background: transparent; border: none; outline: none; font-size: 0.875rem; font-weight: 700; width: 100%; margin: 0; padding: 0; height: 100%; }
-        .stat-row div { font-size: 0.65rem; font-weight: 800; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: 0.025em; }
+<style>
+    body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; }
+    .glass-card { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1.5rem; }
+    .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.75rem; padding: 0.4rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; font-size: 0.9rem; text-align: center; }
+    .f-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; background: #1e293b; }
+    .f-inf { background: #3b82f6; transition: width 0.4s; }
+    .f-cav { background: #f59e0b; transition: width 0.4s; }
+    .f-arc { background: #10b981; transition: width 0.4s; }
+    
+    .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
+    .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
+    .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
+    
+    /* THE FIX FOR THE STAT TABLE ALIGNMENT */
+    .stat-row { 
+        display: grid; 
+        grid-template-cols: 1fr 1.5fr 1fr; 
+        align-items: center; 
+        height: 40px; 
+        padding: 0 20px;
+    }
+    .stat-row input { 
+        background: transparent; 
+        border: none; 
+        outline: none; 
+        font-size: 14px; 
+        font-weight: 800; 
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        height: 100%; /* Ensure input takes full height of row for alignment */
+    }
+    .stat-row .category-label { 
+        font-size: 10px; 
+        font-weight: 900; 
+        color: #64748b; 
+        text-align: center; 
+        text-transform: uppercase; 
+        white-space: nowrap;
+        pointer-events: none;
+    }
 
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
-    </style>
-</head>
-<body class="p-4 md:p-8">
-    <div class="max-w-5xl mx-auto space-y-6">
-        <header class="flex justify-between items-center mb-8">
-            <h1 class="text-xl font-black text-blue-500 uppercase tracking-tighter">Kingshot Calculator</h1>
-            <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold uppercase">
-                <button class="px-4 py-2 bg-blue-600 rounded-lg">Battle</button>
-                <button class="px-4 py-2 text-slate-500 hover:text-slate-300">Formation</button>
-            </div>
-        </header>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Attacker Card -->
-            <div class="glass-card p-6 border-l-4 border-emerald-500/30">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Command</span>
-                    <div class="flex gap-2">
-                        <select id="atk-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
-                        <select id="atk-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-3 mb-4">
-                    <input type="number" id="atk-inf" oninput="window.updateFormation('atk')" class="input-dark font-bold text-blue-400" value="500000">
-                    <input type="number" id="atk-cav" oninput="window.updateFormation('atk')" class="input-dark font-bold text-amber-400" value="200000">
-                    <input type="number" id="atk-arc" oninput="window.updateFormation('atk')" class="input-dark font-bold text-emerald-400" value="300000">
-                </div>
-                <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-                <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                    <span id="atk-inf-pct">0%</span><span id="atk-cav-pct">0%</span><span id="atk-arc-pct">0%</span>
-                </div>
-                <div class="flex gap-2" id="atk-hero-grid"></div>
-            </div>
-
-            <!-- Defender Card -->
-            <div class="glass-card p-6 border-r-4 border-red-500/30">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Command</span>
-                    <div class="flex gap-2">
-                        <select id="def-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
-                        <select id="def-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-3 mb-4">
-                    <input type="number" id="def-inf" oninput="window.updateFormation('def')" class="input-dark font-bold text-blue-400" value="500000">
-                    <input type="number" id="def-cav" oninput="window.updateFormation('def')" class="input-dark font-bold text-amber-400" value="200000">
-                    <input type="number" id="def-arc" oninput="window.updateFormation('def')" class="input-dark font-bold text-emerald-400" value="300000">
-                </div>
-                <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-                <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                    <span id="def-inf-pct">0%</span><span id="def-cav-pct">0%</span><span id="def-arc-pct">0%</span>
-                </div>
-                <div class="flex gap-2" id="def-hero-grid"></div>
-            </div>
-        </div>
-
-        <div class="max-w-2xl mx-auto space-y-4">
-            <div class="glass-card overflow-hidden">
-                <div class="grid grid-cols-3 bg-slate-900/80 py-2 px-8 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    <span>Atk %</span><span class="text-center">Category</span><span class="text-right">Def %</span>
-                </div>
-                <div id="stat-table" class="p-2 space-y-0"></div>
-            </div>
-            <button onclick="window.handleSimulation()" class="w-full bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">
-                Run Simulation
-            </button>
-        </div>
-
-        <div id="result-screen" class="hidden max-w-2xl mx-auto">
-            <div class="glass-card p-8 border-t-4 border-blue-500">
-                <div class="flex justify-between items-start mb-8">
-                    <div>
-                        <h2 class="text-2xl font-black uppercase tracking-tight">Battle Analysis</h2>
-                        <p class="text-slate-500 text-xs font-bold" id="result-waves"></p>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-12 mb-8">
-                    <div>
-                        <p class="text-[10px] font-black uppercase text-emerald-500 border-b border-emerald-500/20 pb-1 mb-4">Attacker survivors</p>
-                        <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
-                        <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
-                    </div>
-                    <div>
-                        <p class="text-[10px] font-black uppercase text-red-500 border-b border-red-500/20 pb-1 mb-4 text-right">Defender survivors</p>
-                        <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
-                        <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal -->
-    <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-        <div class="bg-slate-900 w-full max-w-xs rounded-3xl p-8 border border-slate-800 relative">
-            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest">Hero Config</h3>
-            <div class="space-y-6">
-                <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
-                <div id="skill-inputs" class="space-y-4"></div>
-                <button onclick="window.saveHeroConfig()" class="w-full bg-blue-600 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Update Lineup</button>
-            </div>
-        </div>
-    </div>
-    <script type="module" src="./ui-bridge.js"></script>
-</body>
-</html>
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+</style>
