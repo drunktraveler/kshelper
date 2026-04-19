@@ -39,6 +39,7 @@ export function runCombatSim(setup) {
             ['infantry', 'cavalry', 'archers'].forEach(u_l => {
                 const u = u_l.slice(0, 3);
                 if (s_cur[u] <= 0) return;
+
                 const b = UNITS[u_l][s.tier][s.tg];
                 const tb = UNITS[tf_l][t.tier][t.tg];
 
@@ -47,42 +48,76 @@ export function runCombatSim(setup) {
                 let df = tb[1] * (1 + (t.stats[`${tf_s}_def`] + t_mod_obj.star) / 100);
                 let hp = tb[3] * (1 + t.stats[`${tf_s}_hp`] / 100);
 
-                let tm = ((u==='inf'&&tf_s==='cav')||(u==='cav'&&tf_s==='arc')||(u==='arc'&&tf_s==='inf')) ? 1.1 : 1.0;
-                let abil = u==='arc'?1.21 : (u==='cav'?1.1 : (tf_s==='inf'?0.91:1.0));
+                // --- 1. ALWAYS ACTIVE (Master Brawler / Charge / Ranged Strike) ---
+                let type_m = 1.0;
+                if ((u === 'inf' && tf_s === 'cav') || (u === 'cav' && tf_s === 'arc') || (u === 'arc' && tf_s === 'inf')) {
+                    type_m = 1.1; 
+                }
+
+                // --- 2. TIER 7+ ABILITIES ---
+                let tier_abil = 1.0;
+                if (s.tier >= 7) {
+                    if (u === 'arc') tier_abil *= 1.1; // Volley (+10% Dmg EV)
+                    if (tf_s === 'inf' && u === 'cav') df *= 1.1; // Bands of Steel (+10% Def vs Cav)
+                }
+
+                // --- 3. TRUE GOLD ABILITIES (TG5 replaces TG3) ---
+                let tg_abil = 1.0;
+                if (u === 'arc') {
+                    if (s.tg >= 5) tg_abil *= 1.15; // Howling Wind lv2 (+15% Dmg EV)
+                    else if (s.tg >= 3) tg_abil *= 1.10; // Howling Wind lv1 (+10% Dmg EV)
+                }
+                if (u === 'cav') {
+                    if (s.tg >= 5) tg_abil *= 1.15; // Assault Lance lv2 (+15% Dmg EV)
+                    else if (s.tg >= 3) tg_abil *= 1.10; // Assault Lance lv1 (+10% Dmg EV)
+                }
+                if (tf_s === 'inf') {
+                    if (t.tg >= 5) tg_abil *= 0.865; // Unyielding Shield lv2 (13.5% Mit EV)
+                    else if (t.tg >= 3) tg_abil *= 0.91; // Unyielding Shield lv1 (9% Mit EV)
+                }
 
                 const s_mod = (s_mod_obj.units[u] || 1) * s_wid;
                 const t_mod = (t_mod_obj.units[tf_s] || 1) * t_wid;
 
-                if (u === 'cav' && t_cur['arc'] > 1 && tf_s !== 'arc') {
-                    const f_dmg = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * tm * abil * 0.8 * s_mod) / (df * hp * 100 * t_mod);
+                // --- 4. CAVALRY BYPASS (Ambusher T7+) ---
+                if (u === 'cav' && t_cur['arc'] > 1 && tf_s !== 'arc' && s.tier >= 7) {
+                    // Front Damage (80%)
+                    const f_dmg = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * type_m * tier_abil * tg_abil * 0.8 * s_mod) / (df * hp * 100 * t_mod);
                     pending.push({ dict: t_cur, unit: tf_s, amt: f_dmg });
+                    
+                    // Backline Damage (20%)
                     const back_b = UNITS['archers'][t.tier][t.tg];
-                    const b_dmg = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * 1.1 * abil * 0.2 * s_mod) / ( (back_b[1]*(1+t.stats['arc_def']/100)) * (back_b[3]*(1+t.stats['arc_hp']/100)) * 100 * (t_mod_obj.units['arc']*t_wid) );
+                    const b_df = back_b[1] * (1 + (t.stats['arc_def'] + t_mod_obj.star) / 100);
+                    const b_hp = back_b[3] * (1 + t.stats['arc_hp'] / 100);
+                    const b_dmg = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * 1.1 * tier_abil * tg_abil * 0.2 * s_mod) / (b_df * b_hp * 100 * (t_mod_obj.units['arc'] * t_wid));
                     pending.push({ dict: t_cur, unit: 'arc', amt: b_dmg });
                 } else {
-                    if (u === 'cav' && tf_s === 'arc') abil *= 0.8;
-                    const kills = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * tm * abil * s_mod) / (df * hp * 100 * t_mod);
+                    if (u === 'cav' && tf_s === 'arc') tier_abil *= 0.8; // Logic adjustment for Cav vs Arch
+                    const kills = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * type_m * tier_abil * tg_abil * s_mod) / (df * hp * 100 * t_mod);
                     pending.push({ dict: t_cur, unit: tf_s, amt: kills });
                 }
             });
         });
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-
-    return { 
-        m_cur, e_cur, wave, 
-        atk_mults: m_skill_mults.logs, 
-        def_mults: e_skill_mults.logs 
-    };
+    return { m_cur, e_cur, wave, atk_mults: m_skill_mults.logs, def_mults: e_skill_mults.logs };
 }
 
 function getMultipliers(side, type) {
     let pools = {}, starBonus = 0, logs = [];
-    if (side.tg >= 3) {
-        logs.push("TG3 Passive: Infantry Block (9% Mit)");
-        logs.push("TG3 Passive: Cavalry Double Strike (10% Dmg)");
-        logs.push("TG3 Passive: Archer Deadly Aim (21% Dmg)");
+    
+    // --- Log Troop Abilities ---
+    if (side.tier >= 7) {
+        logs.push(`Tier ${side.tier}: Infantry Bands of Steel Active`);
+        logs.push(`Tier ${side.tier}: Cavalry Ambusher (20% Bypass) Active`);
+        logs.push(`Tier ${side.tier}: Archer Volley (+10% Dmg) Active`);
     }
+    if (side.tg >= 5) {
+        logs.push(`TG5: Enhanced Shield/Lance/Wind (Lv2) Active`);
+    } else if (side.tg >= 3) {
+        logs.push(`TG3: Shield/Lance/Wind (Lv1) Active`);
+    }
+
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
         const d = HEROES[h.name];
@@ -97,9 +132,10 @@ function getMultipliers(side, type) {
                 const val = Array.isArray(ev) ? ev[idIdx] : ev;
                 pools[id] = (pools[id] || 0) + val;
             });
-            logs.push(`${h.name}: ${s.name} (EV: +${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
+
     let finalMult = 1.0;
     Object.values(pools).forEach(sum => finalMult *= (1 + sum));
     return { units: { inf: finalMult, cav: finalMult, arc: finalMult }, star: starBonus, logs };
