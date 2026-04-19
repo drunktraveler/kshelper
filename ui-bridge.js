@@ -44,6 +44,32 @@ function init() {
     window.updateFormation('atk'); window.updateFormation('def'); updateGrids();
 }
 
+window.syncTroops = (side, master) => {
+    const inf = document.getElementById(`${side}-inf`);
+    const cav = document.getElementById(`${side}-cav`);
+    const arc = document.getElementById(`${side}-arc`);
+    const infP = document.getElementById(`${side}-inf-p`);
+    const cavP = document.getElementById(`${side}-cav-p`);
+    const arcP = document.getElementById(`${side}-arc-p`);
+
+    if (master === 'count') {
+        const total = parseFloat(inf.value || 0) + parseFloat(cav.value || 0) + parseFloat(arc.value || 0);
+        if (total > 0) {
+            infP.value = ((inf.value / total) * 100).toFixed(1);
+            cavP.value = ((cav.value / total) * 100).toFixed(1);
+            arcP.value = ((arc.value / total) * 100).toFixed(1);
+        }
+    } else {
+        const total = parseFloat(inf.value || 0) + parseFloat(cav.value || 0) + parseFloat(arc.value || 0);
+        const currentTotalP = parseFloat(infP.value || 0) + parseFloat(cavP.value || 0) + parseFloat(arcP.value || 0);
+        // If percentages are changed, we keep the existing total army size
+        inf.value = Math.round((parseFloat(infP.value || 0) / 100) * total);
+        cav.value = Math.round((parseFloat(cavP.value || 0) / 100) * total);
+        arc.value = Math.round((parseFloat(arcP.value || 0) / 100) * total);
+    }
+    window.updateFormation(side);
+};
+
 window.updateFormation = (side) => {
     const inf = parseFloat(document.getElementById(`${side}-inf`).value) || 0;
     const cav = parseFloat(document.getElementById(`${side}-cav`).value) || 0;
@@ -62,9 +88,16 @@ window.updateFormation = (side) => {
 
 window.updateStatColors = (el) => {
     const row = el.closest('.stat-row'), a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
-    const vA = parseFloat(a.value), vD = parseFloat(d.value);
-    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#475569' : '#94a3b8');
-    d.style.color = vD > vA ? '#ef4444' : (vD < vA ? '#475569' : '#94a3b8');
+    const vA = parseFloat(a.value) || 0, vD = parseFloat(d.value) || 0;
+    
+    // Logic: Higher Green, Lower Red, Equal Gray
+    if (vA > vD) {
+        a.style.color = '#10b981'; d.style.color = '#ef4444';
+    } else if (vD > vA) {
+        a.style.color = '#ef4444'; d.style.color = '#10b981';
+    } else {
+        a.style.color = '#94a3b8'; d.style.color = '#94a3b8';
+    }
 };
 
 window.openHeroModal = (side, index) => {
@@ -121,7 +154,38 @@ window.handleSimulation = () => {
         }
     };
     const r = runCombatSim(setup);
-    alert(`Battle Over!\nWaves: ${r.wave}\nAttacker Survivors: ${Math.round(r.m_cur.inf+r.m_cur.cav+r.m_cur.arc).toLocaleString()}\nDefender Survivors: ${Math.round(r.e_cur.inf+r.e_cur.cav+r.e_cur.arc).toLocaleString()}`);
+
+    // Display result screen
+    const screen = document.getElementById('result-screen');
+    screen.classList.remove('hidden');
+    
+    document.getElementById('result-waves').innerText = `Simulation complete after ${r.wave} waves`;
+    
+    const atkTotal = Math.round(r.m_cur.inf + r.m_cur.cav + r.m_cur.arc);
+    const defTotal = Math.round(r.e_cur.inf + r.e_cur.cav + r.e_cur.arc);
+    
+    document.getElementById('res-atk-total').innerText = atkTotal.toLocaleString();
+    document.getElementById('res-def-total').innerText = defTotal.toLocaleString();
+    
+    document.getElementById('res-atk-details').innerHTML = `
+        Infantry: ${Math.round(r.m_cur.inf).toLocaleString()}<br>
+        Cavalry: ${Math.round(r.m_cur.cav).toLocaleString()}<br>
+        Archer: ${Math.round(r.m_cur.arc).toLocaleString()}
+    `;
+    
+    document.getElementById('res-def-details').innerHTML = `
+        Infantry: ${Math.round(r.e_cur.inf).toLocaleString()}<br>
+        Cavalry: ${Math.round(r.e_cur.cav).toLocaleString()}<br>
+        Archer: ${Math.round(r.e_cur.arc).toLocaleString()}
+    `;
+    
+    // Smooth scroll to result
+    screen.scrollIntoView({ behavior: 'smooth' });
+};
+
+window.toggleDetails = () => {
+    const d = document.getElementById('battle-details');
+    d.classList.toggle('hidden');
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') window.closeHeroModal(); });
