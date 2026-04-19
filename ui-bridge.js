@@ -41,7 +41,10 @@ function init() {
             });
         });
     }
-    window.updateFormation('atk'); window.updateFormation('def'); updateGrids();
+    window.updateFormation('atk'); 
+    window.updateFormation('def');
+    document.querySelectorAll('.stat-row input').forEach(i => window.updateStatColors(i));
+    updateGrids();
 }
 
 window.syncTroops = (side, master) => {
