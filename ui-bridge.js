@@ -21,12 +21,21 @@ function init() {
     units.forEach(u => {
         categories.forEach(c => {
             const row = document.createElement('div');
-            row.className = "stat-row";
+            // INLINE STYLES to bypass CSS loading issues
+            row.style.display = "grid";
+            row.style.gridTemplateColumns = "1fr 1.5fr 1fr";
+            row.style.alignItems = "center";
+            row.style.height = "32px";
+            row.style.padding = "0 20px";
+            row.className = "stat-row-container"; // Reference class for hover effects
+
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
-                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" class="text-emerald-400" value="1000">
-                <div>${u} ${c.label}</div>
-                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" class="text-red-400 text-right" value="1000">
+                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800;" value="1000">
+                <div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase;">${u} ${c.label}</div>
+                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; text-align:right;" value="1000">
             `;
             table.appendChild(row);
         });
