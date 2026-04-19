@@ -1,145 +1,69 @@
-import { UNIT_STATS } from './units.js';
+import { UNITS } from './units.js';
 import { HEROES } from './heroes.js';
+import { GROWTH_TEMPLATES } from './constants.js';
 
 export function runCombatSim(setup) {
-    // 1. Prepare Army Counts
-    let m_cur = { inf: setup.atk.troops.inf, cav: setup.atk.troops.cav, arc: setup.atk.troops.arc };
-    let e_cur = { inf: setup.def.troops.inf, cav: setup.def.troops.cav, arc: setup.def.troops.arc };
+    let m_cur = { ...setup.atk.troops };
+    let e_cur = { ...setup.def.troops };
+    const sq_min = Math.sqrt(Math.min(Object.values(m_cur).reduce((a, b) => a + b), Object.values(e_cur).reduce((a, b) => a + b)));
 
-    const sq_min = Math.sqrt(Math.min(
-        Object.values(m_cur).reduce((a, b) => a + b, 0),
-        Object.values(e_cur).reduce((a, b) => a + b, 0)
-    ));
-
-    // 2. Pre-calculate Hero Skill Multipliers
-    const m_skill_mults = getSkillMultipliers(setup.atk.heroes, 'num');
-    const e_skill_mults = getSkillMultipliers(setup.def.heroes, 'den');
-
-    // 3. Widget Multiplier (Original logic: 1.15 ^ active_widgets)
-    const m_widget = Math.pow(1.15, setup.settings.atkWidgets || 3);
-    const e_widget = Math.pow(1.15, setup.settings.defWidgets || 3);
+    const m_skill_mults = getMultipliers(setup.atk, 'num');
+    const e_skill_mults = getMultipliers(setup.def, 'den');
 
     let wave = 0;
     while (wave < 150 && isAlive(m_cur) && isAlive(e_cur)) {
         wave++;
-        
-        // Find current frontline unit
         const m_f = ['inf', 'cav', 'arc'].find(u => m_cur[u] > 1) || 'arc';
         const e_f = ['inf', 'cav', 'arc'].find(u => e_cur[u] > 1) || 'arc';
-
         let pending = [];
 
-        // Calculate for both sides
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
-            const src_cur = side === 'atk' ? m_cur : e_cur;
-            const tgt_cur = side === 'atk' ? e_cur : m_cur;
-            const src_setup = setup[side];
-            const tgt_setup = setup[target];
-            const s_f = side === 'atk' ? m_f : e_f;
-            const t_f = side === 'atk' ? e_f : m_f;
-            
-            const s_mults = side === 'atk' ? m_skill_mults : e_skill_mults;
-            const t_mults = side === 'atk' ? e_skill_mults : m_skill_mults;
-            const s_wid = side === 'atk' ? m_widget : e_widget;
-            const t_wid = side === 'atk' ? e_widget : m_widget;
+            const s = setup[side], t = setup[target];
+            const s_cur = (side === 'atk' ? m_cur : e_cur), t_cur = (side === 'atk' ? e_cur : m_cur);
+            const sf = (side === 'atk' ? m_f : e_f), tf = (side === 'atk' ? e_f : m_f);
+            const s_mod = (side === 'atk' ? m_skill_mults : e_skill_mults), t_mod = (side === 'atk' ? e_skill_mults : m_skill_mults);
 
-            ['inf', 'cav', 'arc'].forEach(u_type => {
-                if (src_cur[u_type] <= 0) return;
+            ['inf', 'cav', 'arc'].forEach(u => {
+                if (s_cur[u] <= 0) return;
+                const b = UNITS[u === 'arc' ? 'archers' : u][s.tier][s.tg];
+                const tb = UNITS[tf === 'arc' ? 'archers' : tf][t.tier][t.tg];
 
-                // Lookup Base Stats
-                const base = UNIT_STATS[u_type === 'arc' ? 'archers' : u_type][src_setup.tier][src_setup.tg];
-                const t_base = UNIT_STATS[t_f === 'arc' ? 'archers' : t_f][tgt_setup.tier][tgt_setup.tg];
+                let atk = b[0] * (1 + (s.stats[`${u}_att`] + s_mod.star) / 100);
+                let leth = b[2] * (1 + s.stats[`${u}_leth`] / 100);
+                let df = tb[1] * (1 + (t.stats[`${tf}_def`] + t_mod.star) / 100);
+                let hp = tb[3] * (1 + t.stats[`${tf}_hp`] / 100);
 
-                // Base Power Calculation
-                let atk = base.atk * (1 + src_setup.stats[`${u_type}_att`] / 100);
-                let leth = base.leth * (1 + src_setup.stats[`${u_type}_leth`] / 100);
-                let df = t_base.def * (1 + tgt_setup.stats[`${t_f}_def`] / 100);
-                let hp = t_base.hp * (1 + tgt_setup.stats[`${t_f}_hp`] / 100);
+                let tm = ((u==='inf'&&tf==='cav')||(u==='cav'&&tf==='arc')||(u==='arc'&&tf==='inf')) ? 1.1 : 1.0;
+                let abil = u==='arc'?1.21 : (u==='cav'?1.1 : (tf==='inf'?0.91:1.0));
 
-                // Type Matchups (1.1x)
-                let type_m = 1.0;
-                if ((u_type === 'inf' && t_f === 'cav') || (u_type === 'cav' && t_f === 'arc') || (u_type === 'arc' && t_f === 'inf')) {
-                    type_m = 1.1;
-                }
-                if (t_f === 'inf' && u_type === 'cav') df *= 1.1;
-
-                // TG3 Abilities EV
-                let abil_m = 1.0;
-                if (u_type === 'arc') abil_m *= (1.1 * 1.1); // Double Miss
-                if (u_type === 'cav') abil_m *= 1.1; // Double
-                if (t_f === 'inf') abil_m *= 0.91; // Block EV
-
-                // Skill Multipliers (summed by ID then multiplied)
-                const s_mod = (s_mults[u_type] || 1.0) * s_wid;
-                const t_mod = (t_mults[t_f] || 1.0) * t_wid;
-
-                // Cavalry Bypass Logic
-                if (u_type === 'cav' && tgt_cur['arc'] > 1 && t_f !== 'arc') {
-                    // 80% Front
-                    const f_dmg = (Math.sqrt(src_cur[u_type]) * sq_min * atk * leth * type_m * abil_m * 0.8 * s_mod) / (df * hp * 100 * t_mod);
-                    pending.push({ dict: tgt_cur, unit: t_f, amt: f_dmg });
-                    
-                    // 20% Back (Archers)
-                    const a_base = UNIT_STATS['archers'][tgt_setup.tier][tgt_setup.tg];
-                    const a_df = a_base.def * (1 + tgt_setup.stats['arc_def'] / 100);
-                    const a_hp = a_base.hp * (1 + tgt_setup.stats['arc_hp'] / 100);
-                    const a_mod = (t_mults['arc'] || 1.0) * t_wid;
-                    const b_dmg = (Math.sqrt(src_cur[u_type]) * sq_min * atk * leth * 1.1 * abil_m * 0.2 * s_mod) / (a_df * a_hp * 100 * a_mod);
-                    pending.push({ dict: tgt_cur, unit: 'arc', amt: b_dmg });
-                } else {
-                    if (u_type === 'cav' && t_f === 'arc') abil_m *= 0.8; // Miss logic
-                    const kills = (Math.sqrt(src_cur[u_type]) * sq_min * atk * leth * type_m * abil_m * s_mod) / (df * hp * 100 * t_mod);
-                    pending.push({ dict: tgt_cur, unit: t_f, amt: kills });
-                }
+                const kills = (Math.sqrt(s_cur[u]) * sq_min * atk * leth * tm * abil * s_mod[u]) / (df * hp * 100 * t_mod[tf]);
+                pending.push({ dict: t_cur, unit: tf, amt: kills });
             });
         });
-
-        // Apply damage simultaneously
-        pending.forEach(p => {
-            p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt);
-        });
+        pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-
     return { m_cur, e_cur, wave };
 }
 
-function isAlive(army) {
-    return (army.inf + army.cav + army.arc) > 1;
-}
-
-function getSkillMultipliers(heroSelections, groupType) {
-    // groupType: 'num' for Attacker, 'den' for Defender
-    let pools = {}; // { id: sum }
-    
-    heroSelections.forEach((h, idx) => {
+function getMultipliers(side, type) {
+    let pools = {}, starBonus = 0;
+    side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
-        const data = HEROES[h.name];
-        const activeSkills = idx < 3 ? data.skills : [data.skills[0]];
-
-        activeSkills.forEach((skill, sIdx) => {
-            if (skill.group !== groupType) return;
-            
-            const level = h[`s${sIdx + 1}`];
-            const X = skill.values[level - 1];
-            
-            // Expected Value Calculation
-            const p = skill.getChance(X);
-            const m = skill.getMagnitude(X);
-            const ev = skill.duration === 0 ? (p * m) : (1 - Math.pow(1 - p, skill.duration)) * m;
-
-            // Simple additive stacking by ID
-            skill.ids.forEach(id => {
-                pools[id] = (pools[id] || 0) + ev;
+        const d = HEROES[h.name];
+        starBonus += GROWTH_TEMPLATES[d.template][(h.star || 5) * 6 + (h.sub || 0)];
+        const skills = i < 3 ? d.skills : [d.skills[0]];
+        skills.forEach((s, si) => {
+            if (s.group !== type) return;
+            const x = s.values[h[`s${si+1}`]-1];
+            const ev = (s.duration === 0 ? s.getChance(x) * s.getMagnitude(x) : (1 - Math.pow(1-s.getChance(x), s.duration)) * s.getMagnitude(x));
+            s.ids.forEach((id, ii) => {
+                const val = Array.isArray(ev) ? ev[ii] : ev;
+                pools[id] = (pools[id] || 0) + val;
             });
         });
     });
-
-    // Multiplicative combine: (1 + id1_sum) * (1 + id2_sum)...
-    let finalMult = 1.0;
-    Object.values(pools).forEach(sum => {
-        finalMult *= (1 + sum);
-    });
-    
-    // Return same mult for all units (for now, unless skill targets specific types)
-    return { inf: finalMult, cav: finalMult, arc: finalMult };
+    let m = 1.0; Object.values(pools).forEach(v => m *= (1 + v));
+    return { inf: m, cav: m, arc: m, star: starBonus };
 }
+
+function isAlive(a) { return (a.inf + a.cav + a.arc) > 1; }
