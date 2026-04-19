@@ -151,6 +151,17 @@ window.handleSimulation = () => {
     document.getElementById('res-def-total').innerText = Math.round(r.e_cur.inf+r.e_cur.cav+r.e_cur.arc).toLocaleString();
     document.getElementById('res-atk-details').innerHTML = `Infantry: ${Math.round(r.m_cur.inf).toLocaleString()}<br>Cavalry: ${Math.round(r.m_cur.cav).toLocaleString()}<br>Archer: ${Math.round(r.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerHTML = `Infantry: ${Math.round(r.e_cur.inf).toLocaleString()}<br>Cavalry: ${Math.round(r.e_cur.cav).toLocaleString()}<br>Archer: ${Math.round(r.e_cur.arc).toLocaleString()}`;
+
+    // POPULATE ADVANCED LOGS
+    const logContainer = document.getElementById('battle-details');
+    let logHTML = `<div style="color:#10b981; font-weight:bold; margin-bottom:5px;">ATTACKER MODIFIERS:</div>`;
+    r.atk_mults.forEach(log => logHTML += `<div>• ${log}</div>`);
+    
+    logHTML += `<div style="color:#ef4444; font-weight:bold; margin-top:15px; margin-bottom:5px;">DEFENDER MODIFIERS:</div>`;
+    r.def_mults.forEach(log => logHTML += `<div>• ${log}</div>`);
+
+    logContainer.innerHTML = logHTML;
+    
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
