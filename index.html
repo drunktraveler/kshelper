@@ -63,16 +63,18 @@
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Attacker Card -->
+            <!-- Attacker -->
             <div class="glass-card p-6 border-l-4 border-emerald-500/30">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Command</span>
+                <div class="flex justify-between items-center mb-6">
+                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Rally Composition</span>
+                    <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Add Player</button>
+                </div>
                     <div class="flex gap-2">
                         <select id="atk-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option><option value="8">T8</option><option value="7">T7</option><option value="6">T6</option><option value="5">T5</option><option value="4">T4</option><option value="3">T3</option><option value="2">T2</option><option value="1">T1</option></select>
                         <select id="atk-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="4">TG4</option><option value="3" selected>TG3</option><option value="2">TG2</option><option value="1">TG1</option><option value="0">TG0</option></select>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3 mb-4">
+                <div id="atk-batch-container" class="space-y-4 mb-6">
                     <input type="number" id="atk-inf" oninput="window.updateFormation('atk')" class="input-dark font-bold text-blue-400" value="500000">
                     <input type="number" id="atk-cav" oninput="window.updateFormation('atk')" class="input-dark font-bold text-amber-400" value="200000">
                     <input type="number" id="atk-arc" oninput="window.updateFormation('atk')" class="input-dark font-bold text-emerald-400" value="300000">
@@ -86,14 +88,16 @@
 
             <!-- Defender Card -->
             <div class="glass-card p-6 border-r-4 border-red-500/30">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Command</span>
+                <div class="flex justify-between items-center mb-6">
+                    <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Garrison Batches</span>
+                    <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Add Player</button>
+                </div>
                     <div class="flex gap-2">
                         <select id="def-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option><option value="8">T8</option><option value="7">T7</option><option value="6">T6</option><option value="5">T5</option><option value="4">T4</option><option value="3">T3</option><option value="2">T2</option><option value="1">T1</option></select>
                         <select id="def-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="4">TG4</option><option value="3" selected>TG3</option><option value="2">TG2</option><option value="1">TG1</option><option value="0">TG0</option></select>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3 mb-4">
+                <div id="def-batch-container" class="space-y-4 mb-6"></div>
                     <input type="number" id="def-inf" oninput="window.updateFormation('def')" class="input-dark font-bold text-blue-400" value="500000">
                     <input type="number" id="def-cav" oninput="window.updateFormation('def')" class="input-dark font-bold text-amber-400" value="200000">
                     <input type="number" id="def-arc" oninput="window.updateFormation('def')" class="input-dark font-bold text-emerald-400" value="300000">
