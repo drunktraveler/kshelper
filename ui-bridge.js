@@ -128,7 +128,7 @@ function updateGrids() {
             const div = document.createElement('div');
             div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''} overflow-hidden`;
             if (h.name !== 'None') {
-                div.innerHTML = `<img src="./assets/heroes/${h.name}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span style="display:none">${h.name[0]}</span>`;
+                div.innerHTML = `<img src="./assets/${h.name}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span style="display:none">${h.name[0]}</span>`;
             } else {
                 div.innerText = (i + 1);
             }
