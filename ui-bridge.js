@@ -21,32 +21,30 @@ function init() {
     units.forEach(u => {
         categories.forEach(c => {
             const row = document.createElement('div');
-            // INLINE STYLES to bypass CSS loading issues
-            row.style.display = "grid";
-            row.style.gridTemplateColumns = "1fr 1.5fr 1fr";
+            // FLEXBOX styling for perfect alignment
+            row.style.display = "flex";
             row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
             row.style.height = "32px";
-            row.style.padding = "0 20px";
-            row.className = "stat-row-container"; // Reference class for hover effects
+            row.style.padding = "0 30px";
+            row.className = "stat-row-container";
 
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
                 <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800;" value="1000">
-                <div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase;">${u} ${c.label}</div>
+                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:60px;">
+                <div style="font-size:9px; font-weight:900; color:#64748b; text-transform:uppercase; flex-grow:1; text-align:center;">${u} ${c.label}</div>
                 <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; text-align:right;" value="1000">
+                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:60px; text-align:right;">
             `;
+            // Set default value
+            row.querySelectorAll('input').forEach(i => i.value = 1000);
             table.appendChild(row);
         });
     });
 
-    document.getElementById('hero-select').addEventListener('change', (e) => {
-        renderSkillsInModal(e.target.value, activeSlot.index);
-    });
-
-    window.updateFormation('atk');
-    window.updateFormation('def');
+    document.getElementById('hero-select').addEventListener('change', (e) => renderSkillsInModal(e.target.value, activeSlot.index));
+    window.updateFormation('atk'); window.updateFormation('def'); 
     document.querySelectorAll('#stat-table input').forEach(i => window.updateStatColors(i));
     updateGrids();
 }
@@ -58,7 +56,6 @@ window.updateFormation = (side) => {
     const total = inf + cav + arc;
     const bar = document.getElementById(`${side}-f-bar`);
     if (total === 0) return;
-    
     if(bar) {
         bar.children[0].style.width = (inf/total*100)+'%';
         bar.children[1].style.width = (cav/total*100)+'%';
@@ -70,66 +67,50 @@ window.updateFormation = (side) => {
 };
 
 window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row'), a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
+    const row = el.closest('div[style*="display: flex"]');
+    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
     const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
-    if (vA > vD) { a.style.color = '#10b981'; d.style.color = '#ef4444'; }
-    else if (vD > vA) { a.style.color = '#ef4444'; d.style.color = '#10b981'; }
-    else { a.style.color = '#64748b'; d.style.color = '#64748b'; }
+    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
+    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
 };
 
 window.openHeroModal = (side, index) => {
-    activeSlot = { side, index };
-    const h = state[side].heroes[index];
+    activeSlot = { side, index }; const h = state[side].heroes[index];
     document.getElementById('hero-select').value = h.name;
     renderSkillsInModal(h.name, index, h);
-    document.getElementById('heroModal').classList.remove('hidden');
-    document.getElementById('heroModal').classList.add('flex');
+    document.getElementById('heroModal').classList.replace('hidden', 'flex');
 };
 
-function renderSkillsInModal(heroName, slotIndex, currentData = null) {
-    const container = document.getElementById('skill-inputs');
-    container.innerHTML = '';
-    if (heroName === "None") return;
-    const heroInfo = HEROES[heroName];
-    const maxSkills = (slotIndex < 3) ? heroInfo.skills.length : 1;
-    for (let i = 0; i < maxSkills; i++) {
-        const skill = heroInfo.skills[i];
-        const lv = currentData ? currentData['s'+(i+1)] : 1;
+function renderSkillsInModal(name, slot, data = null) {
+    const container = document.getElementById('skill-inputs'); container.innerHTML = '';
+    if (name === "None") return;
+    const hInfo = HEROES[name];
+    const max = (slot < 3) ? hInfo.skills.length : 1;
+    for (let i = 0; i < max; i++) {
+        const lv = data ? data['s'+(i+1)] : 1;
         const div = document.createElement('div');
-        div.innerHTML = `<div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1"><span>${skill.name}</span><span id="lv-${i+1}-disp" class="text-blue-400">${lv}</span></div>
+        div.innerHTML = `<div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1"><span>${hInfo.skills[i].name}</span><span id="lv-${i+1}-disp" class="text-blue-400">${lv}</span></div>
             <input type="range" min="1" max="5" value="${lv}" class="w-full accent-blue-500" oninput="document.getElementById('lv-${i+1}-disp').innerText = this.value">`;
         container.appendChild(div);
     }
 }
 
-window.closeHeroModal = () => document.getElementById('heroModal').classList.add('hidden');
-
 window.saveHeroConfig = () => {
-    const { side, index } = activeSlot;
-    const sliders = document.querySelectorAll('#skill-inputs input');
-    state[side].heroes[index] = {
-        name: document.getElementById('hero-select').value,
-        s1: parseInt(sliders[0]?.value || 1), s2: parseInt(sliders[1]?.value || 1), s3: parseInt(sliders[2]?.value || 1),
-        star: 5, sub: 0
-    };
-    updateGrids(); window.closeHeroModal();
+    const { side, index } = activeSlot; const sliders = document.querySelectorAll('#skill-inputs input');
+    state[side].heroes[index] = { name: document.getElementById('hero-select').value, s1: parseInt(sliders[0]?.value || 1), s2: parseInt(sliders[1]?.value || 1), s3: parseInt(sliders[2]?.value || 1), star: 5, sub: 0 };
+    updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
 function updateGrids() {
     ['atk', 'def'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`);
-        if (!container) return;
+        const container = document.getElementById(`${side}-hero-grid`); if (!container) return;
         container.innerHTML = '';
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
             div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
             if (h.name !== 'None') {
-                // Asset normalization: lowercase hero name to match common asset conventions
-                const imgName = h.name.toLowerCase();
-                div.innerHTML = `<img src="./assets/${imgName}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span style="display:none">${h.name[0]}</span>`;
-            } else {
-                div.innerText = (i + 1);
-            }
+                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span>${h.name[0]}</span>`;
+            } else { div.innerText = (i + 1); }
             div.onclick = () => window.openHeroModal(side, i);
             container.appendChild(div);
         });
@@ -152,18 +133,13 @@ window.handleSimulation = () => {
     document.getElementById('res-atk-details').innerHTML = `Infantry: ${Math.round(r.m_cur.inf).toLocaleString()}<br>Cavalry: ${Math.round(r.m_cur.cav).toLocaleString()}<br>Archer: ${Math.round(r.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerHTML = `Infantry: ${Math.round(r.e_cur.inf).toLocaleString()}<br>Cavalry: ${Math.round(r.e_cur.cav).toLocaleString()}<br>Archer: ${Math.round(r.e_cur.arc).toLocaleString()}`;
 
-    // POPULATE ADVANCED LOGS
-    const logContainer = document.getElementById('battle-details');
-    let logHTML = `<div style="color:#10b981; font-weight:bold; margin-bottom:5px;">ATTACKER MODIFIERS:</div>`;
-    r.atk_mults.forEach(log => logHTML += `<div>• ${log}</div>`);
-    
-    logHTML += `<div style="color:#ef4444; font-weight:bold; margin-top:15px; margin-bottom:5px;">DEFENDER MODIFIERS:</div>`;
-    r.def_mults.forEach(log => logHTML += `<div>• ${log}</div>`);
-
-    logContainer.innerHTML = logHTML;
+    const logBox = document.getElementById('battle-details');
+    logBox.innerHTML = `<div style="color:#10b981; margin-bottom:5px;">[ATTACKER BUFFS]</div>` + r.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
+                       `<div style="color:#ef4444; margin-top:15px; margin-bottom:5px;">[DEFENDER BUFFS]</div>` + r.def_mults.map(l => `<div>• ${l}</div>`).join('');
     
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
-document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') window.closeHeroModal(); });
+window.toggleDetails = () => document.getElementById('battle-details').classList.toggle('hidden');
+document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 document.addEventListener('DOMContentLoaded', init);
