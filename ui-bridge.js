@@ -1,4 +1,4 @@
-import { HEROES } from '../data/heroes.js';
+import { HEROES } from './heroes.js';
 import { runCombatSim } from './engine.js';
 
 let activeSlot = { side: null, index: null };
