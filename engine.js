@@ -83,43 +83,48 @@ export function runCombatSim(setup) {
 }
 
 function getMultipliers(side, type) {
-    let pools = {}, starBonus = 0;
+    let pools = {}, starBonus = 0, logs = [];
+    
+    // Add default troop abilities based on TG level
+    if (side.tg >= 3) {
+        logs.push("TG3 Passive: Infantry Block (9% Mit)");
+        logs.push("TG3 Passive: Cavalry Double Strike (10% Dmg)");
+        logs.push("TG3 Passive: Archer Deadly Aim (21% Dmg)");
+    }
+
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
         const d = HEROES[h.name];
-        if (!d) return;
-
-        // 1. Star Bonus
         const template = GROWTH_TEMPLATES[d.template];
-        if (template) starBonus += template[(h.star * 6) + h.sub] || 0;
-
-        // 2. Skill Logic
+        const bonus = template[(h.star * 6) + h.sub] || 0;
+        starBonus += bonus;
+        
         const skills = (i < 3) ? d.skills : [d.skills[0]];
         skills.forEach((s, sIdx) => {
-            if (s.group !== type && s.group !== 'den') return; // Capture defense skills if we are calculating denominator
-
+            if (s.group !== type && s.group !== 'den') return;
             const X = s.values[h[`s${sIdx + 1}`] - 1];
-            const p = s.getChance(X);
-            const m = s.getMagnitude(X);
-            
-            // Fix: Handle Magnitude Arrays (Saul/Hilde)
-            let ev;
-            if (Array.isArray(m)) {
-                ev = m.map(val => (s.duration === 0) ? (p * val) : (1 - Math.pow(1 - p, s.duration)) * val);
-            } else {
-                ev = (s.duration === 0) ? (p * m) : (1 - Math.pow(1 - p, s.duration)) * m;
-            }
+            const p = s.getChance(X), m = s.getMagnitude(X);
+            let ev = (s.duration === 0) ? (p * m) : (1 - Math.pow(1 - p, s.duration)) * m;
 
             s.ids.forEach((id, idIdx) => {
                 const val = Array.isArray(ev) ? ev[idIdx] : ev;
                 pools[id] = (pools[id] || 0) + val;
             });
+            
+            // Record skill in logs
+            logs.push(`${h.name} Skill: ${s.name} (EV: +${( (Array.isArray(ev)?ev[0]:ev) * 100).toFixed(1)}%)`);
         });
     });
 
     let finalMult = 1.0;
     Object.values(pools).forEach(sum => finalMult *= (1 + sum));
-    return { units: { inf: finalMult, cav: finalMult, arc: finalMult }, star: starBonus };
+    return { units: { inf: finalMult, cav: finalMult, arc: finalMult }, star: starBonus, logs: logs };
 }
 
-function isAlive(army) { return (army.inf + army.cav + army.arc) > 1; }
+function isAlive(army) { return { 
+    m_cur, 
+    e_cur, 
+    wave, 
+    atk_mults: m_skill_mults.logs, 
+    def_mults: e_skill_mults.logs 
+};
