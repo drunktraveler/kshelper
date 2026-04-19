@@ -8,14 +8,12 @@ let state = {
 let activeSlot = { side: null, index: null };
 
 function init() {
-    // 1. Populate Dropdown
     const sel = document.getElementById('hero-select');
     sel.innerHTML = '<option value="None">None</option>';
     Object.keys(HEROES).sort().forEach(n => {
         const o = document.createElement('option'); o.value = n; o.innerText = n; sel.appendChild(o);
     });
 
-    // 2. Generate Stat Rows
     const table = document.getElementById('stat-table');
     const categories = [{ label: "Attack", key: "att" }, { label: "Defense", key: "def" }, { label: "Lethality", key: "leth" }, { label: "Health", key: "hp" }];
     const units = ["Infantry", "Cavalry", "Archer"];
@@ -26,20 +24,18 @@ function init() {
             row.className = "stat-row";
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
-                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none leading-none" value="1000">
-                <div class="text-[9px] font-black text-slate-500 text-center uppercase leading-none px-2">${u} ${c.label}</div>
-                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-right leading-none" value="1000">
+                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" class="text-emerald-400" value="1000">
+                <div>${u} ${c.label}</div>
+                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" class="text-red-400 text-right" value="1000">
             `;
             table.appendChild(row);
         });
     });
 
-    // 3. Bind Change Event for Modal
     document.getElementById('hero-select').addEventListener('change', (e) => {
         renderSkillsInModal(e.target.value, activeSlot.index);
     });
 
-    // 4. Final initialization
     window.updateFormation('atk');
     window.updateFormation('def');
     document.querySelectorAll('#stat-table input').forEach(i => window.updateStatColors(i));
@@ -85,21 +81,14 @@ function renderSkillsInModal(heroName, slotIndex, currentData = null) {
     const container = document.getElementById('skill-inputs');
     container.innerHTML = '';
     if (heroName === "None") return;
-
     const heroInfo = HEROES[heroName];
     const maxSkills = (slotIndex < 3) ? heroInfo.skills.length : 1;
-
     for (let i = 0; i < maxSkills; i++) {
         const skill = heroInfo.skills[i];
         const lv = currentData ? currentData['s'+(i+1)] : 1;
         const div = document.createElement('div');
-        div.innerHTML = `
-            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
-                <span>${skill.name}</span><span id="lv-${i+1}-disp" class="text-blue-400">${lv}</span>
-            </div>
-            <input type="range" min="1" max="5" value="${lv}" class="w-full accent-blue-500" 
-                   oninput="document.getElementById('lv-${i+1}-disp').innerText = this.value">
-        `;
+        div.innerHTML = `<div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1"><span>${skill.name}</span><span id="lv-${i+1}-disp" class="text-blue-400">${lv}</span></div>
+            <input type="range" min="1" max="5" value="${lv}" class="w-full accent-blue-500" oninput="document.getElementById('lv-${i+1}-disp').innerText = this.value">`;
         container.appendChild(div);
     }
 }
@@ -111,9 +100,7 @@ window.saveHeroConfig = () => {
     const sliders = document.querySelectorAll('#skill-inputs input');
     state[side].heroes[index] = {
         name: document.getElementById('hero-select').value,
-        s1: parseInt(sliders[0]?.value || 1),
-        s2: parseInt(sliders[1]?.value || 1),
-        s3: parseInt(sliders[2]?.value || 1),
+        s1: parseInt(sliders[0]?.value || 1), s2: parseInt(sliders[1]?.value || 1), s3: parseInt(sliders[2]?.value || 1),
         star: 5, sub: 0
     };
     updateGrids(); window.closeHeroModal();
@@ -126,9 +113,11 @@ function updateGrids() {
         container.innerHTML = '';
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
-            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''} overflow-hidden`;
+            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
             if (h.name !== 'None') {
-                div.innerHTML = `<img src="./assets/${h.name}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span style="display:none">${h.name[0]}</span>`;
+                // Asset normalization: lowercase hero name to match common asset conventions
+                const imgName = h.name.toLowerCase();
+                div.innerHTML = `<img src="./assets/${imgName}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span style="display:none">${h.name[0]}</span>`;
             } else {
                 div.innerText = (i + 1);
             }
