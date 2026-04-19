@@ -20,6 +20,9 @@
         .stat-row { grid-template-cols: 1fr 1.5fr 1fr; display: grid; align-items: center; padding: 0.5rem 1rem; border-radius: 0.75rem; transition: 0.2s; }
         .stat-row:hover { background: rgba(255,255,255,0.03); }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield;appearance: textfield; }
+        /* This removes the extra padding browsers often add to inputs */
+        .stat-row input, .stat-row div { display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
     
