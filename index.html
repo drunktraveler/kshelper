@@ -14,29 +14,32 @@
         .f-inf { background: #3b82f6; transition: width 0.4s; }
         .f-cav { background: #f59e0b; transition: width 0.4s; }
         .f-arc { background: #10b981; transition: width 0.4s; }
-        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; }
+        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
         .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
         .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
-        /* Table Alignment */
-        .stat-row { display: grid; grid-template-cols: 1fr 1.5fr 1fr; align-items: center; height: 2.5rem; padding: 0 1.5rem; border-radius: 0.75rem; transition: 0.2s; }
+        
+        /* THE ALIGNMENT FIX */
+        .stat-row { display: grid; grid-template-cols: 1fr 1.5fr 1fr; align-items: center; height: 2.2rem; padding: 0 1.5rem; border-radius: 0.5rem; }
         .stat-row:hover { background: rgba(255,255,255,0.03); }
+        .stat-row input { background: transparent; border: none; outline: none; font-size: 0.875rem; font-weight: 700; width: 100%; margin: 0; padding: 0; height: 100%; }
+        .stat-row div { font-size: 0.65rem; font-weight: 800; color: #64748b; text-align: center; text-transform: uppercase; letter-spacing: 0.025em; }
+
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
     </style>
 </head>
 <body class="p-4 md:p-8">
-
     <div class="max-w-5xl mx-auto space-y-6">
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-xl font-black text-blue-500 uppercase tracking-tighter">Kingshot Calculator</h1>
-            <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold">
-                <button class="px-4 py-2 bg-blue-600 rounded-lg uppercase">Battle</button>
-                <button class="px-4 py-2 text-slate-500 uppercase">Formation</button>
+            <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold uppercase">
+                <button class="px-4 py-2 bg-blue-600 rounded-lg">Battle</button>
+                <button class="px-4 py-2 text-slate-500 hover:text-slate-300">Formation</button>
             </div>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Attacker -->
+            <!-- Attacker Card -->
             <div class="glass-card p-6 border-l-4 border-emerald-500/30">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Command</span>
@@ -57,7 +60,7 @@
                 <div class="flex gap-2" id="atk-hero-grid"></div>
             </div>
 
-            <!-- Defender -->
+            <!-- Defender Card -->
             <div class="glass-card p-6 border-r-4 border-red-500/30">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Command</span>
@@ -79,33 +82,24 @@
             </div>
         </div>
 
-        <!-- Center Module -->
         <div class="max-w-2xl mx-auto space-y-4">
             <div class="glass-card overflow-hidden">
                 <div class="grid grid-cols-3 bg-slate-900/80 py-2 px-8 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    <span>Atk %</span>
-                    <span class="text-center">Category</span>
-                    <span class="text-right">Def %</span>
+                    <span>Atk %</span><span class="text-center">Category</span><span class="text-right">Def %</span>
                 </div>
                 <div id="stat-table" class="p-2 space-y-0"></div>
             </div>
-
             <button onclick="window.handleSimulation()" class="w-full bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">
                 Run Simulation
             </button>
         </div>
 
-        <!-- Results -->
         <div id="result-screen" class="hidden max-w-2xl mx-auto">
             <div class="glass-card p-8 border-t-4 border-blue-500">
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <h2 class="text-2xl font-black uppercase tracking-tight">Battle Analysis</h2>
                         <p class="text-slate-500 text-xs font-bold" id="result-waves"></p>
-                    </div>
-                    <div class="text-right">
-                        <span class="text-xs font-black uppercase text-slate-600 block">Probability</span>
-                        <span class="text-3xl font-black text-blue-400">Average</span>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-12 mb-8">
@@ -135,7 +129,6 @@
             </div>
         </div>
     </div>
-
     <script type="module" src="./ui-bridge.js"></script>
 </body>
 </html>
