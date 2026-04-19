@@ -9,23 +9,38 @@ let activeSlot = { side: null, index: null };
 
 function init() {
     const sel = document.getElementById('hero-select');
-    sel.innerHTML = '<option value="None">None</option>';
-    Object.keys(HEROES).sort().forEach(n => {
-        const o = document.createElement('option'); o.value = n; o.innerText = n; sel.appendChild(o);
-    });
+    if(sel) {
+        sel.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => {
+            const o = document.createElement('option'); o.value = n; o.innerText = n; sel.appendChild(o);
+        });
+    }
 
     const table = document.getElementById('stat-table');
-    const categories = ["Attack", "Defense", "Lethality", "Health"];
-    const units = ["Infantry", "Cavalry", "Archer"];
-    units.forEach(u => {
-        categories.forEach(c => {
-            const row = document.createElement('div');
-            row.className = "stat-row";
-            const key = `${u[0].toLowerCase()}${u.slice(1,3)}_${c.toLowerCase().slice(0,3)}`;
-            row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-emerald-400" value="1000"><div class="text-[10px] font-black text-slate-500 text-center uppercase">${u} ${c}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-red-400 text-right" value="1000">`;
-            table.appendChild(row);
+    if(table) {
+        // Standardized keys to match Engine
+        const categories = [
+            { label: "Attack", key: "att" },
+            { label: "Defense", key: "def" },
+            { label: "Lethality", key: "leth" },
+            { label: "Health", key: "hp" }
+        ];
+        const units = ["Infantry", "Cavalry", "Archer"];
+        
+        units.forEach(u => {
+            categories.forEach(c => {
+                const row = document.createElement('div');
+                row.className = "stat-row";
+                const statKey = `${u.toLowerCase().slice(0,3)}_${c.key}`; // e.g., inf_att, inf_leth
+                row.innerHTML = `
+                    <input type="number" data-side="atk" data-stat="${statKey}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-emerald-400 w-full" value="1000">
+                    <div class="text-[10px] font-black text-slate-500 text-center uppercase w-full">${u} ${c.label}</div>
+                    <input type="number" data-side="def" data-stat="${statKey}" oninput="window.updateStatColors(this)" class="bg-transparent text-sm font-bold outline-none text-red-400 text-right w-full" value="1000">
+                `;
+                table.appendChild(row);
+            });
         });
-    });
+    }
     window.updateFormation('atk'); window.updateFormation('def'); updateGrids();
 }
 
@@ -35,7 +50,11 @@ window.updateFormation = (side) => {
     const arc = parseFloat(document.getElementById(`${side}-arc`).value) || 0;
     const total = inf + cav + arc; if (total === 0) return;
     const bar = document.getElementById(`${side}-f-bar`);
-    bar.children[0].style.width = (inf/total*100)+'%'; bar.children[1].style.width = (cav/total*100)+'%'; bar.children[2].style.width = (arc/total*100)+'%';
+    if(bar) {
+        bar.children[0].style.width = (inf/total*100)+'%'; 
+        bar.children[1].style.width = (cav/total*100)+'%'; 
+        bar.children[2].style.width = (arc/total*100)+'%';
+    }
     document.getElementById(`${side}-inf-pct`).innerText = Math.round(inf/total*100)+'%';
     document.getElementById(`${side}-cav-pct`).innerText = Math.round(cav/total*100)+'%';
     document.getElementById(`${side}-arc-pct`).innerText = Math.round(arc/total*100)+'%';
@@ -61,7 +80,7 @@ window.openHeroModal = (side, index) => {
     document.getElementById('heroModal').classList.remove('hidden'); document.getElementById('heroModal').classList.add('flex');
 };
 
-window.closeHeroModal = () => document.getElementById('heroModal').classList.replace('flex', 'hidden');
+window.closeHeroModal = () => { document.getElementById('heroModal').classList.remove('flex'); document.getElementById('heroModal').classList.add('hidden'); };
 
 window.saveHeroConfig = () => {
     const { side, index } = activeSlot; const sliders = document.querySelectorAll('#skill-inputs input');
@@ -71,13 +90,14 @@ window.saveHeroConfig = () => {
 
 function updateGrids() {
     ['atk', 'def'].forEach(side => {
-        const grid = document.getElementById(`${side}-hero-grid`); grid.innerHTML = '';
+        const container = document.getElementById(`${side}-hero-grid`); if(!container) return;
+        container.innerHTML = '';
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
             div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
             div.innerText = h.name !== 'None' ? h.name[0] : (i + 1);
             div.onclick = () => window.openHeroModal(side, i);
-            grid.appendChild(div);
+            container.appendChild(div);
         });
     });
 }
@@ -87,11 +107,21 @@ window.handleSimulation = () => {
         const stats = {}; document.querySelectorAll(`input[data-side="${side}"]`).forEach(i => stats[i.dataset.stat] = parseFloat(i.value) || 0); return stats;
     };
     const setup = {
-        atk: { troops: { inf: parseFloat(document.getElementById('atk-inf').value)||0, cav: parseFloat(document.getElementById('atk-cav').value)||0, arc: parseFloat(document.getElementById('atk-arc').value)||0 }, tier: document.getElementById('atk-tier').value, tg: document.getElementById('atk-tg').value, stats: getStats('atk'), heroes: state.atk.heroes },
-        def: { troops: { inf: parseFloat(document.getElementById('def-inf').value)||0, cav: parseFloat(document.getElementById('def-cav').value)||0, arc: parseFloat(document.getElementById('def-arc').value)||0 }, tier: document.getElementById('def-tier').value, tg: document.getElementById('def-tg').value, stats: getStats('def'), heroes: state.def.heroes }
+        atk: { 
+            troops: { inf: parseFloat(document.getElementById('atk-inf').value)||0, cav: parseFloat(document.getElementById('atk-cav').value)||0, arc: parseFloat(document.getElementById('atk-arc').value)||0 }, 
+            tier: parseInt(document.getElementById('atk-tier').value), 
+            tg: parseInt(document.getElementById('atk-tg').value), 
+            stats: getStats('atk'), heroes: state.atk.heroes 
+        },
+        def: { 
+            troops: { inf: parseFloat(document.getElementById('def-inf').value)||0, cav: parseFloat(document.getElementById('def-cav').value)||0, arc: parseFloat(document.getElementById('def-arc').value)||0 }, 
+            tier: parseInt(document.getElementById('def-tier').value), 
+            tg: parseInt(document.getElementById('def-tg').value), 
+            stats: getStats('def'), heroes: state.def.heroes 
+        }
     };
     const r = runCombatSim(setup);
-    alert(`Battle Over!\nWave: ${r.wave}\nAtk Survivors: ${Math.round(r.m_cur.inf+r.m_cur.cav+r.m_cur.arc)}\nDef Survivors: ${Math.round(r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)}`);
+    alert(`Battle Over!\nWaves: ${r.wave}\nAttacker Survivors: ${Math.round(r.m_cur.inf+r.m_cur.cav+r.m_cur.arc).toLocaleString()}\nDefender Survivors: ${Math.round(r.e_cur.inf+r.e_cur.cav+r.e_cur.arc).toLocaleString()}`);
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') window.closeHeroModal(); });
