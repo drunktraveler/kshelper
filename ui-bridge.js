@@ -103,14 +103,25 @@ window.saveHeroConfig = () => {
 
 function updateGrids() {
     ['atk', 'def'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`); if (!container) return;
+        const container = document.getElementById(`${side}-hero-grid`);
+        if (!container) return;
         container.innerHTML = '';
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
             div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
+            
             if (h.name !== 'None') {
-                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextSibling.style.display='block'"><span>${h.name[0]}</span>`;
-            } else { div.innerText = (i + 1); }
+                const imgName = h.name.toLowerCase();
+                // We wrap the letter in a div that is centered behind the image
+                div.innerHTML = `
+                    <span style="position: absolute; z-index: 1;">${h.name[0]}</span>
+                    <img src="./assets/${imgName}.png" 
+                         style="position: absolute; inset: 0; width: 100%; height: 100%; object-cover; z-index: 2;" 
+                         onerror="this.style.opacity='0';">
+                `;
+            } else {
+                div.innerText = (i + 1);
+            }
             div.onclick = () => window.openHeroModal(side, i);
             container.appendChild(div);
         });
