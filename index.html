@@ -14,18 +14,16 @@
         .f-inf { background: #3b82f6; transition: width 0.4s; }
         .f-cav { background: #f59e0b; transition: width 0.4s; }
         .f-arc { background: #10b981; transition: width 0.4s; }
-        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; }
+        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; }
         .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
         .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
-        .stat-row { grid-template-cols: 1fr 1.5fr 1fr; display: grid; align-items: center; padding: 0.5rem 1rem; border-radius: 0.75rem; transition: 0.2s; }
+        /* Table Alignment */
+        .stat-row { display: grid; grid-template-cols: 1fr 1.5fr 1fr; align-items: center; height: 2.5rem; padding: 0 1.5rem; border-radius: 0.75rem; transition: 0.2s; }
         .stat-row:hover { background: rgba(255,255,255,0.03); }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type="number"] { -moz-appearance: textfield;appearance: textfield; }
-        /* This removes the extra padding browsers often add to inputs */
-        .stat-row input, .stat-row div { display: flex; align-items: center; justify-content: center; }
+        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
     </style>
 </head>
-    
 <body class="p-4 md:p-8">
 
     <div class="max-w-5xl mx-auto space-y-6">
@@ -37,112 +35,98 @@
             </div>
         </header>
 
-         <!-- Command Cards -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Attacker -->
-        <div class="glass-card p-6 border-l-4 border-emerald-500/30">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Command</span>
-                <div class="flex gap-2">
-                    <select id="atk-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
-                    <select id="atk-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Attacker -->
+            <div class="glass-card p-6 border-l-4 border-emerald-500/30">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Command</span>
+                    <div class="flex gap-2">
+                        <select id="atk-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                        <select id="atk-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
+                    </div>
                 </div>
-            </div>
-            <div class="grid grid-cols-3 gap-3 mb-4">
-                <input type="number" id="atk-inf" oninput="window.updateFormation('atk')" class="input-dark font-bold text-blue-400" value="500000">
-                <input type="number" id="atk-cav" oninput="window.updateFormation('atk')" class="input-dark font-bold text-amber-400" value="200000">
-                <input type="number" id="atk-arc" oninput="window.updateFormation('atk')" class="input-dark font-bold text-emerald-400" value="300000">
-            </div>
-            <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-            <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                <span id="atk-inf-pct">0%</span><span id="atk-cav-pct">0%</span><span id="atk-arc-pct">0%</span>
-            </div>
-            <div class="flex gap-2" id="atk-hero-grid"></div>
-        </div>
-
-        <!-- Defender (Aligned left-to-right) -->
-        <div class="glass-card p-6 border-r-4 border-red-500/30">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Command</span>
-                <div class="flex gap-2">
-                    <select id="def-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
-                    <select id="def-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <input type="number" id="atk-inf" oninput="window.updateFormation('atk')" class="input-dark font-bold text-blue-400" value="500000">
+                    <input type="number" id="atk-cav" oninput="window.updateFormation('atk')" class="input-dark font-bold text-amber-400" value="200000">
+                    <input type="number" id="atk-arc" oninput="window.updateFormation('atk')" class="input-dark font-bold text-emerald-400" value="300000">
                 </div>
+                <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+                <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
+                    <span id="atk-inf-pct">0%</span><span id="atk-cav-pct">0%</span><span id="atk-arc-pct">0%</span>
+                </div>
+                <div class="flex gap-2" id="atk-hero-grid"></div>
             </div>
-            <div class="grid grid-cols-3 gap-3 mb-4">
-                <input type="number" id="def-inf" oninput="window.updateFormation('def')" class="input-dark font-bold text-blue-400" value="500000">
-                <input type="number" id="def-cav" oninput="window.updateFormation('def')" class="input-dark font-bold text-amber-400" value="200000">
-                <input type="number" id="def-arc" oninput="window.updateFormation('def')" class="input-dark font-bold text-emerald-400" value="300000">
+
+            <!-- Defender -->
+            <div class="glass-card p-6 border-r-4 border-red-500/30">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Command</span>
+                    <div class="flex gap-2">
+                        <select id="def-tier" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                        <select id="def-tg" class="bg-slate-950 text-[10px] border border-slate-800 rounded px-2 py-1 font-bold text-slate-400 outline-none"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <input type="number" id="def-inf" oninput="window.updateFormation('def')" class="input-dark font-bold text-blue-400" value="500000">
+                    <input type="number" id="def-cav" oninput="window.updateFormation('def')" class="input-dark font-bold text-amber-400" value="200000">
+                    <input type="number" id="def-arc" oninput="window.updateFormation('def')" class="input-dark font-bold text-emerald-400" value="300000">
+                </div>
+                <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+                <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
+                    <span id="def-inf-pct">0%</span><span id="def-cav-pct">0%</span><span id="def-arc-pct">0%</span>
+                </div>
+                <div class="flex gap-2" id="def-hero-grid"></div>
             </div>
-            <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-            <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                <span id="def-inf-pct">0%</span><span id="def-cav-pct">0%</span><span id="def-arc-pct">0%</span>
-            </div>
-            <div class="flex gap-2" id="def-hero-grid"></div>
         </div>
-    </div>
 
-    <!-- Center Module (Stats + Simulation Button) -->
-    <div class="max-w-2xl mx-auto space-y-4">
-        <!-- Stat Bonus Table -->
-        <div class="glass-card overflow-hidden">
-            <div class="grid grid-cols-3 bg-slate-900/80 py-2 px-8 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                <span>Atk %</span>
-                <span class="text-center">Category</span>
-                <span class="text-right">Def %</span>
+        <!-- Center Module -->
+        <div class="max-w-2xl mx-auto space-y-4">
+            <div class="glass-card overflow-hidden">
+                <div class="grid grid-cols-3 bg-slate-900/80 py-2 px-8 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <span>Atk %</span>
+                    <span class="text-center">Category</span>
+                    <span class="text-right">Def %</span>
+                </div>
+                <div id="stat-table" class="p-2 space-y-0"></div>
             </div>
-            <div id="stat-table" class="p-2 space-y-0">
-                <!-- Rows injected here -->
-            </div>
+
+            <button onclick="window.handleSimulation()" class="w-full bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">
+                Run Simulation
+            </button>
         </div>
 
-        <!-- Simulation Button (Darker Blue, Matched Width) -->
-        <button onclick="window.handleSimulation()" class="w-full bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">
-            Run Simulation
-        </button>
-    </div>
-
-        <!-- NEW RESULT SECTION -->
+        <!-- Results -->
         <div id="result-screen" class="hidden max-w-2xl mx-auto">
             <div class="glass-card p-8 border-t-4 border-blue-500">
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <h2 class="text-2xl font-black uppercase tracking-tight">Battle Analysis</h2>
-                        <p class="text-slate-500 text-xs font-bold" id="result-waves">Simulation ended after 0 waves</p>
+                        <p class="text-slate-500 text-xs font-bold" id="result-waves"></p>
                     </div>
                     <div class="text-right">
-                        <span class="text-xs font-black uppercase text-slate-600 block">Victory probability</span>
-                        <span class="text-3xl font-black text-blue-400">Average Case</span>
+                        <span class="text-xs font-black uppercase text-slate-600 block">Probability</span>
+                        <span class="text-3xl font-black text-blue-400">Average</span>
                     </div>
                 </div>
-
                 <div class="grid grid-cols-2 gap-12 mb-8">
-                    <div class="space-y-4">
-                        <p class="text-[10px] font-black uppercase text-emerald-500 tracking-widest border-b border-emerald-500/20 pb-1">Attacker Survivors</p>
-                        <div class="text-4xl font-black" id="res-atk-total">0</div>
-                        <div class="space-y-1 text-xs font-bold text-slate-400" id="res-atk-details"></div>
+                    <div>
+                        <p class="text-[10px] font-black uppercase text-emerald-500 border-b border-emerald-500/20 pb-1 mb-4">Attacker survivors</p>
+                        <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
+                        <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
                     </div>
-                    <div class="space-y-4">
-                        <p class="text-[10px] font-black uppercase text-red-500 tracking-widest border-b border-red-500/20 pb-1 text-right">Defender Survivors</p>
-                        <div class="text-4xl font-black text-right" id="res-def-total">0</div>
-                        <div class="space-y-1 text-xs font-bold text-slate-400 text-right" id="res-def-details"></div>
+                    <div>
+                        <p class="text-[10px] font-black uppercase text-red-500 border-b border-red-500/20 pb-1 mb-4 text-right">Defender survivors</p>
+                        <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
+                        <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
                     </div>
-                </div>
-
-                <button onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 hover:text-blue-400 transition tracking-widest">
-                    View Full Combat Log +
-                </button>
-                <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-500 space-y-1 max-h-64 overflow-y-auto">
-                    <!-- Logs go here -->
                 </div>
             </div>
         </div>
     </div>
-</body>
 
     <!-- Modal -->
     <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-        <div id="modalContent" class="bg-slate-900 w-full max-w-xs rounded-3xl p-8 border border-slate-800 relative">
+        <div class="bg-slate-900 w-full max-w-xs rounded-3xl p-8 border border-slate-800 relative">
             <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest">Hero Config</h3>
             <div class="space-y-6">
                 <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
