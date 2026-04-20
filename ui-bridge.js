@@ -92,12 +92,9 @@ window.updateStatColors = (el) => {
 
 window.handleSimulation = () => {
     const getStats = (s) => {
-        const obj = {}; 
-        document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); 
-        return obj;
+        const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
     };
-
-    const collectBatches = (side) => {
+    const collect = (side) => {
         return Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
             tier: parseInt(el.querySelector('.batch-tier').value),
             tg: parseInt(el.querySelector('.batch-tg').value),
@@ -108,24 +105,52 @@ window.handleSimulation = () => {
     };
 
     const setup = {
-        atk: { batches: collectBatches('atk'), stats: getStats('atk'), heroes: state.atk.heroes },
-        def: { batches: collectBatches('def'), stats: getStats('def'), heroes: state.def.heroes }
+        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes },
+        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
     };
 
-    const r = runCombatSim(setup);
+    // RUN 3 SCENARIOS
+    const resAvg = runCombatSim(setup, 'average');
+    const resLuck = runCombatSim(setup, 'lucky');
+    const resBad = runCombatSim(setup, 'unlucky');
+
+    const screen = document.getElementById('result-screen');
+    screen.classList.remove('hidden');
+
+    // Display Wave Range
+    const waveMin = Math.min(resAvg.wave, resLuck.wave, resBad.wave);
+    const waveMax = Math.max(resAvg.wave, resLuck.wave, resBad.wave);
+    document.getElementById('result-waves').innerText = `Battle length: ${waveMin} to ${waveMax} waves`;
+
+    // Attacker Results
+    const atkAvg = Math.round(resAvg.m_cur.inf + resAvg.m_cur.cav + resAvg.m_cur.arc);
+    const atkMin = Math.round(resBad.m_cur.inf + resBad.m_cur.cav + resBad.m_cur.arc);
+    const atkMax = Math.round(resLuck.m_cur.inf + resLuck.m_cur.cav + resLuck.m_cur.arc);
     
-    document.getElementById('result-screen').classList.remove('hidden');
-    document.getElementById('result-waves').innerText = `Simulation complete after ${r.wave} waves`;
-    document.getElementById('res-atk-total').innerText = Math.round(r.m_cur.inf+r.m_cur.cav+r.m_cur.arc).toLocaleString();
-    document.getElementById('res-def-total').innerText = Math.round(r.e_cur.inf+r.e_cur.cav+r.e_cur.arc).toLocaleString();
-    document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(r.m_cur.inf).toLocaleString()} | Cav: ${Math.round(r.m_cur.cav).toLocaleString()} | Arc: ${Math.round(r.m_cur.arc).toLocaleString()}`;
-    document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(r.e_cur.inf).toLocaleString()} | Cav: ${Math.round(r.e_cur.cav).toLocaleString()} | Arc: ${Math.round(r.e_cur.arc).toLocaleString()}`;
+    document.getElementById('res-atk-total').innerHTML = `
+        <span class="text-emerald-400">${atkAvg.toLocaleString()}</span>
+        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}</div>
+    `;
+
+    // Defender Results
+    const defAvg = Math.round(resAvg.e_cur.inf + resAvg.e_cur.cav + resAvg.e_cur.arc);
+    const defMin = Math.round(resLuck.e_cur.inf + resLuck.e_cur.cav + resLuck.e_cur.arc);
+    const defMax = Math.round(resBad.e_cur.inf + resBad.e_cur.cav + resBad.e_cur.arc);
+
+    document.getElementById('res-def-total').innerHTML = `
+        <span class="text-red-400">${defAvg.toLocaleString()}</span>
+        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}</div>
+    `;
+
+    // Detailed survivors (Using Average as reference)
+    document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(resAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(resAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(resAvg.m_cur.arc).toLocaleString()}`;
+    document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(resAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(resAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(resAvg.e_cur.arc).toLocaleString()}`;
 
     const logBox = document.getElementById('battle-details');
-    logBox.innerHTML = `<div style="color:#10b981; margin-bottom:5px;">[ATTACKER MODIFIERS]</div>` + r.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
-                       `<div style="color:#ef4444; margin-top:15px; margin-bottom:5px;">[DEFENDER MODIFIERS]</div>` + r.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    logBox.innerHTML = `<div style="color:#10b981; margin-bottom:5px;">[ATTACKER MODIFIERS]</div>` + resAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
+                       `<div style="color:#ef4444; margin-top:15px; margin-bottom:5px;">[DEFENDER MODIFIERS]</div>` + resAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     
-    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
+    screen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.toggleDetails = () => document.getElementById('battle-details').classList.toggle('hidden');
