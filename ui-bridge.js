@@ -166,9 +166,8 @@ window.handleSimulation = () => {
     const lowPct = ((rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc) / totalStart) * 100;
     const highPct = ((rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc) / totalStart) * 100;
     
-    const luckBar = document.getElementById('luck-visual-bar');
-    luckBar.style.left = Math.max(0, lowPct) + "%";
-    luckBar.style.width = Math.max(2, (highPct - lowPct)) + "%";
+    document.getElementById('luck-visual-bar').style.left = Math.max(0, lowPct) + "%";
+    document.getElementById('luck-visual-bar').style.width = Math.max(2, (highPct - lowPct)) + "%";
 
     document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Variance: ${rLuck.wave}-${rBad.wave})`;
     
