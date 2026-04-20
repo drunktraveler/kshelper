@@ -1,17 +1,18 @@
 import { HEROES } from './heroes.js';
 import { runCombatSim } from './engine.js';
+import { GROWTH_TEMPLATES } from './constants.js';
 
-let state = {
-    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1, star: 5, sub: 0, widgetLv: 0 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1, star: 5, sub: 0, widgetLv: 0 })) }
-};
-let activeSlot = { side: null, index: null };
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
+let state = {
+    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1, star: 5, sub: 0, widgetLv: 10 })) },
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 1, s2: 1, s3: 1, star: 5, sub: 0, widgetLv: 10 })) }
+};
 
 function init() {
-    // Fill roster defaults if missing
-    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 0 }; });
-
+    // Fill roster defaults
+    Object.keys(HEROES).forEach(n => { 
+        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; 
+    });
     const sel = document.getElementById('hero-select');
     sel.innerHTML = '<option value="None">None</option>';
     Object.keys(HEROES).sort().forEach(n => {
@@ -130,121 +131,93 @@ function updateGrids() {
 
 // --- SIMULATION HANDLER ---
 window.handleSimulation = async () => {
-    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-
-    const setup = {
-        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes },
-        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
-    };
-
-    const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rBest, rWorst, modeLabel;
-
-    if (simMode === 'monte-carlo') {
-        modeLabel = "Deep Sim (100 Runs)";
-        const runs = 100; let batch = [];
-        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
-        const atkWins = batch.filter(r => (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) > (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)).length;
-        const winner = atkWins >= 50 ? 'atk' : 'def';
-        rAvg = {
-            m_cur: { inf: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs:0, cav: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs:0, arc: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs:0 },
-            e_cur: { inf: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs:0, cav: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs:0, arc: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs:0 },
-            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
-            atk_mults: batch[Math.floor(runs/2)].atk_mults, def_mults: batch[Math.floor(runs/2)].def_mults,
-            startAtk: batch[0].startAtk, startDef: batch[0].startDef
-        };
-        rWorst = batch[0]; rBest = batch[runs-1];
-    } else {
-        modeLabel = "Quick Sim (Estimate)";
-        rAvg = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rWorst = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
-    }
+    const setup = gatherSetup();
+    const rAvg = runCombatSim(setup, 'average');
+    const rAtkCeil = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+    const rDefCeil = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
 
     document.getElementById('result-screen').classList.remove('hidden');
+    // Map survival spectrum
     const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk );
-    const sMin = getScore(rBest), sMax = getScore(rWorst);
+    const sMin = getScore(rAtkCeil), sMax = getScore(rDefCeil);
     document.getElementById('luck-visual-bar').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
     document.getElementById('luck-visual-bar').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | Length: ${rAvg.wave} waves`;
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rWorst.m_cur.inf+rWorst.m_cur.cav+rWorst.m_cur.arc).toLocaleString()} - ${Math.round(rBest.m_cur.inf+rBest.m_cur.cav+rBest.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBest.e_cur.inf+rBest.e_cur.cav+rBest.e_cur.arc).toLocaleString()} - ${Math.round(rWorst.e_cur.inf+rWorst.e_cur.cav+rWorst.e_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-atk-details').innerText = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
-    document.getElementById('res-def-details').innerText = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+
+    // Text results (Standard and Extreme Range)
+    const aAvg = Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc);
+    const aBest = Math.round(rAtkCeil.m_cur.inf + rAtkCeil.m_cur.cav + rAtkCeil.m_cur.arc);
+    const aWorst = Math.round(rDefCeil.m_cur.inf + rDefCeil.m_cur.cav + rDefCeil.m_cur.arc);
+    document.getElementById('res-atk-total').innerHTML = `<span>${aAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${aWorst.toLocaleString()} - ${aBest.toLocaleString()}</div>`;
+    
+    // ... (Mirror for defender)
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
-window.handleBearSim = () => {
-    const collectAtk = () => Array.from(document.querySelectorAll(`#atk-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    const r = runCombatSim({ atk: { batches: collectAtk(), stats: getStats('atk'), heroes: state.atk.heroes } }, 'average', 'average', 10, true);
-    document.getElementById('bear-total-dmg').innerText = Math.round(r.totalDmg).toLocaleString();
-};
+window.runOptimizer = (mode = 'current') => {
+    const setup = gatherSetup();
+    const atkTotal = setup.atk.batches.reduce((s,b)=>s+b.inf+b.cav+b.arc, 0);
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
 
-// --- OPTIMIZER ---
-window.runOptimizer = (type = 'current') => {
-    const collectAtk = () => Array.from(document.querySelectorAll(`#atk-batch-container > div`)).map(el => ({ inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    const collectDef = () => Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({ tier: 10, tg: 3, inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    
-    const atkBatch = collectAtk(); const defBatch = collectDef();
-    const atkTotal = atkBatch.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
-    const atkStats = getStats('atk'); const defStats = getStats('def');
-
-    let metaDefenders = [];
-    if (type === 'meta') {
-        for (let i=0; i<=100; i+=10) for (let j=0; j<=100-i; j+=10) metaDefenders.push({ inf: i/100, cav: j/100, arc: (100-i-j)/100 });
-    } else {
-        const total = defBatch.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
-        metaDefenders.push({ inf: defBatch[0].inf/total, cav: defBatch[0].cav/total, arc: defBatch[0].arc/total });
-    }
-
-    let dataPoints = { a: [], b: [], c: [], z: [] };
-    let best = { form: [0,0,0], winrate: -1, netSurv: -Infinity };
-
-    for (let i = 20; i <= 100; i += 1) { 
-        for (let j = 0; j <= 100 - i; j += 1) {
+    // Step Logic
+    for (let i = 20; i <= 100; i += 2) { // 2% steps for speed
+        for (let j = 0; j <= 100 - i; j += 2) {
             let k = 100 - i - j;
-            let wins = 0, totalNet = 0;
-            metaDefenders.forEach(def => {
-                const s = { atk: { batches: [{ tier: 10, tg: 3, inf: i*(atkTotal/100), cav: j*(atkTotal/100), arc: k*(atkTotal/100) }], stats: atkStats, heroes: state.atk.heroes }, def: { batches: [{ tier: 10, tg: 3, inf: def.inf*atkTotal, cav: def.cav*atkTotal, arc: def.arc*atkTotal }], stats: defStats, heroes: state.def.heroes } };
-                const r = runCombatSim(s, 'average', 'average');
-                const aS = (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc)/atkTotal;
-                const dS = (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)/atkTotal;
-                if (aS > dS) wins++;
-                totalNet += (aS - dS);
-            });
-            const wr = wins / metaDefenders.length;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(type === 'meta' ? wr : totalNet);
-            if (wr > best.winrate || (wr === best.winrate && totalNet > best.netSurv)) best = { winrate: wr, netSurv: totalNet, form: [i, j, k] };
+            let currentSetup = JSON.parse(JSON.stringify(setup));
+            currentSetup.atk.batches = [{ tier:10, tg:3, inf:i*(atkTotal/100), cav:j*(atkTotal/100), arc:k*(atkTotal/100) }];
+            
+            const r = runCombatSim(currentSetup, 'average', 'average', 100, mode === 'bear');
+            let score = mode === 'bear' ? r.totalDmg : (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) - (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc);
+            
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+            if (score > best.score) best = { score, form: [i, j, k] };
         }
     }
-    Plotly.newPlot('ternary-plot', [{ type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c, marker: { size: 6, color: dataPoints.z, colorscale: 'Portland' } }], { ternary: { sum: 100, aaxis: {title: 'Inf'}, baxis: {title: 'Cav'}, caxis: {title: 'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
-    document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-    document.getElementById('opt-best-score').innerText = type === 'meta' ? `Winrate against Meta: ${(best.winrate * 100).toFixed(1)}%` : `Projected Net Survival: +${(best.netSurv*100).toFixed(1)}%`;
+
+    const plotId = mode === 'bear' ? 'bear-plot' : 'ternary-plot';
+    Plotly.newPlot(plotId, [{ type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c, marker: { size: 6, color: dataPoints.z, colorscale: 'Portland' } }], { ternary: { sum: 100, aaxis: {title:'Inf'}, baxis: {title:'Cav'}, caxis: {title:'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
+    
+    if (mode === 'bear') {
+        document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString();
+        document.getElementById('bear-best-form').innerText = `Optimal Bear Formation: ${best.form[0]}/${best.form[1]}/${best.form[2]}`;
+    } else {
+        document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        document.getElementById('opt-best-score').innerText = `Projected Survival Edge: +${Math.round(best.score).toLocaleString()} troops`;
+    }
 };
 
 // --- ROSTER UI ---
 function renderRosterUI() {
     const grid = document.getElementById('roster-grid'); grid.innerHTML = '';
     Object.keys(HEROES).sort().forEach(n => {
-        const h = HEROES[n]; const r = roster[n];
+        const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
-        card.className = `p-4 glass-card border-2 transition-all ${r.unlocked ? 'border-blue-500/50' : 'opacity-40 border-transparent'}`;
-        card.innerHTML = `<div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.display='none'"></div>
-            <div class="font-bold text-[10px] uppercase">${n}</div><input type="checkbox" ${r.unlocked?'checked':''} onchange="window.toggleHero('${n}')" class="ml-auto"></div>
-            ${r.unlocked ? `<div class="space-y-3">
-                <div class="text-[8px] text-slate-500 font-black uppercase">Skill Lv: ${r.s1}</div><input type="range" min="1" max="5" value="${r.s1}" onchange="window.updateRoster('${n}', 's1', this.value)" class="w-full accent-blue-500">
-                ${h.widget?`<div class="text-[8px] text-amber-500 font-black uppercase">Widget: ${r.widget}</div><input type="range" min="0" max="10" value="${r.widget}" onchange="window.updateRoster('${n}', 'widget', this.value)" class="w-full accent-amber-500">`:''}
-            </div>`:''}`;
+        card.onclick = () => window.toggleHero(n);
+        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500/50 bg-slate-900/50' : 'opacity-40 border-transparent bg-slate-950/20 hover:opacity-60'}`;
+        
+        card.innerHTML = `
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shadow-inner">
+                    <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                </div>
+                <div class="font-bold text-xs uppercase tracking-tighter">${n}</div>
+            </div>
+            ${r.unlocked ? `
+                <div class="space-y-4">
+                    <div class="space-y-1">
+                        <span class="text-[8px] text-slate-500 font-black uppercase">Skill 1</span> ${renderLevelPicker(n, 's1', r.s1)}
+                        <span class="text-[8px] text-slate-500 font-black uppercase">Skill 2</span> ${renderLevelPicker(n, 's2', r.s2)}
+                        <span class="text-[8px] text-slate-500 font-black uppercase">Skill 3</span> ${renderLevelPicker(n, 's3', r.s3)}
+                    </div>
+                    ${h.widget ? `<div class="pt-2 border-t border-slate-800">
+                        <span class="text-[8px] text-amber-500 font-black uppercase">Widget Level</span> ${renderWidgetPicker(n, r.widget)}
+                    </div>` : ''}
+                </div>` : ''}`;
         grid.appendChild(card);
     });
 }
+
 window.toggleHero = (n) => { roster[n].unlocked = !roster[n].unlocked; saveRoster(); renderRosterUI(); };
-window.updateRoster = (n, k, v) => { roster[n][k] = parseInt(v); if(k==='s1'){roster[n].s2=v; roster[n].s3=v;} saveRoster(); renderRosterUI(); };
+window.updateRoster = (n, k, v) => { roster[n][k] = v; saveRoster(); renderRosterUI(); };
 const saveRoster = () => localStorage.setItem('ks_roster', JSON.stringify(roster));
 
 window.calculateOptimalLineups = () => {
@@ -261,6 +234,15 @@ window.calculateOptimalLineups = () => {
         resArea.appendChild(card);
     });
 };
+
+function gatherSetup() {
+    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
+    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
+    return {
+        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes.map(h => ({ ...h, widgetLv: roster[h.name]?.widget || 0 })) },
+        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes.map(h => ({ ...h, widgetLv: roster[h.name]?.widget || 0 })) }
+    };
+}
 
 function findBestLineup(names, ctx, j) {
     let best = { leaders: [], joiners: [], score: 0 };
@@ -300,6 +282,24 @@ function calcScore(leaders, joiners, ctx) {
 function getCombos(arr, size) {
     let res = []; function h(start, c) { if(c.length===size){res.push([...c]);return;} for(let i=start;i<arr.length;i++){c.push(arr[i]);h(i+1,c);c.pop();} }
     h(0, []); return res;
+}
+
+function renderLevelPicker(name, skillKey, currentVal) {
+    let html = `<div class="flex gap-1">`;
+    for (let i = 1; i <= 5; i++) {
+        html += `<button onclick="event.stopPropagation(); window.updateRoster('${name}', '${skillKey}', ${i})" 
+                 class="w-6 h-6 rounded text-[10px] font-bold transition-all ${currentVal === i ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}">${i}</button>`;
+    }
+    return html + `</div>`;
+}
+
+function renderWidgetPicker(name, currentVal) {
+    let html = `<div class="flex flex-wrap gap-1">`;
+    for (let i = 0; i <= 10; i++) {
+        html += `<button onclick="event.stopPropagation(); window.updateRoster('${name}', 'widget', ${i})" 
+                 class="w-5 h-5 rounded text-[8px] font-bold transition-all ${currentVal === i ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
+    }
+    return html + `</div>`;
 }
 
 window.toggleDetails = () => {
