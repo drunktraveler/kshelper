@@ -3,7 +3,6 @@ import { HEROES } from './heroes.js';
 import { GROWTH_TEMPLATES } from './constants.js';
 
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100) {
-    const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
     const defP = processBatches(setup.def.batches);
 
@@ -16,7 +15,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     const getProb = (p, side, id, duration, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        if (isStochastic) {
+        if (mode === 'stochastic') {
             if (activeBuffs[side][id] > 0) return 1;
             if (Math.random() < p) { activeBuffs[side][id] = duration || 1; return 1; }
             return 0;
@@ -32,7 +31,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     let wave = 0;
     while (isAlive(m_cur) && isAlive(e_cur) && wave < 2000) {
         wave++;
-        if (isStochastic) {
+        if (atkLuck === 'stochastic') {
             ['atk', 'def'].forEach(s => { for (let id in activeBuffs[s]) if (activeBuffs[s][id] > 0) activeBuffs[s][id]--; });
         }
 
@@ -58,7 +57,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     if (s.group !== (side === 'atk' ? 'num' : 'den')) return;
                     const x = s.values[h[`s${si+1}`]-1];
                     const p = getProb(s.getChance(x), side, `${h.name}_${si}`, s.duration, sL);
-                    if (p >= 1 || (p > 0 && !isStochastic)) {
+                    if (p >= 1) {
                         const m = s.getMagnitude(x);
                         s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(m) ? m[idx] : m));
                     }
@@ -100,7 +99,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-    return { m_cur, e_cur, wave, atk_mults: m_base.logs, def_mults: e_base.logs, startAtk: totalStartAtk, startDef: totalStartDef };
+    return { m_cur, e_cur, wave, atk_mults: m_skill_base.logs, def_mults: e_skill_base.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
 
 function processBatches(batches) {
@@ -120,7 +119,7 @@ function processBatches(batches) {
     return { counts: totals, avgBase, weights };
 }
 
-function getMultipliers(side, proc, type) {
+function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey) {
     let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
     ['inf','cav','arc'].forEach(u => {
         const w = proc.weights[u];
@@ -131,12 +130,13 @@ function getMultipliers(side, proc, type) {
         if (h.name === "None") return;
         const d = HEROES[h.name]; starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
         d.skills.forEach((s, si) => {
-            if (s.group === type || s.group === 'den') {
-                const x = s.values[h[`s${si+1}`]-1];
-                const ev = (s.duration === 0 ? s.getChance(x) * s.getMagnitude(x) : (1 - Math.pow(1-s.getChance(x), s.duration)) * s.getMagnitude(x));
-                s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-                logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
-            }
+            if (s.group !== type && s.group !== 'den') return;
+            const x = s.values[h[`s${si+1}`]-1];
+            const p = shiftFn ? shiftFn(s.getChance(x), luckMode, `${h.name}_${si}`, s.duration, sideKey) : s.getChance(x);
+            const m = s.getMagnitude(x);
+            let ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? p * v : (1 - Math.pow(1 - p, s.duration)) * v) : (s.duration === 0 ? p * m : (1 - Math.pow(1 - p, s.duration)) * m);
+            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
+            if (luckMode !== 'stochastic') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
