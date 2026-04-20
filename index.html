@@ -181,16 +181,16 @@
 </div>
 
     <!-- Modal -->
-    <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-        <div class="bg-slate-900 w-full max-w-xs rounded-3xl p-8 border border-slate-800 relative">
-            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6">Hero Config</h3>
-            <div class="space-y-6">
-                <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
-                <div id="skill-inputs" class="space-y-4"></div>
-                <button onclick="window.saveHeroConfig()" class="w-full bg-blue-600 py-4 rounded-xl font-bold uppercase text-xs">Update Lineup</button>
-            </div>
+    <div id="modalContent" class="bg-slate-900 w-full max-w-xs rounded-3xl p-8 border border-slate-800 relative">
+    <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest">Select Hero</h3>
+    <div class="space-y-6">
+        <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
+        <div id="skill-inputs" class="space-y-4">
+            <!-- JS will inject Button Pickers here -->
         </div>
+        <button onclick="window.saveHeroConfig()" class="w-full bg-blue-600 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Confirm Selection</button>
     </div>
+</div>
     <script type="module" src="./ui-bridge.js"></script>
 </body>
 </html>
