@@ -21,18 +21,22 @@ function init() {
     units.forEach(u => {
         categories.forEach(c => {
             const row = document.createElement('div');
+            row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
             row.className = "stat-row";
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
-                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000">
+                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000">
                 <div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.label}</div>
-                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">
+                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
+                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">
             `;
             table.appendChild(row);
         });
     });
 
-    window.addBatch('atk', true); window.addBatch('def', true);
+    window.addBatch('atk', true); 
+    window.addBatch('def', true);
     document.getElementById('hero-select').addEventListener('change', (e) => renderSkillsInModal(e.target.value, activeSlot.index));
     updateGrids();
 }
@@ -42,7 +46,8 @@ window.addBatch = (side, initial = false) => {
     const div = document.createElement('div');
     div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
     div.innerHTML = `
-        <div class="flex justify-between items-center"><div class="flex gap-2">
+        <div class="flex justify-between items-center">
+            <div class="flex gap-2">
                 <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
                     ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
                 </select>
@@ -80,7 +85,8 @@ window.updateFormation = (side) => {
 };
 
 window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row'); if (!row) return;
+    const row = el.closest('.stat-row');
+    if (!row) return;
     const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
     const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
     a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
@@ -163,14 +169,15 @@ window.handleSimulation = async () => {
         rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
     }
 
-    // Victory Scale
+    const screen = document.getElementById('result-screen');
+    screen.classList.remove('hidden');
+
     const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk );
     const sMin = getScore(rLuck), sMax = getScore(rBad);
     const luckBar = document.getElementById('luck-visual-bar');
     luckBar.style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
     luckBar.style.width = Math.max(2, Math.abs(sMax - sMin) * 50) + "%";
 
-    document.getElementById('result-screen').classList.remove('hidden');
     document.getElementById('result-waves').innerText = `Length: ${rAvg.wave} (Range: ${rLuck.wave}-${rBad.wave})`;
     document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
     document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
@@ -181,7 +188,8 @@ window.handleSimulation = async () => {
 };
 
 window.toggleDetails = () => {
-    const isHidden = document.getElementById('battle-details').classList.toggle('hidden');
+    const box = document.getElementById('battle-details');
+    const isHidden = box.classList.toggle('hidden');
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
 
