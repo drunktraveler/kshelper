@@ -7,6 +7,20 @@ let state = {
 };
 let activeSlot = { side: null, index: null };
 
+// Initialize Roster from HEROES database
+let roster = {};
+Object.keys(HEROES).forEach(name => {
+    roster[name] = { 
+        unlocked: false, 
+        s1: 5, s2: 5, s3: 5, 
+        widget: HEROES[name].widget ? 0 : null // 0-10 if widget exists
+    };
+});
+
+// Load from LocalStorage if available
+const savedRoster = localStorage.getItem('ks_roster');
+if (savedRoster) roster = JSON.parse(savedRoster);
+
 function init() {
     const sel = document.getElementById('hero-select');
     sel.innerHTML = '<option value="None">None</option>';
@@ -17,6 +31,9 @@ function init() {
     const table = document.getElementById('stat-table');
     const categories = [{ label: "Attack", key: "att" }, { label: "Defense", key: "def" }, { label: "Lethality", key: "leth" }, { label: "Health", key: "hp" }];
     const units = ["Infantry", "Cavalry", "Archer"];
+
+    renderRosterUI();
+    window.showTab('battle');
     
     units.forEach(u => {
         categories.forEach(c => {
@@ -282,6 +299,169 @@ window.runOptimizer = (type = 'current') => {
             if (wr > best.winrate || (wr === best.winrate && totalNetSurv > best.netSurv)) best = { winrate: wr, netSurv: totalNetSurv, form: [i, j, k] };
         }
     }
+
+    function renderRosterUI() {
+    const grid = document.getElementById('roster-grid');
+    grid.innerHTML = '';
+    Object.keys(HEROES).sort().forEach(name => {
+        const h = HEROES[name];
+        const r = roster[name];
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl border-2 transition-all ${r.unlocked ? 'bg-slate-900 border-blue-500/50' : 'bg-slate-950 border-slate-800 opacity-50'}`;
+        
+        card.innerHTML = `
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-700">
+                    <img src="./assets/${name.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                </div>
+                <div class="font-bold text-xs uppercase tracking-tight">${name}</div>
+                <input type="checkbox" ${r.unlocked ? 'checked' : ''} onchange="window.toggleHero('${name}')" class="ml-auto">
+            </div>
+            ${r.unlocked ? `
+                <div class="space-y-3">
+                    <div>
+                        <span class="text-[9px] text-slate-500 uppercase font-black">Skills: ${r.s1}-${r.s2}-${r.s3}</span>
+                        <input type="range" min="1" max="5" value="${r.s1}" onchange="window.updateRoster('${name}', 's1', this.value)" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                    </div>
+                    ${h.widget ? `
+                    <div>
+                        <span class="text-[9px] text-amber-500 uppercase font-black">Widget Level: ${r.widget}</span>
+                        <input type="range" min="0" max="10" value="${r.widget}" onchange="window.updateRoster('${name}', 'widget', this.value)" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                    </div>` : ''}
+                </div>
+            ` : ''}
+        `;
+        grid.appendChild(card);
+    });
+}
+
+    window.toggleHero = (name) => { roster[name].unlocked = !roster[name].unlocked; saveRoster(); renderRosterUI(); };
+window.updateRoster = (name, key, val) => { 
+    roster[name][key] = parseInt(val); 
+    if(key === 's1') { roster[name].s2 = parseInt(val); roster[name].s3 = parseInt(val); } // Simplify: assume equal skills
+    saveRoster(); renderRosterUI(); 
+};
+const saveRoster = () => localStorage.setItem('ks_roster', JSON.stringify(roster));
+
+// --- THE OPTIMIZER ENGINE ---
+
+window.calculateOptimalLineups = () => {
+    const unlocked = Object.keys(roster).filter(name => roster[name].unlocked);
+    if (unlocked.length < 3) { alert("Please unlock at least 3 heroes in the roster."); return; }
+
+    const resultsArea = document.getElementById('optimizer-results');
+    resultsArea.classList.remove('hidden');
+    resultsArea.innerHTML = '';
+
+    const scenarios = [
+        { label: "Optimal Attack (Rally)", context: "off", useJoiners: false },
+        { label: "Optimal Attack w/ Joiners", context: "off", useJoiners: true },
+        { label: "Optimal Defense (Garrison)", context: "def", useJoiners: false },
+        { label: "Optimal Defense w/ Joiners", context: "def", useJoiners: true }
+    ];
+
+    scenarios.forEach(scen => {
+        const best = findBestLineup(unlocked, scen.context, scen.useJoiners);
+        const card = document.createElement('div');
+        card.className = "glass-card p-6 border-t-2 border-blue-500/50";
+        card.innerHTML = `
+            <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${scen.label}</span>
+            <div class="mt-4 flex gap-2">
+                ${best.leaders.map(name => `<div class="w-10 h-10 rounded-full border border-blue-500 overflow-hidden bg-slate-900 flex items-center justify-center text-[10px] font-bold" title="${name}"><img src="./assets/${name.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.remove()"><span>${name[0]}</span></div>`).join('')}
+            </div>
+            ${scen.useJoiners ? `
+            <div class="mt-2 flex gap-2 opacity-60">
+                ${best.joiners.map(name => `<div class="w-8 h-8 rounded-full border border-slate-700 overflow-hidden bg-slate-900 flex items-center justify-center text-[8px] font-bold" title="${name} (Joiner)"><img src="./assets/${name.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.remove()"><span>${name[0]}</span></div>`).join('')}
+            </div>` : ''}
+            <div class="mt-4 text-2xl font-black">${(best.score).toFixed(3)}x <span class="text-xs text-slate-500 font-normal">multiplier</span></div>
+        `;
+        resultsArea.appendChild(card);
+    });
+};
+
+function findBestLineup(heroNames, context, includeJoiners) {
+    let best = { leaders: [], joiners: [], score: 0 };
+
+    // 1. Get every combination of 3 leaders
+    const combinations = getCombinations(heroNames, 3);
+
+    combinations.forEach(trio => {
+        // Calculate Trio Multiplier
+        let trioScore = calculateCrossProduct(trio, [], context);
+        let currentJoiners = [];
+
+        if (includeJoiners) {
+            // Greedy search for 4 joiners: pick the 4 remaining heroes that add the most to the cross-product
+            const remaining = heroNames.filter(n => !trio.includes(n));
+            const joinerPool = remaining.map(name => ({
+                name,
+                impact: calculateCrossProduct(trio, [name], context) // impact of just this 1 joiner
+            })).sort((a, b) => b.impact - a.impact);
+
+            currentJoiners = joinerPool.slice(0, 4).map(j => j.name);
+            trioScore = calculateCrossProduct(trio, currentJoiners, context);
+        }
+
+        if (trioScore > best.score) {
+            best = { leaders: trio, joiners: currentJoiners, score: trioScore };
+        }
+    });
+
+    return best;
+}
+
+function calculateCrossProduct(leaders, joiners, context) {
+    let pools = {};
+
+    // Process Leaders (all 3 skills)
+    leaders.forEach(name => {
+        const d = HEROES[name];
+        const r = roster[name];
+        // Hero Widget Multiplier
+        const hWidget = (d.widget && d.widget.context === context) ? (1 + WIDGET_GROWTH[r.widget]) : 1.0;
+
+        d.skills.forEach((s, i) => {
+            const X = s.values[r[`s${i+1}`]-1];
+            const ev = (s.duration === 0 ? s.getChance(X) * s.getMagnitude(X) : (1 - Math.pow(1-s.getChance(X), s.duration)) * s.getMagnitude(X));
+            
+            s.ids.forEach((id, idx) => {
+                const val = (Array.isArray(ev) ? ev[idx] : ev) * hWidget;
+                pools[id] = (pools[id] || 0) + val;
+            });
+        });
+    });
+
+    // Process Joiners (Only Skill 1)
+    joiners.forEach(name => {
+        const d = HEROES[name];
+        const r = roster[name];
+        const s = d.skills[0];
+        const X = s.values[r.s1-1];
+        const ev = (s.duration === 0 ? s.getChance(X) * s.getMagnitude(X) : (1 - Math.pow(1-s.getChance(X), s.duration)) * s.getMagnitude(X));
+        
+        s.ids.forEach((id, idx) => {
+            pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev);
+        });
+    });
+
+    // Cross product: (1 + sumID1) * (1 + sumID2) ...
+    let total = 1.0;
+    Object.values(pools).forEach(sum => total *= (1 + sum));
+    return total;
+}
+
+// Combinations helper
+function getCombinations(array, size) {
+    let result = [];
+    function helper(start, combo) {
+        if (combo.length === size) { result.push([...combo]); return; }
+        for (let i = start; i < array.length; i++) {
+            combo.push(array[i]); helper(i + 1, combo); combo.pop();
+        }
+    }
+    helper(0, []); return result;
+}
+
 
     Plotly.newPlot('ternary-plot', [{ type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c, marker: { size: 6, color: dataPoints.z, colorscale: 'Portland' } }], { ternary: { sum: 100, aaxis: {title: 'Inf'}, baxis: {title: 'Cav'}, caxis: {title: 'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
     document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
