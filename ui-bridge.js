@@ -216,5 +216,101 @@ window.toggleDetails = () => {
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
 
+window.runOptimizer = (metric = 'winrate') => {
+    const screen = document.getElementById('optimizer-screen');
+    screen.classList.remove('hidden');
+    
+    // 1. Get constant data
+    const getStats = (s) => {
+        const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
+    };
+    const collectDef = () => {
+        return Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({
+            tier: parseInt(el.querySelector('.batch-tier').value),
+            tg: parseInt(el.querySelector('.batch-tg').value),
+            inf: parseFloat(el.querySelector('.batch-inf').value) || 0,
+            cav: parseFloat(el.querySelector('.batch-cav').value) || 0,
+            arc: parseFloat(el.querySelector('.batch-arc').value) || 0
+        }));
+    };
+
+    const defenderBatches = collectDef();
+    const attackerTotal = 1000000; // Standardizing to 1M for percentage analysis
+    const atkStats = getStats('atk');
+    
+    let dataPoints = { i: [], c: [], a: [], z: [] };
+    let best = { form: [0,0,0], score: -Infinity };
+
+    // 2. Iterate through all combinations (i+j+k = 100)
+    for (let i = 0; i <= 100; i += 2) { // 2% steps for speed, change to 1 for max detail
+        for (let j = 0; j <= 100 - i; j += 2) {
+            let k = 100 - i - j;
+            
+            const setup = {
+                atk: { 
+                    batches: [{ tier: 10, tg: 3, inf: i * (attackerTotal/100), cav: j * (attackerTotal/100), arc: k * (attackerTotal/100) }],
+                    stats: atkStats, heroes: state.atk.heroes 
+                },
+                def: { batches: defenderBatches, stats: getStats('def'), heroes: state.def.heroes }
+            };
+
+            const r = runCombatSim(setup, 'average');
+            
+            // Score Calculation
+            let score;
+            if (metric === 'winrate') {
+                // In average mode, "winrate" is binary or based on remaining HP ratio
+                score = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / attackerTotal;
+            } else {
+                // Net score: (My survivors) - (His survivors)
+                const myS = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / attackerTotal;
+                const enS = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef;
+                score = myS - enS;
+            }
+
+            dataPoints.i.push(i); dataPoints.c.push(j); dataPoints.a.push(k); dataPoints.z.push(score);
+
+            if (score > best.score) {
+                best = { score, form: [i, j, k] };
+            }
+        }
+    }
+
+    // 3. Render Ternary Plot
+    const trace = {
+        type: 'scatterternary',
+        mode: 'markers',
+        a: dataPoints.i,
+        b: dataPoints.c,
+        c: dataPoints.a,
+        marker: {
+            symbol: 1,
+            size: 10,
+            color: dataPoints.z,
+            colorscale: 'Viridis',
+            showscale: false
+        }
+    };
+
+    const layout = {
+        ternary: {
+            sum: 100,
+            aaxis: { title: 'Infantry', min: 0, hoverformat: '.0f' },
+            baxis: { title: 'Cavalry', min: 0, hoverformat: '.0f' },
+            caxis: { title: 'Archer', min: 0, hoverformat: '.0f' }
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#64748b', size: 10 },
+        margin: { l: 0, r: 0, t: 30, b: 0 }
+    };
+
+    Plotly.newPlot('ternary-plot', [trace], layout);
+    
+    document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+    document.getElementById('opt-best-score').innerText = `Maximum ${metric.toUpperCase()}: ${(best.score * 100).toFixed(1)}%`;
+    screen.scrollIntoView({ behavior: 'smooth' });
+};
+
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 document.addEventListener('DOMContentLoaded', init);
