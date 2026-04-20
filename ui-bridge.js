@@ -215,28 +215,66 @@ window.toggleDetails = () => {
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
 
-window.runOptimizer = (metric = 'winrate') => {
-    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    const collectDef = () => Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    const defBatches = collectDef(); const atkStats = getStats('atk'); const defStats = getStats('def');
+window.runOptimizer = (type = 'current') => {
+    const screen = document.getElementById('optimizer-screen');
+    screen.classList.remove('hidden');
     
-    let dataPoints = { i: [], c: [], a: [], z: [] }, best = { form: [0,0,0], score: -Infinity };
-    const total = 1000000;
+    const getStats = (s) => {
+        const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
+    };
+    const collectDef = () => Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({ tier: 10, tg: 3, inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
 
-    for (let i = 0; i <= 100; i += 2) {
-        for (let j = 0; j <= 100 - i; j += 2) {
+    const atkStats = getStats('atk');
+    const defStats = getStats('def');
+    const attackerTotal = 1000000;
+    
+    let best = { form: [0,0,0], winrate: -1 };
+    let dataPoints = { a: [], b: [], c: [], z: [] };
+
+    // Define Meta Defenders (every 10% step = 66 variations)
+    let metaDefenders = [];
+    if (type === 'meta') {
+        for (let i=0; i<=100; i+=10) {
+            for (let j=0; j<=100-i; j+=10) {
+                metaDefenders.push({ inf: i, cav: j, arc: 100-i-j });
+            }
+        }
+    } else {
+        // Just the 1 current defender
+        const current = collectDef()[0];
+        const total = current.inf + current.cav + current.arc;
+        metaDefenders.push({ inf: (current.inf/total)*100, cav: (current.cav/total)*100, arc: (current.arc/total)*100 });
+    }
+
+    // Step through Attacker formations (every 5% step = 231 variations)
+    for (let i = 0; i <= 100; i += 5) {
+        for (let j = 0; j <= 100 - i; j += 5) {
             let k = 100 - i - j;
-            const setup = { atk: { batches: [{ tier: 10, tg: 3, inf: i*(total/100), cav: j*(total/100), arc: k*(total/100) }], stats: atkStats, heroes: state.atk.heroes }, def: { batches: defBatches, stats: defStats, heroes: state.def.heroes } };
-            const r = runCombatSim(setup, 'average', 'average');
-            let score = (metric === 'winrate') ? (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc)/total : ((r.m_cur.inf + r.m_cur.cav + r.m_cur.arc)/total) - ((r.e_cur.inf + r.e_cur.cav + r.e_cur.arc)/r.startDef);
-            dataPoints.i.push(i); dataPoints.c.push(j); dataPoints.a.push(k); dataPoints.z.push(score);
-            if (score > best.score) best = { score, form: [i, j, k] };
+            let wins = 0;
+
+            metaDefenders.forEach(defForm => {
+                const setup = {
+                    atk: { batches: [{ tier: 10, tg: 3, inf: i*10000, cav: j*10000, arc: k*10000 }], stats: atkStats, heroes: state.atk.heroes },
+                    def: { batches: [{ tier: 10, tg: 3, inf: defForm.inf*10000, cav: defForm.cav*10000, arc: defForm.arc*10000 }], stats: defStats, heroes: state.def.heroes }
+                };
+                const r = runCombatSim(setup, 'average', 'average');
+                if ((r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) > (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc)) wins++;
+            });
+
+            const winrate = wins / metaDefenders.length;
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(winrate);
+            if (winrate > best.winrate) best = { winrate, form: [i, j, k] };
         }
     }
 
-    Plotly.newPlot('ternary-plot', [{ type: 'scatterternary', mode: 'markers', a: dataPoints.i, b: dataPoints.c, c: dataPoints.a, marker: { size: 8, color: dataPoints.z, colorscale: 'Viridis' } }], { ternary: { sum: 100, aaxis: {title:'Inf'}, baxis: {title:'Cav'}, caxis: {title:'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color:'#64748b'} });
+    // Render Plot
+    const trace = { type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c,
+        marker: { size: 10, color: dataPoints.z, colorscale: 'Portland', showscale: true, line: { color: '#000', width: 1 } }
+    };
+    Plotly.newPlot('ternary-plot', [trace], { ternary: { sum: 100, aaxis: {title: 'Infantry'}, baxis: {title: 'Cavalry'}, caxis: {title: 'Archer'} }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
+
     document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-    document.getElementById('opt-best-score').innerText = `Max ${metric.toUpperCase()}: ${(best.score*100).toFixed(1)}%`;
+    document.getElementById('opt-best-score').innerText = `Winrate against ${type === 'meta' ? '66 Meta Variations' : 'Current Defender'}: ${(best.winrate * 100).toFixed(0)}%`;
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
