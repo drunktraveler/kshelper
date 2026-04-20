@@ -2,6 +2,7 @@ import { HEROES } from './heroes.js';
 import { runCombatSim } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
+// State Management
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) },
@@ -10,7 +11,51 @@ let state = {
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
-// --- 1. GLOBAL UI & TABS ---
+// --- 1. CORE SYSTEM INIT ---
+function init() {
+    console.log("Initializing UI Bridge...");
+    
+    // Sync Roster
+    Object.keys(HEROES).forEach(n => { 
+        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; 
+    });
+
+    // Populate Select
+    const sel = document.getElementById('hero-select');
+    if (sel) {
+        sel.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => {
+            sel.innerHTML += `<option value="${n}">${n}</option>`;
+        });
+        sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
+    }
+
+    // Build Stat Table
+    const table = document.getElementById('stat-table');
+    if (table) {
+        const categories = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+        const units = ["Infantry", "Cavalry", "Archer"];
+        table.innerHTML = '';
+        units.forEach(u => {
+            categories.forEach(c => {
+                const row = document.createElement('div');
+                row.className = "stat-row";
+                row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
+                const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
+                row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">`;
+                table.appendChild(row);
+            });
+        });
+    }
+
+    window.addBatch('atk', true);
+    window.addBatch('def', true);
+    renderRosterUI();
+    window.showTab('battle');
+}
+
+// --- 2. EXPOSING FUNCTIONS TO WINDOW (Fixes the "Broken" buttons) ---
+
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
@@ -22,7 +67,6 @@ window.showTab = (tab) => {
     });
 };
 
-// --- 2. BATCH & FORMATION ---
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     if (!container) return;
@@ -65,7 +109,28 @@ window.updateFormation = (side) => {
     }
 };
 
+window.updateStatColors = (el) => {
+    const row = el.closest('.stat-row'); if (!row) return;
+    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
+    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
+    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
+    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
+};
+
 // --- 3. ROSTER LOGIC ---
+function renderRosterUI() {
+    const grid = document.getElementById('roster-grid'); if(!grid) return; grid.innerHTML = '';
+    Object.keys(HEROES).sort().forEach(n => {
+        const h = HEROES[n], r = roster[n];
+        const card = document.createElement('div');
+        card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; saveRoster(); renderRosterUI(); };
+        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50' : 'opacity-40 border-transparent bg-slate-950/20'}`;
+        let skillsHtml = h.skills.map((s, i) => `<div class="mt-2"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
+        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase">${n}</div></div>${r.unlocked ? `<div class="space-y-3">${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
+        grid.appendChild(card);
+    });
+}
+
 function renderLevelPicker(hero, key, current, isRoster = true) {
     let h = `<div class="flex gap-1">`;
     for(let i=1; i<=5; i++) {
@@ -83,22 +148,10 @@ function renderWidgetPicker(hero, current) {
     return h + `</div>`;
 }
 
-function renderRosterUI() {
-    const grid = document.getElementById('roster-grid'); if(!grid) return;
-    grid.innerHTML = '';
-    Object.keys(HEROES).sort().forEach(n => {
-        const h = HEROES[n], r = roster[n];
-        const card = document.createElement('div');
-        card.onclick = () => { r.unlocked = !r.unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50' : 'opacity-40 border-transparent bg-slate-950/20'}`;
-        let skillsHtml = h.skills.map((s, i) => `<div class="mt-2"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase">${n}</div></div>${r.unlocked ? `<div class="space-y-3">${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
-        grid.appendChild(card);
-    });
-}
-window.updateRoster = (n,k,v) => { roster[n][k]=v; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
+window.updateRoster = (n, k, v) => { roster[n][k] = v; saveRoster(); renderRosterUI(); };
+const saveRoster = () => localStorage.setItem('ks_roster', JSON.stringify(roster));
 
-// --- 4. BATTLE MODAL & HERO CONFIG ---
+// --- 4. HERO MODAL ---
 window.openHeroModal = (side, index) => {
     activeSlot = { side, index }; const h = state[side].heroes[index];
     modalTemp = { s1: h.s1, s2: h.s2, s3: h.s3 };
@@ -106,6 +159,7 @@ window.openHeroModal = (side, index) => {
     renderSkillsInModal(h.name, index);
     document.getElementById('heroModal').classList.replace('hidden', 'flex');
 };
+
 window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index); };
 
 function renderSkillsInModal(name, slot) {
@@ -118,6 +172,7 @@ function renderSkillsInModal(name, slot) {
         container.appendChild(div);
     }
 }
+
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
     state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, star: 5, sub: 0, widgetLv: roster[name]?.widget || 0 };
@@ -158,7 +213,7 @@ window.handleSimulation = async () => {
             atk_mults: batch[Math.floor(runs/2)].atk_mults, def_mults: batch[Math.floor(runs/2)].def_mults,
             startAtk: batch[0].startAtk, startDef: batch[0].startDef
         };
-        rLuck = batch[runs-1]; rBad = batch[0];
+        rBad = batch[0]; rLuck = batch[runs-1];
     } else {
         rAvg = runCombatSim(setup, 'average', 'average');
         rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
@@ -166,16 +221,20 @@ window.handleSimulation = async () => {
     }
 
     const screen = document.getElementById('result-screen'); screen.classList.remove('hidden');
-    const aS = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc), dS = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc);
-    document.getElementById('res-atk-total').innerHTML = `<span>${aS.toLocaleString()}</span><div class="text-[10px] text-slate-500">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${dS.toLocaleString()}</span><div class="text-[10px] text-slate-500">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk );
+    const sMin = getScore(rLuck), sMax = getScore(rBad);
+    document.getElementById('luck-visual-bar').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
+    document.getElementById('luck-visual-bar').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
+
+    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
     document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    document.getElementById('result-waves').innerText = `Waves: ${rAvg.wave}`;
+    document.getElementById('result-waves').innerText = `Simulation ended after ${rAvg.wave} waves`;
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
 window.runOptimizer = (mode) => {
-    const setup = gatherSetup(); const atkTotal = 1000000;
+    const setup = gatherSetup(); const atkTotal = setup.atk.batches.reduce((s,b)=>s+b.inf+b.cav+b.arc,0) || 1000000;
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
 
     let metaDefenders = [];
@@ -193,7 +252,7 @@ window.runOptimizer = (mode) => {
             let wins = 0, totalNet = 0;
             metaDefenders.forEach(def => {
                 let curSetup = JSON.parse(JSON.stringify(setup));
-                curSetup.atk.batches = [{ tier:10, tg:3, inf:i*10000, cav:j*10000, arc:k*10000 }];
+                curSetup.atk.batches = [{ tier:10, tg:3, inf:i*(atkTotal/100), cav:j*(atkTotal/100), arc:k*(atkTotal/100) }];
                 if (mode !== 'bear') curSetup.def.batches = [{ tier:10, tg:3, inf:def.inf*atkTotal, cav:def.cav*atkTotal, arc:def.arc*atkTotal }];
                 const r = runCombatSim(curSetup, 'average', 'average', 100, mode === 'bear');
                 let outcome = mode === 'bear' ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
@@ -207,25 +266,10 @@ window.runOptimizer = (mode) => {
     }
     const plotId = mode === 'bear' ? 'bear-plot' : 'ternary-plot';
     Plotly.newPlot(plotId, [{ type: 'scatterternary', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c, marker: { color: dataPoints.z, colorscale: 'Portland', size: 8 } }], { ternary: { sum: 100, aaxis: {title:'Infantry'}, baxis: {title:'Cavalry'}, caxis: {title:'Archer'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color:'#64748b'} });
-    if(mode === 'bear') document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString();
+    if (mode === 'bear') document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString();
     else document.getElementById('opt-best-score').innerText = `Best result: +${Math.round(best.score).toLocaleString()} troops`;
     document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
 };
-
-// --- HELPERS ---
-function gatherSetup() {
-    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    return {
-        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes.map(h => ({ ...h, starBonus: GROWTH_TEMPLATES[HEROES[h.name]?.template || 'SEASON_1'][(h.star*6)+h.sub] })) },
-        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes.map(h => ({ ...h, starBonus: GROWTH_TEMPLATES[HEROES[h.name]?.template || 'SEASON_1'][(h.star*6)+h.sub] })) }
-    };
-}
-
-function getCombinations(arr, size) {
-    let res = []; function h(start, c) { if(c.length===size){res.push([...c]);return;} for(let i=start;i<arr.length;i++){c.push(arr[i]);h(i+1,c);c.pop();} }
-    h(0, []); return res;
-}
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
@@ -254,7 +298,7 @@ window.calculateOptimalLineups = () => {
         const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500";
         card.innerHTML = `<div class="text-[9px] font-black text-blue-400 uppercase mb-3">${s.l}</div>
             <div class="flex gap-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-blue-500" title="${n}">`).join('')}</div>
-            ${s.j ? `<div class="flex gap-1 mt-2 opacity-50">${best.joiners.map(n=>`<div class="w-6 h-6 rounded-full border border-slate-700" title="${n}">`).join('')}</div>` : ''}
+            ${s.j ? `<div class="flex gap-1 mt-2 opacity-50">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-6 h-6 rounded-full border border-slate-700" title="${n}">`).join('')}</div>` : ''}
             <div class="mt-3 text-xl font-black">${best.score.toFixed(3)}x</div>`;
         resArea.appendChild(card);
     });
@@ -282,19 +326,32 @@ function calcScore(leaders, joiners, ctx) {
     let t = 1.0; Object.values(pools).forEach(v => t *= (1+v)); return t;
 }
 
-window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row'); if (!row) return;
-    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
-    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
-    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
-    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
-};
+// --- UTILS ---
+function gatherSetup() {
+    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
+    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
+    return {
+        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes },
+        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
+    };
+}
+
+function getCombinations(arr, size) {
+    let res = []; function h(start, c) { if(c.length===size){res.push([...c]);return;} for(let i=start;i<arr.length;i++){c.push(arr[i]);h(i+1,c);c.pop();} }
+    h(0, []); return res;
+}
 
 window.toggleDetails = () => {
     const isHidden = document.getElementById('battle-details').classList.toggle('hidden');
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
 
+window.handleBearSim = () => {
+    const r = runCombatSim(gatherSetup(), 'average', 'average', 10, true);
+    document.getElementById('bear-total-dmg').innerText = Math.round(r.totalDmg).toLocaleString();
+};
+
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 
+// Start everything
 document.addEventListener('DOMContentLoaded', window.init);
