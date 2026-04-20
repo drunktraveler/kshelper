@@ -155,28 +155,55 @@ window.handleSimulation = () => {
         def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
     };
 
-    const rAvg = runCombatSim(setup, 'average');
-    const rLuck = runCombatSim(setup, 'lucky');
-    const rBad = runCombatSim(setup, 'unlucky');
+    // 1. Run Baseline
+    const rAvg = runCombatSim(setup, 'average', 'average');
+    
+    // 2. Run Extremes (Cross-Luck)
+    // Attacker Ceiling: Atk Lucky, Def Unlucky
+    const rAtkCeil = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+    // Defender Ceiling: Atk Unlucky, Def Lucky
+    const rDefCeil = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
 
-    const totalStart = setup.atk.batches.reduce((sum, b) => sum + b.inf + b.cav + b.arc, 0);
-    const lowPct = ((rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc) / totalStart) * 100;
-    const highPct = ((rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc) / totalStart) * 100;
-    
-    document.getElementById('luck-visual-bar').style.left = Math.max(0, lowPct) + "%";
-    document.getElementById('luck-visual-bar').style.width = Math.max(2, (highPct - lowPct)) + "%";
+    // VICTORY SPECTRUM MATH
+    // Score = (Defender Survival %) - (Attacker Survival %)
+    const getScore = (r) => {
+        const aSurv = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk;
+        const dSurv = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef;
+        return dSurv - aSurv;
+    };
 
-    document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Variance: ${rLuck.wave}-${rBad.wave})`;
-    
-    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    const scoreMin = getScore(rAtkCeil); // Most negative = Attacker Win
+    const scoreMax = getScore(rDefCeil); // Most positive = Defender Win
 
+    const minPos = (scoreMin + 1) * 50;
+    const maxPos = (scoreMax + 1) * 50;
+    
+    const luckBar = document.getElementById('luck-visual-bar');
+    luckBar.style.left = Math.min(minPos, maxPos) + "%";
+    luckBar.style.width = Math.max(1.5, Math.abs(maxPos - minPos)) + "%";
+
+    document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Extreme Luck Range: ${rAtkCeil.wave}-${rDefCeil.wave})`;
+    
+    // Attacker total with ceiling range
+    const aAvg = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc);
+    const aWorst = Math.round(rDefCeil.m_cur.inf+rDefCeil.m_cur.cav+rDefCeil.m_cur.arc);
+    const aBest = Math.round(rAtkCeil.m_cur.inf+rAtkCeil.m_cur.cav+rAtkCeil.m_cur.arc);
+    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${aAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${aWorst.toLocaleString()} - ${aBest.toLocaleString()}</div>`;
+
+    // Defender total with ceiling range
+    const dAvg = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc);
+    const dWorst = Math.round(rAtkCeil.e_cur.inf+rAtkCeil.e_cur.cav+rAtkCeil.e_cur.arc);
+    const dBest = Math.round(rDefCeil.e_cur.inf+rDefCeil.e_cur.cav+rDefCeil.e_cur.arc);
+    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${dAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${dWorst.toLocaleString()} - ${dBest.toLocaleString()}</div>`;
+
+    // Breakdown labels
     document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
 
+    // Fix Log Box
     const logBox = document.getElementById('battle-details');
     logBox.innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
                        `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
