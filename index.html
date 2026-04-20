@@ -72,41 +72,35 @@
         </div>
 
         <div id="result-screen" class="hidden max-w-2xl mx-auto">
-            <div class="glass-card p-8 border-t-4 border-blue-500">
-                <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Battle Analysis</h2>
-                <p class="text-slate-500 text-xs font-bold mb-8" id="result-waves"></p>
-                <div class="grid grid-cols-2 gap-12 mb-8 border-b border-slate-800 pb-8">
-                    <div>
-                        <p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p>
-                        <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
-                        <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
-                    </div>
-                    <div>
-                        <p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p>
-                        <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
-                        <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
-                    </div>
-                    <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-    <div class="flex justify-between text-[10px] font-black uppercase text-slate-500 mb-2">
-        <span>Extremely Unlucky</span>
-        <span>Average Result</span>
-        <span>Extremely Lucky</span>
-    </div>
-    <div class="h-2 bg-slate-800 rounded-full overflow-hidden relative">
-        <!-- Visual "Bell Curve" representation -->
-        <div class="absolute inset-y-0 bg-blue-500/20" style="left: 10%; right: 10%;"></div>
-        <div class="absolute inset-y-0 w-1 bg-blue-500 left-1/2 -translate-x-1/2"></div>
-    </div>
-    <p class="text-[9px] text-slate-600 mt-2 italic text-center">
-        Statistical variance calculated using a binomial distribution over 100 combat iterations.
-    </p>
-</div>
-                </div>
-                <button onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Modifiers +</button>
-                <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-500 space-y-1 max-h-64 overflow-y-auto"></div>
+    <div class="glass-card p-8 border-t-4 border-blue-500">
+        <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Battle Analysis</h2>
+        <p class="text-slate-500 text-xs font-bold mb-8" id="result-waves"></p>
+        <div class="grid grid-cols-2 gap-12 mb-8 border-b border-slate-800 pb-8">
+            <div>
+                <p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p>
+                <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
+                <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
+            </div>
+            <div>
+                <p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p>
+                <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
+                <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
             </div>
         </div>
+        <!-- Luck Graph Placeholder -->
+        <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
+            <div class="flex justify-between text-[10px] font-black uppercase text-slate-500 mb-2">
+                <span>Unlucky</span><span>Average</span><span>Lucky</span>
+            </div>
+            <div class="h-2 bg-slate-800 rounded-full overflow-hidden relative">
+                <div class="absolute inset-y-0 bg-blue-500/20" style="left: 15%; right: 15%;"></div>
+                <div class="absolute inset-y-0 w-1 bg-blue-500 left-1/2 -translate-x-1/2"></div>
+            </div>
+        </div>
+        <button onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Modifiers +</button>
+        <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-500 space-y-1 max-h-64 overflow-y-auto"></div>
     </div>
+</div>
 
     <!-- Modal -->
     <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
