@@ -89,15 +89,20 @@
         </div>
         <!-- Luck Graph Placeholder -->
         <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
-            <div class="flex justify-between text-[10px] font-black uppercase text-slate-500 mb-2">
-                <span>Unlucky</span><span>Average</span><span>Lucky</span>
-            </div>
-            <div class="h-2 bg-slate-800 rounded-full overflow-hidden relative">
-                <div class="absolute inset-y-0 bg-blue-500/20" style="left: 15%; right: 15%;"></div>
-                <div class="absolute inset-y-0 w-1 bg-blue-500 left-1/2 -translate-x-1/2"></div>
-            </div>
-        </div>
-        <button onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Modifiers +</button>
+    <div class="flex justify-between text-[9px] font-black uppercase text-slate-600 mb-2 tracking-widest">
+        <span>0% Survivors</span>
+        <span class="text-blue-500/50">Volatility Range</span>
+        <span>100% Survivors</span>
+    </div>
+    <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden">
+        <!-- This bar moves and grows based on luck spread -->
+        <div id="luck-visual-bar" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+    </div>
+</div>
+
+<button id="toggle-details-btn" onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 hover:text-blue-400 transition tracking-widest">
+    View Combat Modifiers +
+</button>
         <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-500 space-y-1 max-h-64 overflow-y-auto"></div>
     </div>
 </div>
