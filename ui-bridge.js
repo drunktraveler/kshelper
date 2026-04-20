@@ -39,6 +39,23 @@ function init() {
     updateGrids();
 }
 
+window.showTab = (tab) => {
+    const bTab = document.getElementById('battle-tab');
+    const fTab = document.getElementById('optimizer-screen');
+    const bBtn = document.getElementById('btn-tab-battle');
+    const fBtn = document.getElementById('btn-tab-form');
+
+    if (tab === 'battle') {
+        bTab.classList.remove('hidden'); fTab.classList.add('hidden');
+        bBtn.classList.add('bg-blue-600'); bBtn.classList.remove('text-slate-500');
+        fBtn.classList.remove('bg-blue-600'); fBtn.classList.add('text-slate-500');
+    } else {
+        bTab.classList.add('hidden'); fTab.classList.remove('hidden');
+        fBtn.classList.add('bg-blue-600'); fBtn.classList.remove('text-slate-500');
+        bBtn.classList.remove('bg-blue-600'); bBtn.classList.add('text-slate-500');
+    }
+};
+
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     const div = document.createElement('div');
@@ -72,9 +89,7 @@ window.updateFormation = (side) => {
     const total = i + c + a;
     const bar = document.getElementById(`${side}-f-bar`);
     if (total > 0 && bar) {
-        bar.children[0].style.width = (i/total*100)+'%';
-        bar.children[1].style.width = (c/total*100)+'%';
-        bar.children[2].style.width = (a/total*100)+'%';
+        bar.children[0].style.width = (i/total*100)+'%'; bar.children[1].style.width = (c/total*100)+'%'; bar.children[2].style.width = (a/total*100)+'%';
         document.getElementById(`${side}-inf-pct`).innerText = Math.round(i/total*100)+'%';
         document.getElementById(`${side}-cav-pct`).innerText = Math.round(c/total*100)+'%';
         document.getElementById(`${side}-arc-pct`).innerText = Math.round(a/total*100)+'%';
@@ -155,42 +170,26 @@ window.handleSimulation = async () => {
     let rAvg, rLuck, rBad, modeLabel;
 
     if (simMode === 'monte-carlo') {
-    modeLabel = "Monte Carlo (100x)";
-    const runs = 100; let batch = [];
-    for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-    
-    // Sort to find Absolute Best/Worst
-    batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
-    
-    // Calculate Mean Survivors
-    const totalStartAtk = setup.atk.batches.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
-    const totalStartDef = setup.def.batches.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
-    
-    const sumAtk = batch.reduce((s, r) => s + (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc), 0);
-    const sumDef = batch.reduce((s, r) => s + (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc), 0);
-    
-    // We create a "Virtual" result representing the Mean
-    rAvg = {
-        m_cur: { 
-            inf: batch.reduce((s, r) => s + r.m_cur.inf, 0) / runs,
-            cav: batch.reduce((s, r) => s + r.m_cur.cav, 0) / runs,
-            arc: batch.reduce((s, r) => s + r.m_cur.arc, 0) / runs
-        },
-        e_cur: {
-            inf: batch.reduce((s, r) => s + r.e_cur.inf, 0) / runs,
-            cav: batch.reduce((s, r) => s + r.e_cur.cav, 0) / runs,
-            arc: batch.reduce((s, r) => s + r.e_cur.arc, 0) / runs
-        },
-        wave: Math.round(batch.reduce((s, r) => s + r.wave, 0) / runs),
-        atk_mults: batch[Math.floor(runs/2)].atk_mults, // Use median battle for logs
-        def_mults: batch[Math.floor(runs/2)].def_mults,
-        startAtk: totalStartAtk,
-        startDef: totalStartDef
-    };
-
-    rLuck = batch[runs - 1]; // Absolute Best
-    rBad = batch[0];       // Absolute Worst
-}
+        modeLabel = "Monte Carlo (100x)";
+        const runs = 100; let batch = [];
+        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
+        
+        // Use true Mean for Average
+        rAvg = {
+            m_cur: { inf: batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs, cav: batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs, arc: batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs },
+            e_cur: { inf: batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs, cav: batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs, arc: batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs },
+            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
+            atk_mults: batch[Math.floor(runs/2)].atk_mults, def_mults: batch[Math.floor(runs/2)].def_mults,
+            startAtk: batch[0].startAtk, startDef: batch[0].startDef
+        };
+        rLuck = batch[runs - 1]; rBad = batch[0];
+    } else {
+        modeLabel = "Quick Sim (Estimate)";
+        rAvg = runCombatSim(setup, 'average', 'average');
+        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+    }
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
@@ -202,8 +201,8 @@ window.handleSimulation = async () => {
     luckBar.style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
 
     document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | Avg Length: ${rAvg.wave} waves`;
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Expected Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Expected Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Worst-Best: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Worst-Best: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
 
     document.getElementById('res-atk-details').innerText = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerText = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
@@ -217,99 +216,27 @@ window.toggleDetails = () => {
 };
 
 window.runOptimizer = (metric = 'winrate') => {
-    const screen = document.getElementById('optimizer-screen');
-    screen.classList.remove('hidden');
+    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
+    const collectDef = () => Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
+    const defBatches = collectDef(); const atkStats = getStats('atk'); const defStats = getStats('def');
     
-    // 1. Get constant data
-    const getStats = (s) => {
-        const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
-    };
-    const collectDef = () => {
-        return Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({
-            tier: parseInt(el.querySelector('.batch-tier').value),
-            tg: parseInt(el.querySelector('.batch-tg').value),
-            inf: parseFloat(el.querySelector('.batch-inf').value) || 0,
-            cav: parseFloat(el.querySelector('.batch-cav').value) || 0,
-            arc: parseFloat(el.querySelector('.batch-arc').value) || 0
-        }));
-    };
+    let dataPoints = { i: [], c: [], a: [], z: [] }, best = { form: [0,0,0], score: -Infinity };
+    const total = 1000000;
 
-    const defenderBatches = collectDef();
-    const attackerTotal = 1000000; // Standardizing to 1M for percentage analysis
-    const atkStats = getStats('atk');
-    
-    let dataPoints = { i: [], c: [], a: [], z: [] };
-    let best = { form: [0,0,0], score: -Infinity };
-
-    // 2. Iterate through all combinations (i+j+k = 100)
-    for (let i = 0; i <= 100; i += 2) { // 2% steps for speed, change to 1 for max detail
+    for (let i = 0; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
             let k = 100 - i - j;
-            
-            const setup = {
-                atk: { 
-                    batches: [{ tier: 10, tg: 3, inf: i * (attackerTotal/100), cav: j * (attackerTotal/100), arc: k * (attackerTotal/100) }],
-                    stats: atkStats, heroes: state.atk.heroes 
-                },
-                def: { batches: defenderBatches, stats: getStats('def'), heroes: state.def.heroes }
-            };
-
-            const r = runCombatSim(setup, 'average');
-            
-            // Score Calculation
-            let score;
-            if (metric === 'winrate') {
-                // In average mode, "winrate" is binary or based on remaining HP ratio
-                score = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / attackerTotal;
-            } else {
-                // Net score: (My survivors) - (His survivors)
-                const myS = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / attackerTotal;
-                const enS = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef;
-                score = myS - enS;
-            }
-
+            const setup = { atk: { batches: [{ tier: 10, tg: 3, inf: i*(total/100), cav: j*(total/100), arc: k*(total/100) }], stats: atkStats, heroes: state.atk.heroes }, def: { batches: defBatches, stats: defStats, heroes: state.def.heroes } };
+            const r = runCombatSim(setup, 'average', 'average');
+            let score = (metric === 'winrate') ? (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc)/total : ((r.m_cur.inf + r.m_cur.cav + r.m_cur.arc)/total) - ((r.e_cur.inf + r.e_cur.cav + r.e_cur.arc)/r.startDef);
             dataPoints.i.push(i); dataPoints.c.push(j); dataPoints.a.push(k); dataPoints.z.push(score);
-
-            if (score > best.score) {
-                best = { score, form: [i, j, k] };
-            }
+            if (score > best.score) best = { score, form: [i, j, k] };
         }
     }
 
-    // 3. Render Ternary Plot
-    const trace = {
-        type: 'scatterternary',
-        mode: 'markers',
-        a: dataPoints.i,
-        b: dataPoints.c,
-        c: dataPoints.a,
-        marker: {
-            symbol: 1,
-            size: 10,
-            color: dataPoints.z,
-            colorscale: 'Viridis',
-            showscale: false
-        }
-    };
-
-    const layout = {
-        ternary: {
-            sum: 100,
-            aaxis: { title: 'Infantry', min: 0, hoverformat: '.0f' },
-            baxis: { title: 'Cavalry', min: 0, hoverformat: '.0f' },
-            caxis: { title: 'Archer', min: 0, hoverformat: '.0f' }
-        },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#64748b', size: 10 },
-        margin: { l: 0, r: 0, t: 30, b: 0 }
-    };
-
-    Plotly.newPlot('ternary-plot', [trace], layout);
-    
+    Plotly.newPlot('ternary-plot', [{ type: 'scatterternary', mode: 'markers', a: dataPoints.i, b: dataPoints.c, c: dataPoints.a, marker: { size: 8, color: dataPoints.z, colorscale: 'Viridis' } }], { ternary: { sum: 100, aaxis: {title:'Inf'}, baxis: {title:'Cav'}, caxis: {title:'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color:'#64748b'} });
     document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-    document.getElementById('opt-best-score').innerText = `Maximum ${metric.toUpperCase()}: ${(best.score * 100).toFixed(1)}%`;
-    screen.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('opt-best-score').innerText = `Max ${metric.toUpperCase()}: ${(best.score*100).toFixed(1)}%`;
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
