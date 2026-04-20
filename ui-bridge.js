@@ -169,26 +169,39 @@ window.handleSimulation = async () => {
     const simMode = document.getElementById('sim-mode-select').value;
     let rAvg, rLuck, rBad, modeLabel;
 
-    if (simMode === 'monte-carlo') {
-        modeLabel = "Monte Carlo (100x)";
+     if (simMode === 'monte-carlo') {
+        modeLabel = "Deep Sim (100 Runs)";
         const runs = 100; let batch = [];
         for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        
         batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
         
-        // Use true Mean for Average
+        // Winner-Takes-All Averaging
+        const atkWins = batch.filter(r => (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) > (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc)).length;
+        const winner = atkWins >= 50 ? 'atk' : 'def';
+
         rAvg = {
-            m_cur: { inf: batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs, cav: batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs, arc: batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs },
-            e_cur: { inf: batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs, cav: batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs, arc: batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs },
-            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
-            atk_mults: batch[Math.floor(runs/2)].atk_mults, def_mults: batch[Math.floor(runs/2)].def_mults,
+            m_cur: { 
+                inf: winner === 'atk' ? batch.reduce((s, r) => s + r.m_cur.inf, 0) / runs : 0,
+                cav: winner === 'atk' ? batch.reduce((s, r) => s + r.m_cur.cav, 0) / runs : 0,
+                arc: winner === 'atk' ? batch.reduce((s, r) => s + r.m_cur.arc, 0) / runs : 0
+            },
+            e_cur: {
+                inf: winner === 'def' ? batch.reduce((s, r) => s + r.e_cur.inf, 0) / runs : 0,
+                cav: winner === 'def' ? batch.reduce((s, r) => s + r.e_cur.cav, 0) / runs : 0,
+                arc: winner === 'def' ? batch.reduce((s, r) => s + r.e_cur.arc, 0) / runs : 0
+            },
+            wave: Math.round(batch.reduce((s, r) => s + r.wave, 0) / runs),
+            atk_mults: batch[Math.floor(runs/2)].atk_mults,
+            def_mults: batch[Math.floor(runs/2)].def_mults,
             startAtk: batch[0].startAtk, startDef: batch[0].startDef
         };
-        rLuck = batch[runs - 1]; rBad = batch[0];
+        rWorst = batch[0]; rBest = batch[runs-1];
     } else {
         modeLabel = "Quick Sim (Estimate)";
         rAvg = runCombatSim(setup, 'average', 'average');
-        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+        rBest = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+        rWorst = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
     }
 
     const screen = document.getElementById('result-screen');
@@ -219,62 +232,57 @@ window.runOptimizer = (type = 'current') => {
     const screen = document.getElementById('optimizer-screen');
     screen.classList.remove('hidden');
     
-    const getStats = (s) => {
-        const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
-    };
+    // 1. Setup Environment
+    const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
     const collectDef = () => Array.from(document.querySelectorAll(`#def-batch-container > div`)).map(el => ({ tier: 10, tg: 3, inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-
-    const atkStats = getStats('atk');
-    const defStats = getStats('def');
-    const attackerTotal = 1000000;
     
-    let best = { form: [0,0,0], winrate: -1 };
-    let dataPoints = { a: [], b: [], c: [], z: [] };
+    const currentDef = collectDef();
+    const attackerTotal = setup.atk.batches.reduce((s, b) => s + b.inf + b.cav + b.arc, 0); // Use user's army size
+    const atkStats = getStats('atk'); const defStats = getStats('def');
 
-    // Define Meta Defenders (every 10% step = 66 variations)
     let metaDefenders = [];
     if (type === 'meta') {
-        for (let i=0; i<=100; i+=10) {
-            for (let j=0; j<=100-i; j+=10) {
-                metaDefenders.push({ inf: i, cav: j, arc: 100-i-j });
-            }
-        }
+        for (let i=0; i<=100; i+=10) for (let j=0; j<=100-i; j+=10) metaDefenders.push({ inf: i/100, cav: j/100, arc: (100-i-j)/100 });
     } else {
-        // Just the 1 current defender
-        const current = collectDef()[0];
-        const total = current.inf + current.cav + current.arc;
-        metaDefenders.push({ inf: (current.inf/total)*100, cav: (current.cav/total)*100, arc: (current.arc/total)*100 });
+        const total = currentDef.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
+        metaDefenders.push({ inf: currentDef[0].inf/total, cav: currentDef[0].cav/total, arc: currentDef[0].arc/total });
     }
 
-    // Step through Attacker formations (every 5% step = 231 variations)
-    for (let i = 0; i <= 100; i += 5) {
-        for (let j = 0; j <= 100 - i; j += 5) {
-            let k = 100 - i - j;
-            let wins = 0;
+    let dataPoints = { a: [], b: [], c: [], z: [] };
+    let best = { form: [0,0,0], winrate: -1, netSurv: -Infinity };
 
-            metaDefenders.forEach(defForm => {
-                const setup = {
-                    atk: { batches: [{ tier: 10, tg: 3, inf: i*10000, cav: j*10000, arc: k*10000 }], stats: atkStats, heroes: state.atk.heroes },
-                    def: { batches: [{ tier: 10, tg: 3, inf: defForm.inf*10000, cav: defForm.cav*10000, arc: defForm.arc*10000 }], stats: defStats, heroes: state.def.heroes }
+    // 2. The Search Loop (Min Inf = 20%)
+    for (let i = 20; i <= 100; i += 1) { // 1% resolution
+        for (let j = 0; j <= 100 - i; j += 1) {
+            let k = 100 - i - j;
+            let wins = 0; let totalNetSurv = 0;
+
+            metaDefenders.forEach(def => {
+                const s = {
+                    atk: { batches: [{ tier: 10, tg: 3, inf: i*(attackerTotal/100), cav: j*(attackerTotal/100), arc: k*(attackerTotal/100) }], stats: atkStats, heroes: state.atk.heroes },
+                    def: { batches: [{ tier: 10, tg: 3, inf: def.inf*attackerTotal, cav: def.cav*attackerTotal, arc: def.arc*attackerTotal }], stats: defStats, heroes: state.def.heroes }
                 };
-                const r = runCombatSim(setup, 'average', 'average');
-                if ((r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) > (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc)) wins++;
+                const r = runCombatSim(s, 'average', 'average');
+                const aSurv = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / attackerTotal;
+                const dSurv = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / attackerTotal;
+                if (aSurv > dSurv) wins++;
+                totalNetSurv += (aSurv - dSurv);
             });
 
             const winrate = wins / metaDefenders.length;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(winrate);
-            if (winrate > best.winrate) best = { winrate, form: [i, j, k] };
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(type === 'meta' ? winrate : totalNetSurv);
+
+            // Decision Logic: Winrate first, then Total Survivors
+            if (winrate > best.winrate || (winrate === best.winrate && totalNetSurv > best.netSurv)) {
+                best = { winrate, netSurv: totalNetSurv, form: [i, j, k] };
+            }
         }
     }
 
-    // Render Plot
-    const trace = { type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c,
-        marker: { size: 10, color: dataPoints.z, colorscale: 'Portland', showscale: true, line: { color: '#000', width: 1 } }
-    };
-    Plotly.newPlot('ternary-plot', [trace], { ternary: { sum: 100, aaxis: {title: 'Infantry'}, baxis: {title: 'Cavalry'}, caxis: {title: 'Archer'} }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
-
+    // 3. Render
+    Plotly.newPlot('ternary-plot', [{ type: 'scatterternary', mode: 'markers', a: dataPoints.a, b: dataPoints.b, c: dataPoints.c, marker: { size: 6, color: dataPoints.z, colorscale: 'Portland' } }], { ternary: { sum: 100, aaxis: {title: 'Inf'}, baxis: {title: 'Cav'}, caxis: {title: 'Arc'} }, paper_bgcolor: 'rgba(0,0,0,0)', font: {color: '#64748b'} });
     document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-    document.getElementById('opt-best-score').innerText = `Winrate against ${type === 'meta' ? '66 Meta Variations' : 'Current Defender'}: ${(best.winrate * 100).toFixed(0)}%`;
+    document.getElementById('opt-best-score').innerText = type === 'meta' ? `Winrate against all formations: ${(best.winrate * 100).toFixed(1)}%` : `Best result found at ${best.form[0]}% Infantry.`;
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
