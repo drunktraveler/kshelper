@@ -15,11 +15,9 @@ export function runCombatSim(setup, rngMode = 'average') {
     const e_skill = getMultipliers(setup.def, defP, 'den', rngMode);
     const widget_mult = Math.pow(1.15, 3);
 
-    // Statistical Shift Helper
     const shift = (p) => {
         if (rngMode === 'average' || p <= 0 || p >= 1) return p;
-        // Reduced sample size (20) to make variance more visible for the user
-        const sigma = Math.sqrt(p * (1 - p) / 20); 
+        const sigma = Math.sqrt(p * (1 - p) / 15); // Lower N makes luck more visible
         return rngMode === 'lucky' ? Math.min(1, p + 1.645 * sigma) : Math.max(0, p - 1.645 * sigma);
     };
 
@@ -32,7 +30,7 @@ export function runCombatSim(setup, rngMode = 'average') {
         let pending = [];
 
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
-            const sProc = side === 'atk' ? atkP : defProc, tProc = side === 'atk' ? defP : atkP;
+            const sProc = side === 'atk' ? atkP : defP, tProc = side === 'atk' ? defP : atkP;
             const sC = side === 'atk' ? m_cur : e_cur, tC = side === 'atk' ? e_cur : m_cur;
             const sS = setup[side], tS = setup[target];
             const tf = side === 'atk' ? ef : mf;
@@ -41,15 +39,12 @@ export function runCombatSim(setup, rngMode = 'average') {
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] <= 0) return;
                 const b = sProc.avgBase[u], tb = tProc.avgBase[tf];
-                
                 let atk = b.atk * (1 + (sS.stats[u+'_att'] + sMod.star)/100);
                 let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100);
                 let hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
                 let tm = ((u === 'inf' && tf === 'cav') || (u === 'cav' && tf === 'arc') || (u === 'arc' && tf === 'inf')) ? 1.1 : 1.0;
-                
-                // --- APPLY LUCK TO TROOP ABILITIES ---
                 let abil = 1.0;
                 const w = sProc.weights[u];
                 if (u === 'arc') {
@@ -99,8 +94,8 @@ function processBatches(batches) {
             if (b.tg >= 5) weights[u].tg5 += b[u];
         });
     });
-    ['inf','cav','arc'].forEach(u => {
-        if (totals[u]>0) {
+    ['inf', 'cav', 'arc'].forEach(u => {
+        if (totals[u] > 0) {
             Object.keys(avgBase[u]).forEach(k => avgBase[u][k] /= totals[u]);
             Object.keys(weights[u]).forEach(k => weights[u][k] /= totals[u]);
         }
@@ -109,19 +104,20 @@ function processBatches(batches) {
 }
 
 function getMultipliers(side, proc, type, rngMode) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
+    let pools = {}, starBonus = 0, logs = ["Always Active: Counter-Type Strike (+10% Dmg)"];
     const shift = (p) => {
         if (rngMode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt(p * (1 - p) / 20);
+        const sigma = Math.sqrt(p * (1 - p) / 15);
         return rngMode === 'lucky' ? Math.min(1, p + 1.645 * sigma) : Math.max(0, p - 1.645 * sigma);
     };
     ['inf','cav','arc'].forEach(u => {
-        if (proc.weights[u].t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(proc.weights[u].t7*100).toFixed(0)}% Effective`);
-        if (proc.weights[u].tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(proc.weights[u].tg3*100).toFixed(0)}% Effective`);
+        const w = proc.weights[u];
+        if (w.t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Effective`);
+        if (w.tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% Effective`);
     });
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
-        const d = HEROES[h.name]; starBonus += GROWTH_TEMPLATES[d.template][(h.star*6)+h.sub] || 0;
+        const d = HEROES[h.name]; starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
         const skills = (i < 3) ? d.skills : [d.skills[0]];
         skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
@@ -129,7 +125,7 @@ function getMultipliers(side, proc, type, rngMode) {
             const p = shift(s.getChance(x)), m = s.getMagnitude(x);
             let ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? p * v : (1 - Math.pow(1 - p, s.duration)) * v) : (s.duration === 0 ? p * m : (1 - Math.pow(1 - p, s.duration)) * m);
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            if (rngMode === 'average') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
