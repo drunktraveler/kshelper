@@ -44,14 +44,14 @@ function init() {
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 mb-2";
     div.innerHTML = `
         <div class="flex justify-between items-center">
             <div class="flex gap-2">
-                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400">
                     ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
                 </select>
-                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400">
                     ${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
                 </select>
             </div>
@@ -175,7 +175,7 @@ window.handleSimulation = () => {
 
     document.getElementById('result-waves').innerText = `Length: ${rAvg.wave} (Range: ${rAtkCeil.wave}-${rDefCeil.wave})`;
     
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rDefCeil.m_cur.inf+rDefCeil.m_cur.cav+rDefCeil.m_cur.arc).toLocaleString()} - ${Math.round(rAtkCeil.m_cur.inf+rAtkCeil.m_cur.cav+rAtkCeil.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rDefCeil.m_cur.inf+rDefCeil.m_cur.cav+rDefCeil.m_cur.arc).toLocaleString()} - ${Math.round(rAtkCeil.m_cur.inf+rAtkCeil.m_cur.cav+rAtkCeil.m_cur.arc).toLocaleString()}</div>`;
     document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rAtkCeil.e_cur.inf+rAtkCeil.e_cur.cav+rAtkCeil.e_cur.arc).toLocaleString()} - ${Math.round(rDefCeil.e_cur.inf+rDefCeil.e_cur.cav+rDefCeil.e_cur.arc).toLocaleString()}</div>`;
 
     document.getElementById('res-atk-details').innerText = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
@@ -187,3 +187,9 @@ window.handleSimulation = () => {
 
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
+    const isHidden = box.classList.toggle('hidden');
+    document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
+};
+
+document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
+document.addEventListener('DOMContentLoaded', init);
