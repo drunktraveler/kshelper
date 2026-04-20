@@ -126,10 +126,16 @@ function processBatches(batches) {
 
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, starBonus = 0, logs = [];
-    side.heroes.forEach((h, i) => {
+     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
         const d = HEROES[h.name];
-        starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
+        const r = roster[h.name]; // Pull from user's roster
+        
+        // Widget logic: Is it active in this context?
+        const hWidget = (d.widget && d.widget.context === (sideKey === 'atk' ? 'off' : 'def')) 
+            ? (1 + WIDGET_GROWTH[r.widget]) 
+            : 1.0;
+
         const skills = (i < 3) ? d.skills : [d.skills[0]];
         skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
@@ -137,16 +143,17 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             const p = shiftFn ? shiftFn(s.getChance(x), luckMode) : s.getChance(x);
             const m = s.getMagnitude(x);
             
-            // Bear Trap Override: Force duration to 0 for EV calculation
-            const effDur = isBear ? 0 : s.duration;
-            let ev = Array.isArray(m) ? m.map(v => effDur === 0 ? p * v : (1 - Math.pow(1 - p, effDur)) * v) : (effDur === 0 ? p * m : (1 - Math.pow(1 - p, effDur)) * m);
+            let ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? p * v : (1 - Math.pow(1 - p, s.duration)) * v) : (s.duration === 0 ? p * m : (1 - Math.pow(1 - p, s.duration)) * m);
             
-            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            if (luckMode === 'average') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            s.ids.forEach((id, idx) => {
+                pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget);
+            });
         });
     });
-    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
-    return { units: {inf:mult,cav:mult,arc:mult}, star: starBonus, logs };
+
+    let mult = 1.0;
+    Object.values(pools).forEach(v => mult *= (1+v));
+    return { units: {inf:mult,cav:mult,arc:mult}, star: 0, logs };
 }
 
 function isAlive(a) { return (a.inf + a.cav + a.arc) > 1; }
