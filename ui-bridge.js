@@ -48,10 +48,10 @@ window.addBatch = (side, initial = false) => {
     div.innerHTML = `
         <div class="flex justify-between items-center">
             <div class="flex gap-2">
-                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
+                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
                     ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
                 </select>
-                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
+                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
                     ${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
                 </select>
             </div>
@@ -86,6 +86,7 @@ window.updateFormation = (side) => {
 
 window.updateStatColors = (el) => {
     const row = el.closest('.stat-row');
+    if (!row) return;
     const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
     const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
     a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
@@ -164,13 +165,15 @@ window.handleSimulation = () => {
     const totalStart = setup.atk.batches.reduce((sum, b) => sum + b.inf + b.cav + b.arc, 0);
     const lowPct = ((rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc) / totalStart) * 100;
     const highPct = ((rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc) / totalStart) * 100;
-    document.getElementById('luck-visual-bar').style.left = Math.max(0, lowPct) + "%";
-    document.getElementById('luck-visual-bar').style.width = Math.min(100, (highPct - lowPct)) + "%";
+    
+    const luckBar = document.getElementById('luck-visual-bar');
+    luckBar.style.left = Math.max(0, lowPct) + "%";
+    luckBar.style.width = Math.max(2, (highPct - lowPct)) + "%";
 
     document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Variance: ${rLuck.wave}-${rBad.wave})`;
     
-    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${Math.round(rAvg.e_cur.inf + rAvg.e_cur.cav + rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
 
     document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
