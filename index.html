@@ -69,7 +69,14 @@
                 </div>
                 <div id="stat-table" class="p-2 space-y-0"></div>
             </div>
-            <button onclick="window.handleSimulation()" class="w-full bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">Run Simulation</button>
+            <div class="flex gap-4">
+            <select id="sim-mode-select" class="bg-slate-900 text-[10px] border border-slate-800 rounded px-2 py-4 font-bold text-slate-400 outline-none">
+                <option value="quick">Quick Sim (Stat Estimate)</option>
+                <option value="monte-carlo">Deep Sim (100x Monte Carlo)</option>
+            </select>
+            <button onclick="window.handleSimulation()" class="flex-grow bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">
+            Run Simulation</button>
+            </div>
         </div>
 
         <div id="result-screen" class="hidden max-w-2xl mx-auto pb-12">
