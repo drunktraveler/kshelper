@@ -11,6 +11,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
+    // Shift Helper - Uses Z=1.0 for realistic combined variance
     const getShiftedProb = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
         const sigma = Math.sqrt((p * (1 - p)) / nWaves);
@@ -41,17 +42,20 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sCur[u] <= 0) return;
                 const b = sProc.avgBase[u], tb = tProc.avgBase[tf];
+                
                 let atk = b.atk * (1 + (sS.stats[u+'_att'] + sMod.star)/100);
                 let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100);
                 let hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
+
                 let tm = ((u === 'inf' && tf === 'cav') || (u === 'cav' && tf === 'arc') || (u === 'arc' && tf === 'inf')) ? 1.1 : 1.0;
+                
                 let abil = 1.0;
                 const w = sProc.weights[u];
                 if (u === 'arc') {
-                    const vE = getShiftedProb(0.10 * w.t7, sLuck);
-                    const wE = getShiftedProb((w.tg5 * 0.30) + ((w.tg3 - w.tg5) * 0.20), sLuck);
-                    abil *= (1 + vE) * (1 + (wE * 0.50));
+                    const volleyEff = getShiftedProb(0.10 * w.t7, sLuck);
+                    const windEff = getShiftedProb((w.tg5 * 0.30) + ((w.tg3 - w.tg5) * 0.20), sLuck);
+                    abil *= (1 + volleyEff) * (1 + (windEff * 0.50));
                 }
                 if (u === 'cav') abil *= (1 + getShiftedProb((w.tg5 * 0.15) + ((w.tg3 - w.tg5) * 0.10), sLuck));
                 if (tf === 'inf') {
@@ -59,13 +63,15 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     if (u === 'cav') df *= (1 + (0.1 * tw.t7));
                     abil *= (1 - (getShiftedProb((tw.tg5 * 0.375) + ((tw.tg3 - tw.tg5) * 0.25), tLuck) * 0.36));
                 }
+
                 const sM = sMod.units[u] * widget_mult, tM = tMod.units[tf] * widget_mult;
 
                 if (u === 'cav' && tCur['arc'] > 1 && tf !== 'arc' && w.t7 > 0) {
                     const bypass = getShiftedProb(0.2 * w.t7, sLuck);
                     pending.push({dict: tCur, unit: tf, amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*tm*abil*(1-bypass)*sM)/(df*hp*100*tM)});
-                    const ba = tP.avgBase['arc'];
-                    pending.push({dict: tCur, unit: 'arc', amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/( (ba.def*(1+(tS.stats.arc_def+tMod.star)/100)) * (ba.hp*(1+tS.stats.arc_hp/100)) * 100 * (tMod.units.arc*widget_mult))});
+                    const ba = tProc.avgBase['arc'];
+                    const archAtkPct = (tS.stats['arc_def'] + tMod.star)/100;
+                    pending.push({dict: tCur, unit: 'arc', amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/( (ba.def*(1+archAtkPct)) * (ba.hp*(1+tS.stats.arc_hp/100)) * 100 * (tMod.units.arc*widget_mult))});
                 } else {
                     if (u === 'cav' && tf === 'arc') abil *= 0.8;
                     pending.push({dict: tCur, unit: tf, amt: (Math.sqrt(sCur[u])*sq_min*atk*leth*tm*abil*sM)/(df*hp*100*tM)});
@@ -90,8 +96,8 @@ function processBatches(batches) {
             if (b.tg >= 5) weights[u].tg5 += b[u];
         });
     });
-    ['inf','cav','arc'].forEach(u => {
-        if (totals[u]>0) {
+    ['inf', 'cav', 'arc'].forEach(u => {
+        if (totals[u] > 0) {
             Object.keys(avgBase[u]).forEach(k => avgBase[u][k] /= totals[u]);
             Object.keys(weights[u]).forEach(k => weights[u][k] /= totals[u]);
         }
@@ -103,7 +109,7 @@ function getMultipliers(side, proc, type, luckMode, shiftFn) {
     let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
     ['inf','cav','arc'].forEach(u => {
         const w = proc.weights[u];
-        if (w.t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Efficient`);
+        if (w.t7 > 0) logs.push(`Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Efficient`);
         if (w.tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% Effective`);
     });
     side.heroes.forEach((h, i) => {
