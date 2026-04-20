@@ -21,22 +21,18 @@ function init() {
     units.forEach(u => {
         categories.forEach(c => {
             const row = document.createElement('div');
-            row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
             row.className = "stat-row";
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
-                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000">
+                <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000">
                 <div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.label}</div>
-                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">
+                <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">
             `;
             table.appendChild(row);
         });
     });
 
-    window.addBatch('atk', true); 
-    window.addBatch('def', true);
+    window.addBatch('atk', true); window.addBatch('def', true);
     document.getElementById('hero-select').addEventListener('change', (e) => renderSkillsInModal(e.target.value, activeSlot.index));
     updateGrids();
 }
@@ -44,14 +40,13 @@ function init() {
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 mb-2";
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
     div.innerHTML = `
-        <div class="flex justify-between items-center">
-            <div class="flex gap-2">
-                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400">
+        <div class="flex justify-between items-center"><div class="flex gap-2">
+                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
                     ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
                 </select>
-                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400">
+                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
                     ${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
                 </select>
             </div>
@@ -85,8 +80,7 @@ window.updateFormation = (side) => {
 };
 
 window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row');
-    if (!row) return;
+    const row = el.closest('.stat-row'); if (!row) return;
     const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
     const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
     a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
@@ -156,62 +150,38 @@ window.handleSimulation = async () => {
     };
 
     const simMode = document.getElementById('sim-mode-select').value;
-    let results;
+    let rAvg, rLuck, rBad;
 
     if (simMode === 'monte-carlo') {
-        const runs = 100;
-        let batchResults = [];
-        for (let i = 0; i < runs; i++) {
-            batchResults.push(runCombatSim(setup, 'stochastic'));
-        }
-        // Calculate Percentiles from 100 runs
-        batchResults.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
-        results = {
-            average: batchResults[Math.floor(runs / 2)],
-            lucky: batchResults[Math.floor(runs * 0.95)],
-            unlucky: batchResults[Math.floor(runs * 0.05)]
-        };
+        const runs = 100; let batch = [];
+        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
+        rAvg = batch[Math.floor(runs / 2)]; rLuck = batch[Math.floor(runs * 0.95)]; rBad = batch[Math.floor(runs * 0.05)];
     } else {
-        // Fast Statistical Mode
-        const rAvg = runCombatSim(setup, 'average');
-        results = {
-            average: rAvg,
-            lucky: runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave),
-            unlucky: runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave)
-        };
+        rAvg = runCombatSim(setup, 'average', 'average');
+        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
     }
 
-    renderResults(results, setup);
-
-    const screen = document.getElementById('result-screen');
-    screen.classList.remove('hidden');
-
-    const getScore = (r) => {
-        const aSurv = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk;
-        const dSurv = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef;
-        return dSurv - aSurv;
-    };
-
-    const sMin = getScore(rAtkCeil), sMax = getScore(rDefCeil);
+    // Victory Scale
+    const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk );
+    const sMin = getScore(rLuck), sMax = getScore(rBad);
     const luckBar = document.getElementById('luck-visual-bar');
     luckBar.style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
-    luckBar.style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
+    luckBar.style.width = Math.max(2, Math.abs(sMax - sMin) * 50) + "%";
 
-    document.getElementById('result-waves').innerText = `Length: ${rAvg.wave} (Range: ${rAtkCeil.wave}-${rDefCeil.wave})`;
-    
-    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rDefCeil.m_cur.inf+rDefCeil.m_cur.cav+rDefCeil.m_cur.arc).toLocaleString()} - ${Math.round(rAtkCeil.m_cur.inf+rAtkCeil.m_cur.cav+rAtkCeil.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rAtkCeil.e_cur.inf+rAtkCeil.e_cur.cav+rAtkCeil.e_cur.arc).toLocaleString()} - ${Math.round(rDefCeil.e_cur.inf+rDefCeil.e_cur.cav+rDefCeil.e_cur.arc).toLocaleString()}</div>`;
-
+    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('result-waves').innerText = `Length: ${rAvg.wave} (Range: ${rLuck.wave}-${rBad.wave})`;
+    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
     document.getElementById('res-atk-details').innerText = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerText = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
-
     document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    screen.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
 window.toggleDetails = () => {
-    const box = document.getElementById('battle-details');
-    const isHidden = box.classList.toggle('hidden');
+    const isHidden = document.getElementById('battle-details').classList.toggle('hidden');
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
 
