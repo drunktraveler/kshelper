@@ -156,14 +156,21 @@ window.handleSimulation = async () => {
     };
 
     const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rLuck, rBad;
+    let rAvg, rLuck, rBad, modeLabel;
 
     if (simMode === 'monte-carlo') {
+        modeLabel = "Monte Carlo (Real Rolls)";
         const runs = 100; let batch = [];
         for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        
+        // Sort by Attacker Survivors to find percentiles
         batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
-        rAvg = batch[Math.floor(runs / 2)]; rLuck = batch[Math.floor(runs * 0.95)]; rBad = batch[Math.floor(runs * 0.05)];
+        
+        rAvg = batch[Math.floor(runs / 2)]; // Median
+        rLuck = batch[Math.floor(runs * 0.95)]; // 95th percentile
+        rBad = batch[Math.floor(runs * 0.05)]; // 5th percentile
     } else {
+        modeLabel = "Quick Sim (Statistical)";
         rAvg = runCombatSim(setup, 'average', 'average');
         rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
         rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
@@ -172,19 +179,34 @@ window.handleSimulation = async () => {
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
 
+    // Victory Scale logic
     const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / r.startDef ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / r.startAtk );
     const sMin = getScore(rLuck), sMax = getScore(rBad);
     const luckBar = document.getElementById('luck-visual-bar');
     luckBar.style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
     luckBar.style.width = Math.max(2, Math.abs(sMax - sMin) * 50) + "%";
 
-    document.getElementById('result-waves').innerText = `Length: ${rAvg.wave} (Range: ${rLuck.wave}-${rBad.wave})`;
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | Avg Length: ${rAvg.wave} waves`;
+    
+    // Attacker
+    const aAvg = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc);
+    const aWorst = Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc);
+    const aBest = Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc);
+    document.getElementById('res-atk-total').innerHTML = `<span>${aAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Expected Range: ${aWorst.toLocaleString()} - ${aBest.toLocaleString()}</div>`;
+
+    // Defender
+    const dAvg = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc);
+    const dWorst = Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc);
+    const dBest = Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc);
+    document.getElementById('res-def-total').innerHTML = `<span>${dAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Expected Range: ${dWorst.toLocaleString()} - ${dBest.toLocaleString()}</div>`;
+
     document.getElementById('res-atk-details').innerText = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
     document.getElementById('res-def-details').innerText = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
+
+    // Fix Log Box (Using rAvg logs as they contain the descriptions)
     document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
+    
+    screen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.toggleDetails = () => {
