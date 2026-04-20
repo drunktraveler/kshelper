@@ -40,8 +40,34 @@ function init() {
 }
 
 window.showTab = (tab) => {
-    document.getElementById('battle-tab').classList.toggle('hidden', tab !== 'battle');
-    document.getElementById('optimizer-screen').classList.toggle('hidden', tab !== 'formation');
+    const tabs = ['battle-tab', 'optimizer-screen', 'bear-tab'];
+    const buttons = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear' };
+    
+    tabs.forEach(t => document.getElementById(t).classList.add('hidden'));
+    Object.values(buttons).forEach(b => document.getElementById(b).className = "px-4 py-2 text-slate-500 hover:text-white uppercase");
+    
+    const activeTab = tab === 'battle' ? 'battle-tab' : (tab === 'formation' ? 'optimizer-screen' : 'bear-tab');
+    document.getElementById(activeTab).classList.remove('hidden');
+    document.getElementById(buttons[tab]).className = "px-4 py-2 bg-blue-600 rounded-lg text-white uppercase";
+};
+
+window.handleBearSim = () => {
+    const setup = {
+        atk: { 
+            batches: Array.from(document.querySelectorAll(`#atk-batch-container > div`)).map(el => ({
+                tier: parseInt(el.querySelector('.batch-tier').value),
+                tg: parseInt(el.querySelector('.batch-tg').value),
+                inf: parseFloat(el.querySelector('.batch-inf').value) || 0,
+                cav: parseFloat(el.querySelector('.batch-cav').value) || 0,
+                arc: parseFloat(el.querySelector('.batch-arc').value) || 0
+            })),
+            stats: getStats('atk'),
+            heroes: state.atk.heroes 
+        }
+    };
+    
+    const r = runCombatSim(setup, 'average', 'average', 10, true);
+    document.getElementById('bear-total-dmg').innerText = Math.round(r.totalDmg).toLocaleString();
 };
 
 window.addBatch = (side, initial = false) => {
@@ -220,6 +246,8 @@ window.runOptimizer = (type = 'current') => {
     const atkBatch = collectBatches('atk'); const defBatch = collectBatches('def');
     const attackerTotal = atkBatch.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
     const atkStats = getStats('atk'); const defStats = getStats('def');
+    const score = type === 'meta' ? wr : (aS - dS) * 100; // Return net survival %
+    document.getElementById('opt-best-score').innerText = type === 'meta' ? `Winrate against Meta: ${(best.winrate * 100).toFixed(1)}%` : `Projected Net Survival: +${best.score.toFixed(1)}%`;
 
     let metaDefenders = [];
     if (type === 'meta') {
