@@ -10,7 +10,6 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #080a0f; color: #f8fafc; }
         .glass-card { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1.5rem; }
-        .optimizer-card { height: 90px; display: flex; justify-content: space-between; align-items: center; padding: 0 1.5rem; }
         .input-dark { background: rgba(2, 6, 23, 0.8); border: 1px solid #1e293b; border-radius: 0.5rem; padding: 0.4rem 0.75rem; width: 100%; outline: none; transition: all 0.2s; font-size: 0.8rem; text-align: center; }
         .f-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; background: #1e293b; }
         .f-inf { background: #3b82f6; transition: width 0.4s; }
@@ -19,29 +18,28 @@
         .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
         .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
         .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
-        .stat-row { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 30px; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
 <body class="p-4 md:p-8">
     <div class="max-w-5xl mx-auto space-y-6">
         <header class="flex justify-between items-center mb-8">
-            <h1 class="text-xl font-black text-blue-500 uppercase tracking-tighter">Kingshot Calculator</h1>
-            <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold uppercase">
-                <button onclick="window.showTab('battle')" id="btn-tab-battle">Battle</button>
-                <button onclick="window.showTab('formation')" id="btn-tab-form">Formation</button>
-                <button onclick="window.showTab('bear')" id="btn-tab-bear">Bear</button>
-                <button onclick="window.showTab('roster')" id="btn-tab-roster">Roster</button>
+            <h1 class="text-xl font-black text-blue-500 tracking-tighter">Kingshot Calculator</h1>
+            <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold">
+                <button onclick="window.showTab('battle')" id="btn-tab-battle" class="px-4 py-2">Battle Sim</button>
+                <button onclick="window.showTab('formation')" id="btn-tab-form" class="px-4 py-2">Formations</button>
+                <button onclick="window.showTab('bear')" id="btn-tab-bear" class="px-4 py-2">Bear</button>
+                <button onclick="window.showTab('roster')" id="btn-tab-roster" class="px-4 py-2">Best Heroes</button>
             </div>
         </header>
 
-        <!-- Battle Tab -->
         <div id="battle-tab" class="space-y-6">
+            <!-- (Batch setup content same as before) -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="glass-card p-6 border-l-4 border-emerald-500/30">
                     <div class="flex justify-between items-center mb-4">
                         <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker</span>
-                        <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
+                        <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase">+ Player</button>
                     </div>
                     <div id="atk-batch-container"></div>
                     <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
@@ -53,7 +51,7 @@
                 <div class="glass-card p-6 border-r-4 border-red-500/30">
                     <div class="flex justify-between items-center mb-4">
                         <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender</span>
-                        <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
+                        <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase">+ Player</button>
                     </div>
                     <div id="def-batch-container"></div>
                     <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
@@ -65,12 +63,7 @@
             </div>
 
             <div class="max-w-2xl mx-auto space-y-4">
-                <div class="glass-card overflow-hidden">
-                    <div class="grid grid-cols-3 bg-slate-900/80 py-2 px-8 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        <span>Atk %</span><span class="text-center">Category</span><span class="text-right">Def %</span>
-                    </div>
-                    <div id="stat-table" class="p-2 space-y-0"></div>
-                </div>
+                <div class="glass-card overflow-hidden"><div id="stat-table" class="p-2 space-y-0"></div></div>
                 <div class="flex gap-4">
                     <select id="sim-mode-select" class="bg-slate-900 text-[10px] border border-slate-800 rounded px-2 py-4 font-bold text-slate-400 outline-none">
                         <option value="quick">Quick Sim</option><option value="monte-carlo">Deep Sim (100x)</option>
@@ -87,17 +80,13 @@
                         <div><p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p><div class="text-4xl font-black mb-2" id="res-atk-total"></div><div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div></div>
                         <div><p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p><div class="text-4xl font-black text-right mb-2" id="res-def-total"></div><div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div></div>
                     </div>
-                    <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
-                        <div class="flex justify-between text-[9px] font-black uppercase tracking-widest mb-2"><span>Atk Dom</span><span>Draw</span><span>Def Dom</span></div>
-                        <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden"><div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700 z-10"></div><div id="luck-bar-inner" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 z-20"></div></div>
-                    </div>
+                    <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden mb-8"><div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700 z-10"></div><div id="luck-bar-inner" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 z-20"></div></div>
                     <button id="toggle-details-btn" onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Buffs +</button>
                     <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-400 space-y-1 max-h-64 overflow-y-auto"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Formation/Heatmap Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8">
                 <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Formation Heatmap</h2>
@@ -116,7 +105,6 @@
             </div>
         </div>
 
-        <!-- Bear Tab -->
         <div id="bear-tab" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8 border-t-4 border-amber-500">
                 <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Bear Trap Optimizer</h2>
@@ -134,7 +122,6 @@
             </div>
         </div>
 
-        <!-- Roster Tab -->
         <div id="roster-tab" class="hidden max-w-5xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8">
                 <div class="flex justify-between items-center mb-8">
@@ -150,7 +137,7 @@
     <!-- Hero Modal -->
     <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
         <div class="bg-slate-900 w-full max-w-sm rounded-3xl p-8 border border-slate-800 relative">
-            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest text-center">Hero Config</h3>
+            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest text-center">Hero Setup</h3>
             <div class="space-y-6">
                 <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
                 <div id="skill-inputs" class="space-y-4"></div>
