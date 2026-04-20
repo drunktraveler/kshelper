@@ -136,7 +136,7 @@ function updateGrids() {
     });
 }
 
-window.handleSimulation = () => {
+window.handleSimulation = async () => {
     const getStats = (s) => {
         const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj;
     };
@@ -155,9 +155,33 @@ window.handleSimulation = () => {
         def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
     };
 
-    const rAvg = runCombatSim(setup, 'average', 'average');
-    const rAtkCeil = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-    const rDefCeil = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+    const simMode = document.getElementById('sim-mode-select').value;
+    let results;
+
+    if (simMode === 'monte-carlo') {
+        const runs = 100;
+        let batchResults = [];
+        for (let i = 0; i < runs; i++) {
+            batchResults.push(runCombatSim(setup, 'stochastic'));
+        }
+        // Calculate Percentiles from 100 runs
+        batchResults.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
+        results = {
+            average: batchResults[Math.floor(runs / 2)],
+            lucky: batchResults[Math.floor(runs * 0.95)],
+            unlucky: batchResults[Math.floor(runs * 0.05)]
+        };
+    } else {
+        // Fast Statistical Mode
+        const rAvg = runCombatSim(setup, 'average');
+        results = {
+            average: rAvg,
+            lucky: runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave),
+            unlucky: runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave)
+        };
+    }
+
+    renderResults(results, setup);
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
