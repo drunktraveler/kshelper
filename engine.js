@@ -145,4 +145,6 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     return { units: {inf:mult,cav:mult,arc:mult}, star: starBonus, logs };
 }
 
-function isAlive(a) { return (a.inf + a.cav + a.arc) > 1; }
+export function isAlive(a) { 
+    return ( (a.inf || 0) + (a.cav || 0) + (a.arc || 0) ) > 1; 
+}
