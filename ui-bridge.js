@@ -3,36 +3,39 @@ import { runCombatSim, isAlive } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
+let activeSlot = { side: null, index: null };
+let modalTemp = { s1: 5, s2: 5, s3: 5 };
+
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) },
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) }
 };
-let activeSlot = { side: null, index: null };
-let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
+// --- INITIALIZATION ---
 window.init = () => {
+    // 1. Sync roster and build global hero list for battle select
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
+    
     const sel = document.getElementById('hero-select');
-    if(sel) {
-        sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => sel.innerHTML += `<option value="${n}">${n}</option>`);
-        sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
-    }
+    sel.innerHTML = '<option value="None">None</option>';
+    Object.keys(HEROES).sort().forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
+    sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
+
+    // 2. Build Stat Table
     const table = document.getElementById('stat-table');
     const categories = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
     const units = ["Infantry", "Cavalry", "Archer"];
-    if(table) {
-        table.innerHTML = '';
-        units.forEach(u => categories.forEach(c => {
-            const row = document.createElement('div'); row.className = "stat-row";
-            row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
-            const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-            row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">`;
-            table.appendChild(row);
-        }));
-    }
+    table.innerHTML = '';
+    units.forEach(u => categories.forEach(c => {
+        const row = document.createElement('div'); row.className = "stat-row";
+        row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
+        const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
+        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">`;
+        table.appendChild(row);
+    }));
+
     window.addBatch('atk', true); window.addBatch('def', true);
-    renderRosterUI(); window.showTab('battle');
+    window.updateGrids(); renderRosterUI(); window.showTab('battle');
 };
 
 window.showTab = (tab) => {
@@ -189,77 +192,116 @@ window.handleSimulation = async () => {
     screen.scrollIntoView({ behavior: 'smooth' });
 };
 
+// --- TERNARY HEATMAP GENERATOR ---
 window.runOptimizer = (mode) => {
-    const setup = gatherSetup(); const atkTotal = 1000000;
+    const setup = gatherSetup();
+    const atkTotal = setup.atk.batches.reduce((s,b)=>s+b.inf+b.cav+b.arc, 0) || 1000000;
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
+
     let defenders = [];
     if(mode==='meta') { for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) defenders.push({inf:i/100, cav:j/100, arc:(100-i-j)/100}); }
-    else { const def=setup.def.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0}); const t=def.inf+def.cav+def.arc||1; defenders.push({inf:def.inf/t,cav:def.cav/t,arc:def.arc/t}); }
+    else { 
+        const def=setup.def.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0}); 
+        const t=def.inf+def.cav+def.arc||1; defenders.push({inf:def.inf/t,cav:def.cav/t,arc:def.arc/t}); 
+    }
+
     for (let i = 20; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j; let wins = 0, totalNet = 0;
+            let k = 100-i-j; let totalNet = 0; let wins = 0;
             defenders.forEach(d => {
                 let s = JSON.parse(JSON.stringify(setup));
                 s.atk.batches = [{ tier:10, tg:3, inf:i*10000, cav:j*10000, arc:k*10000 }];
                 if(mode!=='bear') s.def.batches = [{ tier:10, tg:3, inf:d.inf*atkTotal, cav:d.cav*atkTotal, arc:d.arc*atkTotal }];
                 const r = runCombatSim(s, 'average', 'average', 100, mode==='bear');
                 let outcome = mode==='bear' ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-                if (outcome > 0) wins++; totalNet += outcome;
+                if(outcome > 0) wins++; totalNet += outcome;
             });
-            const finalScore = mode === 'meta' ? (wins/defenders.length) : totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(finalScore);
-            if (finalScore > best.score) best = { score: finalScore, form: [i,j,k] };
+            const score = mode === 'meta' ? (wins/defenders.length) : totalNet;
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+            if (score > best.score) best = { score, form: [i,j,k] };
         }
     }
     const plotId = mode==='bear'?'bear-plot':'ternary-plot';
-    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, marker:{ color:dataPoints.z, colorscale:'Portland', size:8 } }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'} });
-    if(mode==='bear') { document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString(); document.getElementById('bear-best-form').innerText = `Best: ${best.form[0]}/${best.form[1]}/${best.form[2]}`; }
-    else { document.getElementById('opt-best-score').innerText = `Best: +${Math.round(best.score).toLocaleString()} survivors`; document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`; }
+    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:12, opacity:0.8, symbol:'square' } }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:0,b:0} });
+    
+    if(mode==='bear') {
+        document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString();
+        document.getElementById('bear-best-form').innerText = `Recommended Split: ${best.form[0]}/${best.form[1]}/${best.form[2]}`;
+    } else {
+        document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        document.getElementById('opt-best-score').innerText = `Best Result: +${Math.round(best.score).toLocaleString()} survivors`;
+    }
 };
 
+// --- ROSTER OPTIMIZER (Additive Widget Caveat) ---
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if(unlocked.length < 3) return alert("Unlock 3 heroes.");
+    if(unlocked.length < 3) return alert("Unlock heroes in the vault first.");
     const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
+
     [{l:"Rally",c:"off",j:false},{l:"Rally w/ Joiners",c:"off",j:true},{l:"Garrison",c:"def",j:false},{l:"Garrison w/ Joiners",c:"def",j:true}].forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
         for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
             const trio = [i, c, a]; let joiners = [];
             if (s.j) {
-                const pool = unlocked.filter(n => !trio.includes(n));
-                joiners = pool.map(n => ({ n, i: calcScore(trio, [n], s.c) })).sort((a,b)=>b.i-a.i).slice(0, 4).map(x => x.n);
+                const rem = unlocked.filter(n => !trio.includes(n));
+                joiners = rem.map(n => ({ n, i: calcCrossProduct(trio, [n], s.c) })).sort((a,b)=>b.i-a.i).slice(0, 4).map(x => x.n);
             }
-            const score = calcScore(trio, joiners, s.c);
+            const score = calcCrossProduct(trio, joiners, s.c);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
-        const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex flex-col justify-between h-[180px]";
-        card.innerHTML = `<div class="flex justify-between items-start"><div><div class="text-[9px] font-black text-blue-400 uppercase mb-3">${s.l}</div><div class="flex gap-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-blue-500" title="${n}">`).join('')}</div></div><div class="text-right pt-4"><div class="text-2xl font-black">${best.score.toFixed(3)}x</div></div></div><div class="flex gap-1 mt-auto opacity-50 h-8">${s.j ? best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-6 h-6 rounded-full border border-slate-700" title="${n}">`).join('') : ''}</div>`;
+        const card = document.createElement('div'); 
+        card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-24";
+        card.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="space-y-1">
+                    <div class="text-[8px] font-black text-blue-400 uppercase">${s.l}</div>
+                    <div class="flex -space-x-2">
+                        ${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-blue-500 bg-slate-900">`).join('')}
+                    </div>
+                </div>
+                ${s.j ? `<div class="flex -space-x-1 opacity-40 scale-75 origin-left">
+                    ${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-slate-700">`).join('')}
+                </div>` : ''}
+            </div>
+            <div class="text-right"><div class="text-xl font-black">${best.score.toFixed(3)}x</div></div>`;
         resArea.appendChild(card);
     });
 };
 
-function calcScore(leaders, joiners, ctx) {
+
+function calcCrossProduct(leaders, joiners, ctx) {
     let pools = {};
+    let widgets = { attack: 0, defense: 0, lethality: 0, health: 0 };
+
     leaders.forEach(n => {
         const d = HEROES[n], r = roster[n];
-        const hW = (d.widget && d.widget.context === ctx) ? (1 + WIDGET_GROWTH[r.widget]) : 1.0;
+        // 1. Group Widget Stats Additively
+        if (d.widget && d.widget.context === ctx) {
+            widgets[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        }
+        // 2. Skill Buckets
         d.skills.forEach((s, i) => {
             const x = s.values[r[`s${i+1}`]-1];
             const p = s.getChance(x);
             const ev = s.duration === 0 ? p*s.getMagnitude(x) : (1-Math.pow(1-p, s.duration))*s.getMagnitude(x);
-            s.ids.forEach((id, idx) => pools[id] = (pools[id]||0) + ((Array.isArray(ev)?ev[idx] : ev)*hW));
+            s.ids.forEach((id, idx) => pools[id] = (pools[id]||0) + (Array.isArray(ev)?ev[idx] : ev));
         });
     });
-    const joinerCounts = {}; joiners.forEach(n => joinerCounts[n] = (joinerCounts[n]||0) + 1);
-    for (const n in joinerCounts) {
-        const d = HEROES[n], r = roster[n], s = d.skills[0];
-        const p = 1 - Math.pow(1 - s.getChance(s.values[r.s1-1]), joinerCounts[n]);
-        const ev = p * s.getMagnitude(s.values[r.s1-1]);
+
+    joiners.forEach(n => {
+        const r = roster[n], s = HEROES[n].skills[0], x = s.values[r.s1-1];
+        const ev = s.duration === 0 ? s.getChance(x)*s.getMagnitude(x) : (1-Math.pow(1-s.getChance(x), s.duration))*s.getMagnitude(x);
         s.ids.forEach((id, idx) => pools[id] = (pools[id]||0) + (Array.isArray(ev)?ev[idx]:ev));
-    }
-    let t = 1.0; Object.values(pools).forEach(v => t *= (1+v)); return t;
+    });
+
+    // 3. Final Calculation: (Sum Widget Stats Multiplicatively) * (Skill Buckets)
+    let total = 1.0;
+    Object.values(widgets).forEach(val => total *= (1 + val));
+    Object.values(pools).forEach(v => total *= (1+v));
+    return total;
 }
 
 function gatherSetup() {
