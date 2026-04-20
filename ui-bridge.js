@@ -155,17 +155,42 @@ window.handleSimulation = async () => {
     let rAvg, rLuck, rBad, modeLabel;
 
     if (simMode === 'monte-carlo') {
-        modeLabel = "Monte Carlo (100x)";
-        const runs = 100; let batch = [];
-        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
-        rAvg = batch[Math.floor(runs / 2)]; rLuck = batch[Math.floor(runs * 0.95)]; rBad = batch[Math.floor(runs * 0.05)];
-    } else {
-        modeLabel = "Quick Sim (Stat Shift)";
-        rAvg = runCombatSim(setup, 'average', 'average');
-        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
-    }
+    modeLabel = "Monte Carlo (100x)";
+    const runs = 100; let batch = [];
+    for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+    
+    // Sort to find Absolute Best/Worst
+    batch.sort((a, b) => (a.m_cur.inf + a.m_cur.cav + a.m_cur.arc) - (b.m_cur.inf + b.m_cur.cav + b.m_cur.arc));
+    
+    // Calculate Mean Survivors
+    const totalStartAtk = setup.atk.batches.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
+    const totalStartDef = setup.def.batches.reduce((s, b) => s + b.inf + b.cav + b.arc, 0);
+    
+    const sumAtk = batch.reduce((s, r) => s + (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc), 0);
+    const sumDef = batch.reduce((s, r) => s + (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc), 0);
+    
+    // We create a "Virtual" result representing the Mean
+    rAvg = {
+        m_cur: { 
+            inf: batch.reduce((s, r) => s + r.m_cur.inf, 0) / runs,
+            cav: batch.reduce((s, r) => s + r.m_cur.cav, 0) / runs,
+            arc: batch.reduce((s, r) => s + r.m_cur.arc, 0) / runs
+        },
+        e_cur: {
+            inf: batch.reduce((s, r) => s + r.e_cur.inf, 0) / runs,
+            cav: batch.reduce((s, r) => s + r.e_cur.cav, 0) / runs,
+            arc: batch.reduce((s, r) => s + r.e_cur.arc, 0) / runs
+        },
+        wave: Math.round(batch.reduce((s, r) => s + r.wave, 0) / runs),
+        atk_mults: batch[Math.floor(runs/2)].atk_mults, // Use median battle for logs
+        def_mults: batch[Math.floor(runs/2)].def_mults,
+        startAtk: totalStartAtk,
+        startDef: totalStartDef
+    };
+
+    rLuck = batch[runs - 1]; // Absolute Best
+    rBad = batch[0];       // Absolute Worst
+}
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
