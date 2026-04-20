@@ -159,28 +159,54 @@ window.handleSimulation = () => {
     const rLuck = runCombatSim(setup, 'lucky');
     const rBad = runCombatSim(setup, 'unlucky');
 
-    document.getElementById('result-screen').classList.remove('hidden');
-    document.getElementById('result-waves').innerText = `Battle length: ${Math.min(rAvg.wave, rLuck.wave, rBad.wave)} - ${Math.max(rAvg.wave, rLuck.wave, rBad.wave)} waves`;
-    
-    // Attacker
-    const atkAvg = Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc);
-    const atkRange = [Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc), Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc)];
-    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${atkAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${atkRange[0].toLocaleString()} - ${atkRange[1].toLocaleString()}</div>`;
-    document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
+    const screen = document.getElementById('result-screen');
+    screen.classList.remove('hidden');
 
-    // Defender
+    // 1. Dynamic Luck Bar Logic
+    // We calculate what % of the army survived in the worst and best cases
+    const totalStart = setup.atk.batches.reduce((sum, b) => sum + b.inf + b.cav + b.arc, 0);
+    const lowPct = ((rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc) / totalStart) * 100;
+    const highPct = ((rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc) / totalStart) * 100;
+    
+    const luckMarker = document.getElementById('luck-visual-bar');
+    // The "spread" is the blue area on the bar
+    luckMarker.style.left = Math.max(0, lowPct) + "%";
+    luckMarker.style.width = Math.min(100, (highPct - lowPct)) + "%";
+
+    // 2. Wave & Survivors Display
+    document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Variance: ${rLuck.wave}-${rBad.wave})`;
+    
+    const atkAvg = Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc);
+    const atkMin = Math.round(rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc);
+    const atkMax = Math.round(rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc);
+    document.getElementById('res-atk-total').innerHTML = `
+        <span class="text-emerald-400">${atkAvg.toLocaleString()}</span>
+        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}</div>`;
+
     const defAvg = Math.round(rAvg.e_cur.inf + rAvg.e_cur.cav + rAvg.e_cur.arc);
-    const defRange = [Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc), Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc)];
-    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${defAvg.toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${defRange[0].toLocaleString()} - ${defRange[1].toLocaleString()}</div>`;
-    document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
+    const defMin = Math.round(rLuck.e_cur.inf + rLuck.e_cur.cav + rLuck.e_cur.arc);
+    const defMax = Math.round(rBad.e_cur.inf + rBad.e_cur.cav + rBad.e_cur.arc);
+    document.getElementById('res-def-total').innerHTML = `
+        <span class="text-red-400">${defAvg.toLocaleString()}</span>
+        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}</div>`;
 
     const logBox = document.getElementById('battle-details');
-    logBox.innerHTML = `<div style="color:#10b981; margin-bottom:5px;">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
-                       `<div style="color:#ef4444; margin-top:15px; margin-bottom:5px;">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    const atkLogs = rAvg.atk_mults.map(l => `<div style="padding: 2px 0;">• ${l}</div>`).join('');
+    const defLogs = rAvg.def_mults.map(l => `<div style="padding: 2px 0;">• ${l}</div>`).join('');
     
-    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
+    logBox.innerHTML = `
+        <div class="text-emerald-500 font-black mb-2 mt-2">[ATTACKER BUFFS]</div>${atkLogs}
+        <div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>${defLogs}
+    `;
+    
+    screen.scrollIntoView({ behavior: 'smooth' });
 };
 
-window.toggleDetails = () => document.getElementById('battle-details').classList.toggle('hidden');
+window.toggleDetails = () => {
+    const btn = document.getElementById('toggle-details-btn');
+    const box = document.getElementById('battle-details');
+    const isHidden = box.classList.toggle('hidden');
+    btn.innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
+};
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 document.addEventListener('DOMContentLoaded', init);
