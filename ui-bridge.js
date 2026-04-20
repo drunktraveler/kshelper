@@ -22,16 +22,15 @@ function init() {
         categories.forEach(c => {
             const row = document.createElement('div');
             row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
-            row.className = "stat-row-container";
+            row.className = "stat-row";
             const key = `${u.toLowerCase().slice(0,3)}_${c.key}`;
             row.innerHTML = `
                 <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;">
+                       style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000">
                 <div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.label}</div>
                 <input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" 
-                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;">
+                       style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">
             `;
-            row.querySelectorAll('input').forEach(i => i.value = 1000);
             table.appendChild(row);
         });
     });
@@ -45,14 +44,14 @@ function init() {
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative";
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
     div.innerHTML = `
         <div class="flex justify-between items-center">
             <div class="flex gap-2">
-                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400 outline-none">
+                <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
                     ${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}
                 </select>
-                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400 outline-none">
+                <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-2 py-1 font-bold text-slate-400">
                     ${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
                 </select>
             </div>
@@ -86,7 +85,7 @@ window.updateFormation = (side) => {
 };
 
 window.updateStatColors = (el) => {
-    const row = el.closest('div[style*="display: flex"]');
+    const row = el.closest('.stat-row');
     const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
     const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
     a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
@@ -162,51 +161,32 @@ window.handleSimulation = () => {
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
 
-    // 1. Dynamic Luck Bar Logic
-    // We calculate what % of the army survived in the worst and best cases
     const totalStart = setup.atk.batches.reduce((sum, b) => sum + b.inf + b.cav + b.arc, 0);
     const lowPct = ((rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc) / totalStart) * 100;
     const highPct = ((rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc) / totalStart) * 100;
-    
-    const luckMarker = document.getElementById('luck-visual-bar');
-    // The "spread" is the blue area on the bar
-    luckMarker.style.left = Math.max(0, lowPct) + "%";
-    luckMarker.style.width = Math.min(100, (highPct - lowPct)) + "%";
+    document.getElementById('luck-visual-bar').style.left = Math.max(0, lowPct) + "%";
+    document.getElementById('luck-visual-bar').style.width = Math.min(100, (highPct - lowPct)) + "%";
 
-    // 2. Wave & Survivors Display
     document.getElementById('result-waves').innerText = `Battle length: ${rAvg.wave} waves (Variance: ${rLuck.wave}-${rBad.wave})`;
     
-    const atkAvg = Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc);
-    const atkMin = Math.round(rBad.m_cur.inf + rBad.m_cur.cav + rBad.m_cur.arc);
-    const atkMax = Math.round(rLuck.m_cur.inf + rLuck.m_cur.cav + rLuck.m_cur.arc);
-    document.getElementById('res-atk-total').innerHTML = `
-        <span class="text-emerald-400">${atkAvg.toLocaleString()}</span>
-        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}</div>`;
+    document.getElementById('res-atk-total').innerHTML = `<span class="text-emerald-400">${Math.round(rAvg.m_cur.inf + rAvg.m_cur.cav + rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span class="text-red-400">${Math.round(rAvg.e_cur.inf + rAvg.e_cur.cav + rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
 
-    const defAvg = Math.round(rAvg.e_cur.inf + rAvg.e_cur.cav + rAvg.e_cur.arc);
-    const defMin = Math.round(rLuck.e_cur.inf + rLuck.e_cur.cav + rLuck.e_cur.arc);
-    const defMax = Math.round(rBad.e_cur.inf + rBad.e_cur.cav + rBad.e_cur.arc);
-    document.getElementById('res-def-total').innerHTML = `
-        <span class="text-red-400">${defAvg.toLocaleString()}</span>
-        <div class="text-[10px] text-slate-500 font-normal mt-1 italic">Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}</div>`;
+    document.getElementById('res-atk-details').innerHTML = `Inf: ${Math.round(rAvg.m_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.m_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.m_cur.arc).toLocaleString()}`;
+    document.getElementById('res-def-details').innerHTML = `Inf: ${Math.round(rAvg.e_cur.inf).toLocaleString()} | Cav: ${Math.round(rAvg.e_cur.cav).toLocaleString()} | Arc: ${Math.round(rAvg.e_cur.arc).toLocaleString()}`;
 
     const logBox = document.getElementById('battle-details');
-    const atkLogs = rAvg.atk_mults.map(l => `<div style="padding: 2px 0;">• ${l}</div>`).join('');
-    const defLogs = rAvg.def_mults.map(l => `<div style="padding: 2px 0;">• ${l}</div>`).join('');
-    
-    logBox.innerHTML = `
-        <div class="text-emerald-500 font-black mb-2 mt-2">[ATTACKER BUFFS]</div>${atkLogs}
-        <div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>${defLogs}
-    `;
+    logBox.innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + 
+                       `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     
     screen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.toggleDetails = () => {
     const btn = document.getElementById('toggle-details-btn');
-    const box = document.getElementById('battle-details');
-    const isHidden = box.classList.toggle('hidden');
+    const isHidden = document.getElementById('battle-details').classList.toggle('hidden');
     btn.innerText = isHidden ? 'View Combat Modifiers +' : 'Hide Combat Modifiers -';
 };
+
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 document.addEventListener('DOMContentLoaded', init);
