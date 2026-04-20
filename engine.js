@@ -3,10 +3,7 @@ import { HEROES } from './heroes.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false) {
-    const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
-    
-    // Bear Trap Override
     const defP = isBear ? {
         counts: { inf: 1000000000, cav: 0, arc: 0 },
         avgBase: { inf: { atk: 0, def: 10, leth: 0, hp: 5000 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
@@ -18,30 +15,21 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef || 1));
 
-    let activeBuffs = { atk: {}, def: {} };
-    const getProb = (p, side, id, duration, mode) => {
+    const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        if (mode === 'stochastic') {
-            if (activeBuffs[side][id] > 0) return 1;
-            if (Math.random() < p) { activeBuffs[side][id] = duration || 1; return 1; }
-            return 0;
-        }
         const sigma = Math.sqrt((p * (1 - p)) / nWaves);
         return mode === 'lucky' ? Math.min(1, p + 1.0 * sigma) : Math.max(0, p - 1.0 * sigma);
     };
 
-    const m_skill_base = getMultipliers(setup.atk, atkP, 'num', atkLuck, getProb, 'atk', isBear);
-    const e_skill_base = isBear ? { units: {inf:1,cav:1,arc:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, getProb, 'def', false);
+    const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, isBear);
+    const e_skill = isBear ? { units: {inf:1,cav:1,arc:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, false);
+    const widget_mult = Math.pow(1.15, 3);
 
     let wave = 0, totalDmg = 0;
     const maxWaves = isBear ? 10 : 2000;
 
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < maxWaves) {
         wave++;
-        if (isStochastic) {
-            ['atk', 'def'].forEach(s => { for (let id in activeBuffs[s]) if (activeBuffs[s][id] > 0) activeBuffs[s][id]--; });
-        }
-
         const mf = (['infantry','cavalry','archers'].find(u => m_cur[u.slice(0,3)] > 1) || 'archers').slice(0,3);
         const ef = (['infantry','cavalry','archers'].find(u => e_cur[u.slice(0,3)] > 1) || 'archers').slice(0,3);
         let pending = [];
@@ -52,27 +40,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const sC = (side==='atk'?m_cur:e_cur), tC = (side==='atk'?e_cur:m_cur);
             const sS = setup[side], tS = setup[target];
             const tf = (side==='atk'?ef:mf);
-            const sMod = (side==='atk'?m_skill_base:e_skill_base), tMod = (side==='atk'?e_skill_base:m_skill_base);
-            const sL = (side==='atk'?atkLuck:defLuck);
-
-            let wave_s_mult = 1.0, pools = {};
-            sS.heroes.forEach((h, i) => {
-                if (h.name === "None") return;
-                const d = HEROES[h.name];
-                const skills = (i < 3) ? d.skills : [d.skills[0]];
-                const hWidget = (d.widget && d.widget.context === (side === 'atk' ? 'off' : 'def')) ? (1 + WIDGET_GROWTH[h.widgetLv || 0]) : 1.0;
-
-                skills.forEach((s, si) => {
-                    if (s.group !== (side === 'atk' ? 'num' : 'den')) return;
-                    const x = s.values[h[`s${si+1}`]-1];
-                    const p = getProb(s.getChance(x), side, `${h.name}_${si}`, isBear ? 0 : s.duration, sL);
-                    if (p >= 1) {
-                        const m = s.getMagnitude(x);
-                        s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(m) ? m[idx] : m) * hWidget));
-                    }
-                });
-            });
-            Object.values(pools).forEach(v => wave_s_mult *= (1+v));
+            const sMod = (side==='atk'?m_skill:e_skill);
+            const tMod = (side==='atk'?e_skill:m_skill);
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] <= 0) return;
@@ -81,30 +50,83 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100);
                 let hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
+
                 let tm = ((u==='inf'&&tf==='cav')||(u==='cav'&&tf==='arc')||(u==='arc'&&tf==='inf'))?1.1:1.0;
-                
-                const tShift = (p) => getProb(p, side, u+'_abil', 0, sL);
                 let abil = 1.0;
                 const w = sP.weights[u];
-                if (u==='arc') abil *= (1 + tShift(0.1*w.t7)) * (1 + (tShift(w.tg5?0.3:(w.tg3?0.2:0))*0.5));
-                if (u==='cav') abil *= (1 + tShift(w.tg5?0.15:(w.tg3?0.1:0)));
+                if (u==='arc') abil *= (1 + (0.1*w.t7)) * (1 + ((w.tg5?0.3:(w.tg3?0.2:0))*0.5));
+                if (u==='cav') abil *= (1 + (w.tg5?0.15:(w.tg3?0.1:0)));
                 if (tf==='inf') { 
                     if (u==='cav') df *= (1 + (0.1*tP.weights.inf.t7));
-                    abil *= (1 - (tShift(tP.weights.inf.tg5?0.375:(tP.weights.inf.tg3?0.25:0))*0.36));
+                    abil *= (1 - ((tP.weights.inf.tg5?0.375:(tP.weights.inf.tg3?0.25:0))*0.36));
                 }
 
-                const sM = wave_s_mult * Math.pow(1.15, 3);
+                const sM = sMod.units[u] * widget_mult;
                 const kills = (Math.sqrt(sC[u])*sq_min*atk*leth*tm*abil*sM)/(df*hp*100);
-                
                 pending.push({dict: tC, unit: tf, amt: kills});
                 if (side === 'atk') totalDmg += kills;
             });
         });
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-    return { m_cur, e_cur, wave, totalDmg, atk_mults: m_skill_base.logs, def_mults: e_skill_base.logs, startAtk: totalStartAtk, startDef: totalStartDef };
+    return { m_cur, e_cur, wave, totalDmg, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
 
+function getMultipliers(side, proc, type, luckMode, shiftFn, isBear) {
+    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
+    
+    // Group identical heroes for independent proc logic
+    const heroGroups = {};
+    side.heroes.forEach((h, i) => {
+        if (h.name === "None") return;
+        if (!heroGroups[h.name]) heroGroups[h.name] = { count: 0, data: h, isLeader: false };
+        heroGroups[h.name].count++;
+        if (i < 3) heroGroups[h.name].isLeader = true;
+        // Star bonus is additive across all unique heroes
+        if (i < 3 || heroGroups[h.name].count === 1) {
+            starBonus += GROWTH_TEMPLATES[HEROES[h.name].template][(h.star * 6) + h.sub] || 0;
+        }
+    });
+
+    for (const name in heroGroups) {
+        const group = heroGroups[name];
+        const d = HEROES[name];
+        const hWidget = (d.widget && d.widget.context === (type === 'num' ? 'off' : 'def')) ? (1 + WIDGET_GROWTH[group.data.widgetLv]) : 1.0;
+
+        d.skills.forEach((s, si) => {
+            if (s.group !== type && s.group !== 'den') return;
+            const x = s.values[group.data[`s${si+1}`]-1];
+            let p = s.getChance(x);
+            if (shiftFn) p = shiftFn(p, luckMode);
+
+            // INDEPENDENCE RULE: 1 - (1-p)^n
+            // Leaders use all 3 skills. Joiners (or duplicates) only contribute to Skill 1.
+            let effectiveP = p;
+            if (si === 0) {
+                effectiveP = 1 - Math.pow(1 - p, group.count);
+            } else if (!group.isLeader) {
+                return; // Skill 2/3 only for leaders
+            }
+
+            const m = s.getMagnitude(x);
+            const effDur = isBear ? 0 : s.duration;
+            let ev = Array.isArray(m) 
+                ? m.map(v => effDur === 0 ? effectiveP * v : (1 - Math.pow(1 - effectiveP, effDur)) * v) 
+                : (effDur === 0 ? effectiveP * m : (1 - Math.pow(1 - effectiveP, effDur)) * m);
+            
+            s.ids.forEach((id, idx) => {
+                pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget);
+            });
+            if (luckMode === 'average') logs.push(`${name} (x${group.count}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+        });
+    }
+
+    let mult = 1.0;
+    Object.values(pools).forEach(v => mult *= (1+v));
+    return { units: {inf:mult,cav:mult,arc:mult}, star: starBonus, logs };
+}
+
+export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
     let weights = {inf:{t7:0,tg3:0,tg5:0},cav:{t7:0,tg3:0,tg5:0},arc:{t7:0,tg3:0,tg5:0}};
@@ -120,31 +142,4 @@ function processBatches(batches) {
     });
     ['inf','cav','arc'].forEach(u => { if (totals[u]>0) { Object.keys(avgBase[u]).forEach(k => avgBase[u][k] /= totals[u]); Object.keys(weights[u]).forEach(k => weights[u][k] /= totals[u]); } });
     return { counts: totals, avgBase, weights };
-}
-
-function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
-    side.heroes.forEach((h, i) => {
-        if (h.name === "None") return;
-        const d = HEROES[h.name];
-        starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
-        const skills = (i < 3) ? d.skills : [d.skills[0]];
-        const hWidget = (d.widget && d.widget.context === (sideKey === 'atk' ? 'off' : 'def')) ? (1 + WIDGET_GROWTH[h.widgetLv || 0]) : 1.0;
-        skills.forEach((s, si) => {
-            if (s.group !== type && s.group !== 'den') return;
-            const x = s.values[h[`s${si+1}`]-1];
-            const p = shiftFn ? shiftFn(s.getChance(x), luckMode) : s.getChance(x);
-            const m = s.getMagnitude(x);
-            const effDur = isBear ? 0 : s.duration;
-            let ev = Array.isArray(m) ? m.map(v => effDur === 0 ? p * v : (1 - Math.pow(1 - p, effDur)) * v) : (effDur === 0 ? p * m : (1 - Math.pow(1 - p, effDur)) * m);
-            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget));
-            if (luckMode !== 'stochastic') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
-        });
-    });
-    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
-    return { units: {inf:mult,cav:mult,arc:mult}, star: starBonus, logs };
-}
-
-export function isAlive(a) { 
-    return ( (a.inf || 0) + (a.cav || 0) + (a.arc || 0) ) > 1; 
 }
