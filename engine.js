@@ -78,8 +78,16 @@ export function runCombatSim(setup, rngMode = 'average') {
         });
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-    return { m_cur, e_cur, wave, atk_mults: m_skill.logs, def_mults: e_skill.logs };
-}
+    return { 
+    m_cur, 
+    e_cur, 
+    wave, 
+    // Ensure these match exactly what ui-bridge expects
+    atk_mults: m_skill.logs, 
+    def_mults: e_skill.logs,
+    // Add raw counts for the luck bar
+    totalAtk: totalAtkArmy 
+    };
 
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
