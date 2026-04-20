@@ -6,14 +6,10 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
     
-    // Bear Trap Defender: 100% Infantry, 10 Defense, 5000 HP
+    // Bear Trap Override
     const defP = isBear ? {
         counts: { inf: 1000000000, cav: 0, arc: 0 },
-        avgBase: { 
-            inf: { atk: 0, def: 10, leth: 0, hp: 5000 },
-            cav: { atk: 0, def: 0, leth: 0, hp: 0 },
-            arc: { atk: 0, def: 0, leth: 0, hp: 0 }
-        },
+        avgBase: { inf: { atk: 0, def: 10, leth: 0, hp: 5000 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
         weights: { inf: { t7: 0, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
 
@@ -42,7 +38,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < maxWaves) {
         wave++;
-        if (atkLuck === 'stochastic') {
+        if (isStochastic) {
             ['atk', 'def'].forEach(s => { for (let id in activeBuffs[s]) if (activeBuffs[s][id] > 0) activeBuffs[s][id]--; });
         }
 
@@ -130,7 +126,8 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
-        const d = HEROES[h.name]; starBonus += (h.starBonus || 0); // Star bonus passed from UI
+        const d = HEROES[h.name];
+        starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
         const skills = (i < 3) ? d.skills : [d.skills[0]];
         const hWidget = (d.widget && d.widget.context === (sideKey === 'atk' ? 'off' : 'def')) ? (1 + WIDGET_GROWTH[h.widgetLv || 0]) : 1.0;
         skills.forEach((s, si) => {
