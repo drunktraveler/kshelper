@@ -17,6 +17,7 @@
         .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
         .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
         .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
+        .stat-row { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 30px; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
@@ -26,7 +27,7 @@
             <h1 class="text-xl font-black text-blue-500 uppercase tracking-tighter">Kingshot Calculator</h1>
             <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold uppercase">
                 <button class="px-4 py-2 bg-blue-600 rounded-lg">Battle</button>
-                <button class="px-4 py-2 text-slate-500">Formation</button>
+                <button class="px-4 py-2 text-slate-500 hover:text-white">Formation</button>
             </div>
         </header>
 
@@ -37,7 +38,7 @@
                     <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Rally Composition</span>
                     <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Add Player</button>
                 </div>
-                <div id="atk-batch-container" class="space-y-3 mb-6"></div>
+                <div id="atk-batch-container" class="space-y-3 mb-6"></div> <!-- Container must be empty! -->
                 <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
                 <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
                     <span id="atk-inf-pct">0%</span><span id="atk-cav-pct">0%</span><span id="atk-arc-pct">0%</span>
@@ -51,7 +52,7 @@
                     <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Garrison Batches</span>
                     <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Add Player</button>
                 </div>
-                <div id="def-batch-container" class="space-y-3 mb-6"></div>
+                <div id="def-batch-container" class="space-y-3 mb-6"></div> <!-- Container must be empty! -->
                 <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
                 <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
                     <span id="def-inf-pct">0%</span><span id="def-cav-pct">0%</span><span id="def-arc-pct">0%</span>
@@ -71,40 +72,37 @@
             <button onclick="window.handleSimulation()" class="w-full bg-blue-900/30 hover:bg-blue-800/40 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs">Run Simulation</button>
         </div>
 
-        <div id="result-screen" class="hidden max-w-2xl mx-auto">
-    <div class="glass-card p-8 border-t-4 border-blue-500">
-        <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Battle Analysis</h2>
-        <p class="text-slate-500 text-xs font-bold mb-8" id="result-waves"></p>
-        <div class="grid grid-cols-2 gap-12 mb-8 border-b border-slate-800 pb-8">
-            <div>
-                <p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p>
-                <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
-                <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
-            </div>
-            <div>
-                <p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p>
-                <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
-                <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
+        <div id="result-screen" class="hidden max-w-2xl mx-auto pb-12">
+            <div class="glass-card p-8 border-t-4 border-blue-500">
+                <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Battle Analysis</h2>
+                <p class="text-slate-500 text-xs font-bold mb-8" id="result-waves"></p>
+                <div class="grid grid-cols-2 gap-12 mb-8 border-b border-slate-800 pb-8">
+                    <div>
+                        <p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p>
+                        <div class="text-4xl font-black mb-2" id="res-atk-total"></div>
+                        <div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p>
+                        <div class="text-4xl font-black text-right mb-2" id="res-def-total"></div>
+                        <div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div>
+                    </div>
+                </div>
+                <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
+                    <div class="flex justify-between text-[9px] font-black uppercase text-slate-600 mb-2 tracking-widest">
+                        <span>0% Survivors</span>
+                        <span class="text-blue-500/50">Volatility Range</span>
+                        <span>100% Survivors</span>
+                    </div>
+                    <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden">
+                        <div id="luck-visual-bar" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                    </div>
+                </div>
+                <button id="toggle-details-btn" onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Modifiers +</button>
+                <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-400 space-y-1 max-h-64 overflow-y-auto"></div>
             </div>
         </div>
-        <!-- Luck Graph Placeholder -->
-        <div class="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
-    <div class="flex justify-between text-[9px] font-black uppercase text-slate-600 mb-2 tracking-widest">
-        <span>0% Survivors</span>
-        <span class="text-blue-500/50">Volatility Range</span>
-        <span>100% Survivors</span>
     </div>
-    <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden">
-        <!-- This bar moves and grows based on luck spread -->
-        <div id="luck-visual-bar" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-    </div>
-</div>
-
-<button id="toggle-details-btn" onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 hover:text-blue-400 transition tracking-widest mt-4">
-    View Combat Modifiers +
-</button>
-<div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-500 space-y-1 max-h-64 overflow-y-auto"></div>
-</div>
 
     <!-- Modal -->
     <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
