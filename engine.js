@@ -2,34 +2,39 @@ import { UNITS } from './units.js';
 import { HEROES } from './heroes.js';
 import { GROWTH_TEMPLATES } from './constants.js';
 
-export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100) {
+export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false) {
     const atkP = processBatches(setup.atk.batches);
-    const defP = processBatches(setup.def.batches);
+    // Bear Trap Defender Override
+    const defP = isBear ? {
+        counts: { inf: 1000000000, cav: 0, arc: 0 }, // Infinity health
+        avgBase: { inf: { atk: 0, def: 10, leth: 0, hp: 5000 } },
+        weights: { inf: { t7: 0, tg3: 0, tg5: 0 } }
+    } : processBatches(setup.def.batches);
 
     let m_cur = { ...atkP.counts }, e_cur = { ...defP.counts };
     const totalStartAtk = Object.values(m_cur).reduce((a, b) => a + b, 0);
-    const totalStartDef = Object.values(e_cur).reduce((a, b) => a + b, 0);
+    const totalStartDef = isBear ? 1 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    let activeBuffs = { atk: {}, def: {} };
-
-    const getProb = (p, side, id, duration, mode) => {
+    const getShiftedProb = (p, mode, duration) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        if (mode === 'stochastic') {
-            if (activeBuffs[side][id] > 0) return 1;
-            if (Math.random() < p) { activeBuffs[side][id] = duration || 1; return 1; }
-            return 0;
-        }
-        const sigma = Math.sqrt((p * (1 - p)) / nWaves);
+        // Bear Trap Override: Duration becomes 1 (no uptime shift)
+        const effectiveN = isBear ? 10 : nWaves;
+        const sigma = Math.sqrt((p * (1 - p)) / effectiveN);
         return mode === 'lucky' ? Math.min(1, p + 1.0 * sigma) : Math.max(0, p - 1.0 * sigma);
     };
 
-    const m_skill_base = getMultipliers(setup.atk, atkP, 'num', atkLuck, getProb, 'atk');
-    const e_skill_base = getMultipliers(setup.def, defP, 'den', defLuck, getProb, 'def');
+    // Skills: isBear forces durations to 0 (1 wave)
+    const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, getShiftedProb, 'atk', isBear);
+    const e_skill = isBear ? { units: { inf: 1, cav: 1, arc: 1 }, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, getShiftedProb, 'def', false);
+    
     const widget_mult = Math.pow(1.15, 3);
 
     let wave = 0;
-    while (isAlive(m_cur) && isAlive(e_cur) && wave < 2000) {
+    let totalDmg = 0;
+    const maxWaves = isBear ? 10 : 2000;
+    
+     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < maxWaves) {
         wave++;
         if (atkLuck === 'stochastic') {
             ['atk', 'def'].forEach(s => { for (let id in activeBuffs[s]) if (activeBuffs[s][id] > 0) activeBuffs[s][id]--; });
@@ -99,7 +104,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
     }
-    return { m_cur, e_cur, wave, atk_mults: m_skill_base.logs, def_mults: e_skill_base.logs, startAtk: totalStartAtk, startDef: totalStartDef };
+    return { m_cur, e_cur, wave, totalDmg, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
 
 function processBatches(batches) {
@@ -119,24 +124,25 @@ function processBatches(batches) {
     return { counts: totals, avgBase, weights };
 }
 
-function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
-    ['inf','cav','arc'].forEach(u => {
-        const w = proc.weights[u];
-        if (w.t7 > 0) logs.push(`Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Efficient`);
-        if (w.tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% Effective`);
-    });
+function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
+    let pools = {}, starBonus = 0, logs = [];
     side.heroes.forEach((h, i) => {
         if (h.name === "None") return;
-        const d = HEROES[h.name]; starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
-        d.skills.forEach((s, si) => {
+        const d = HEROES[h.name];
+        starBonus += GROWTH_TEMPLATES[d.template][(h.star * 6) + h.sub] || 0;
+        const skills = (i < 3) ? d.skills : [d.skills[0]];
+        skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
             const x = s.values[h[`s${si+1}`]-1];
-            const p = shiftFn ? shiftFn(s.getChance(x), luckMode, `${h.name}_${si}`, s.duration, sideKey) : s.getChance(x);
+            const p = shiftFn ? shiftFn(s.getChance(x), luckMode) : s.getChance(x);
             const m = s.getMagnitude(x);
-            let ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? p * v : (1 - Math.pow(1 - p, s.duration)) * v) : (s.duration === 0 ? p * m : (1 - Math.pow(1 - p, s.duration)) * m);
+            
+            // Bear Trap Override: Force duration to 0 for EV calculation
+            const effDur = isBear ? 0 : s.duration;
+            let ev = Array.isArray(m) ? m.map(v => effDur === 0 ? p * v : (1 - Math.pow(1 - p, effDur)) * v) : (effDur === 0 ? p * m : (1 - Math.pow(1 - p, effDur)) * m);
+            
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            if (luckMode !== 'stochastic') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            if (luckMode === 'average') logs.push(`${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
