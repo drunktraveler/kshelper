@@ -45,23 +45,22 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const sC = side==='atk'?m_cur:e_cur, tC = side==='atk'?e_cur:m_cur;
             const sS = setup[side], tS = setup[target];
             const tf = side==='atk'?ef:mf;
-            const sM_obj = side==='atk'?m_skill_base:e_skill_base;
-            const tM_obj = side==='atk'?e_skill_base:m_skill_base;
+            const sMod = side==='atk'?m_skill_base:e_skill_base;
+            const tMod = side==='atk'?e_skill_base:m_skill_base;
             const sL = side==='atk'?atkLuck:defLuck;
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] <= 0) return;
                 const b = sP.avgBase[u], tb = tP.avgBase[tf];
-                let atk = b.atk * (1 + (sS.stats[u+'_att'] + sM_obj.star)/100);
+                let atk = b.atk * (1 + (sS.stats[u+'_att'] + sMod.star)/100);
                 let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                let df = tb.def * (1 + (tS.stats[tf+'_def'] + tM_obj.star)/100);
+                let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100);
                 let hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
                 let tm = ((u==='inf'&&tf==='cav')||(u==='cav'&&tf==='arc')||(u==='arc'&&tf==='inf'))?1.1:1.0;
                 let abil = 1.0;
                 const w = sP.weights[u];
                 
-                // Simplified Luck for Troop Abil
                 const tShift = (p) => getProb(p, side, u+'_abil', 0, sL);
                 if (u==='arc') abil *= (1 + tShift(0.1*w.t7)) * (1 + (tShift(w.tg5?0.3:(w.tg3?0.2:0))*0.5));
                 if (u==='cav') abil *= (1 + tShift(w.tg5?0.15:(w.tg3?0.1:0)));
@@ -70,14 +69,14 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     abil *= (1 - (tShift(tP.weights.inf.tg5?0.375:(tP.weights.inf.tg3?0.25:0))*0.36));
                 }
 
-                const sM = sM_obj.units[u] * widget_mult, tM = tM_obj.units[tf] * widget_mult;
+                const sM = sMod.units[u] * widget_mult, tM = tMod.units[tf] * widget_mult;
 
                 if (u === 'cav' && tC['arc'] > 1 && tf !== 'arc' && w.t7 > 0) {
                     const bypass = tShift(0.2 * w.t7);
                     pending.push({dict: tC, unit: tf, amt: (Math.sqrt(sC[u])*sq_min*atk*leth*tm*abil*(1-bypass)*sM)/(df*hp*100*tM)});
                     const ba = tP.avgBase['arc'];
-                    const archDef = (tS.stats['arc_def'] + tM_obj.star)/100;
-                    pending.push({dict: tC, unit: 'arc', amt: (Math.sqrt(sC[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/( (ba.def*(1+archDef)) * (ba.hp*(1+tS.stats.arc_hp/100)) * 100 * (tM_base?.units.arc || 1.52))});
+                    const archDef = (tS.stats['arc_def'] + tMod.star)/100;
+                    pending.push({dict: tC, unit: 'arc', amt: (Math.sqrt(sC[u])*sq_min*atk*leth*1.1*abil*bypass*sM)/( (ba.def*(1+archDef)) * (ba.hp*(1+tS.stats.arc_hp/100)) * 100 * (tMod.units.arc * widget_mult))});
                 } else {
                     if (u === 'cav' && tf === 'arc') abil *= 0.8;
                     pending.push({dict: tC, unit: tf, amt: (Math.sqrt(sC[u])*sq_min*atk*leth*tm*abil*sM)/(df*hp*100*tM)});
