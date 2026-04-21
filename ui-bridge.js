@@ -15,7 +15,9 @@ let state = {
 
 // --- INITIALIZATION ---
 window.init = () => {
-    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
+    Object.keys(HEROES).forEach(n => { 
+    if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
+});
     const sel = document.getElementById('hero-select');
      // 1. Target all hero selects: the main one and the three in calibration
     const mainSelect = document.getElementById('hero-select');
@@ -68,6 +70,20 @@ window.toggleAccountStats = () => {
     const isEnabled = document.getElementById('use-account-stats').checked;
     document.getElementById('account-stats-ui').classList.toggle('hidden', !isEnabled);
 };
+
+// 2. Add the Star/Substage Dropdown Renderer
+function renderStarSelector(name, currentIndex) {
+    let html = `<select onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
+                class="bg-slate-800 text-[10px] text-slate-300 rounded px-2 py-1 outline-none border border-slate-700 w-full mt-1 cursor-pointer hover:border-blue-500 transition-colors">`;
+    for (let i = 0; i <= 30; i++) {
+        const star = Math.floor(i / 6);
+        const sub = i % 6;
+        const label = star === 5 ? "5-0 (Max Star)" : `Star: ${star}-${sub}`;
+        html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${label}</option>`;
+        if (star === 5) break; // 5-star has no substages
+    }
+    return html + `</select>`;
+}
 
 window.reverseEngineerAccount = () => {
     const ctx = document.getElementById('report-ctx').value;
