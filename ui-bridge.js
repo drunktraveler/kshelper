@@ -195,7 +195,8 @@ window.runOptimizer = (mode) => {
                 let s = JSON.parse(JSON.stringify(setup));
                 s.atk.batches = [{ tier:10, tg:3, inf:i*10000, cav:j*10000, arc:k*10000 }];
                 if(mode!=='bear') s.def.batches = [{ tier:10, tg:3, inf:d.inf*atkTotal, cav:d.cav*atkTotal, arc:d.arc*atkTotal }];
-                const r = runCombatSim(s, 'average', 'average', 100, mode==='bear');
+                // isOptimizing = true forces raw survivors (prevents binary 1/0 result)
+                const r = runCombatSim(s, 'average', 'average', 100, mode==='bear', true);
                 let outcome = mode==='bear' ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
                 if(outcome > 0) wins++; totalNet += outcome;
             });
@@ -205,9 +206,15 @@ window.runOptimizer = (mode) => {
         }
     }
     const plotId = mode==='bear'?'bear-plot':'ternary-plot';
-    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Portland', size:8 }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:0,b:0} });
-    if(mode==='bear') { document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString(); document.getElementById('bear-best-form').innerText = `Best Bear: ${best.form[0]}/${best.form[1]}/${best.form[2]}`; }
-    else { document.getElementById('opt-best-score').innerText = `Best result: +${Math.round(best.score).toLocaleString()} survivors`; document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`; }
+    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:10, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0} });
+    
+    if(mode==='bear') { 
+        document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString(); 
+        document.getElementById('bear-best-form').innerText = `Best Split: ${best.form[0]}% Inf / ${best.form[1]}% Cav / ${best.form[2]}% Arc`;
+    } else {
+        document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        document.getElementById('opt-best-score').innerText = `Survival Margin: +${Math.round(best.score).toLocaleString()} troops`;
+    }
 };
 
 window.calculateOptimalLineups = () => {
@@ -215,45 +222,79 @@ window.calculateOptimalLineups = () => {
     if(unlocked.length < 3) return alert("Unlock heroes.");
     const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
     const byType = { Inf: [], Cav: [], Arc: [] }; unlocked.forEach(n => byType[HEROES[n].type].push(n));
-    if(!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock 1 of each type.");
+    
+    // Specific Scenarios requested
+    const scens = [
+        {l:"Rally (Solo)", c:"off", j:false, w:false},
+        {l:"Garrison (Solo)", c:"def", j:false, w:true},
+        {l:"Rally w/ Joiners", c:"off", j:true, w:true},
+        {l:"Garrison w/ Joiners", c:"def", j:true, w:true}
+    ];
 
-    [{l:"Rally",c:"off",j:false},{l:"Rally w/ Joiners",c:"off",j:true},{l:"Garrison",c:"def",j:false},{l:"Garrison w/ Joiners",c:"def",j:true}].forEach(s => {
+    scens.forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
-        for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
-            const trio = [i, c, a]; let joiners = [];
+        // Force 1 Inf, 1 Cav, 1 Arc Leaders
+        for (let i of (byType.Inf.length?byType.Inf:["None"])) 
+        for (let c of (byType.Cav.length?byType.Cav:["None"])) 
+        for (let a of (byType.Arc.length?byType.Arc:["None"])) {
+            const trio = [i, c, a].filter(n => n !== "None");
+            if(trio.length === 0) continue;
+
+            let joiners = [];
             if (s.j) {
-                const pool = unlocked.filter(n => !trio.includes(n));
-                joiners = pool.map(n => ({ n, i: calcScore(trio, [n], s.c) })).sort((a,b)=>b.i-a.i).slice(0, 4).map(x => x.n);
+                // Find top 4 joiners using Independence rule
+                const pool = unlocked.map(n => ({ n, i: calcScore(trio, [n], s.c, s.w) })).sort((a,b)=>b.i-a.i);
+                joiners = pool.slice(0, 4).map(x => x.n);
             }
-            const score = calcScore(trio, joiners, s.c);
+            const score = calcScore(trio, joiners, s.c, s.w);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
-        const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-24";
-        card.innerHTML = `<div class="flex items-center gap-4"><div class="space-y-1"><div class="text-[8px] font-black text-blue-400 uppercase">${s.l}</div><div class="flex -space-x-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border border-blue-500 bg-slate-900">`).join('')}</div></div>${s.j?`<div class="flex -space-x-1 opacity-50 scale-75 origin-left">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700">`).join('')}</div>`:''}</div><div class="text-right"><div class="text-xl font-black">${best.score.toFixed(3)}x</div></div>`;
+
+        const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-28";
+        card.innerHTML = `<div><div class="text-[9px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
+            <div class="flex gap-1">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border border-blue-500" title="${n}">`).join('')}</div>
+            ${s.j ? `<div class="flex gap-1 mt-1 opacity-50">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-slate-700" title="${n}">`).join('')}</div>` : ''}</div>
+            <div class="text-right"><div class="text-2xl font-black">${best.score.toFixed(3)}x</div></div>`;
         resArea.appendChild(card);
     });
 };
 
-function calcScore(leaders, joiners, ctx) {
+function calcScore(leaders, joiners, ctx, allowWidgets) {
     let pools = {}, widgets = { attack:0, defense:0, lethality:0, health:0 };
     leaders.forEach(n => {
+        if(n === "None") return;
         const d = HEROES[n], r = roster[n];
-        const isSoloAtk = ctx === 'off' && joiners.length === 0;
-        if (d.widget && d.widget.context === ctx && !isSoloAtk) widgets[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        const hWVal = (d.widget && d.widget.context === ctx && allowWidgets) ? WIDGET_GROWTH[r.widget] : 0;
+        // Group widgets additively per stat type
+        if(d.widget && d.widget.context === ctx && allowWidgets) widgets[d.widget.stat] += hWVal;
+
         d.skills.forEach((s, i) => {
-            const x = s.values[r[`s${i+1}`]-1], p = s.getChance(x);
+            const x = s.values[r[`s${i+1}`]-1];
+            const p = s.getChance(x);
             const ev = s.duration === 0 ? p*s.getMagnitude(x) : (1-Math.pow(1-p, s.duration))*s.getMagnitude(x);
-            s.ids.forEach((id, idx) => pools[id] = (pools[id]||0) + ((Array.isArray(ev)?ev[idx] : ev)*(1+(d.widget&&d.widget.context===ctx&&!isSoloAtk?WIDGET_GROWTH[r.widget]:0))));
+            s.ids.forEach((id, idx) => {
+                // Skills benefit from the widget multiplier of their own hero
+                pools[id] = (pools[id]||0) + ((Array.isArray(ev)?ev[idx] : ev) * (1 + hWVal));
+            });
         });
     });
+
+    // Joiner logic: Diminishing returns independence rule
     const jCounts = {}; joiners.forEach(n => jCounts[n] = (jCounts[n]||0) + 1);
     for (const n in jCounts) {
         const d = HEROES[n], r = roster[n], s = d.skills[0];
-        const p = 1 - Math.pow(1 - s.getChance(s.values[r.s1-1]), jCounts[n]);
-        const ev = p * s.getMagnitude(s.values[r.s1-1]);
+        const x = s.values[r.s1-1];
+        const p = 1 - Math.pow(1 - s.getChance(x), jCounts[n]);
+        const ev = p * s.getMagnitude(x);
         s.ids.forEach((id, idx) => pools[id] = (pools[id]||0) + (Array.isArray(ev)?ev[idx]:ev));
     }
-    let t = 1.0; Object.values(pools).forEach(v => t *= (1+v)); return t;
+
+    let t = 1.0;
+    // Multiply distinct widget stats
+    Object.values(widgets).forEach(v => t *= (1 + v));
+    // Multiply distinct skill buckets
+    Object.values(pools).forEach(v => t *= (1 + v));
+    return t;
 }
 
 function gatherSetup() {
