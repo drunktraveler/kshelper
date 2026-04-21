@@ -242,7 +242,6 @@ window.calculateOptimalLineups = () => {
     
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
-    if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock 1 of each type.");
 
     const scens = [
         {l:"Solo Attack", c:"off", j:false, w:false},
@@ -253,10 +252,15 @@ window.calculateOptimalLineups = () => {
 
     scens.forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
-        for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
-            const trio = [i, c, a];
+        for (let i of (byType.Inf.length?byType.Inf:["None"])) 
+        for (let c of (byType.Cav.length?byType.Cav:["None"])) 
+        for (let a of (byType.Arc.length?byType.Arc:["None"])) {
+            const trio = [i, c, a].filter(n => n !== "None");
+            if(trio.length === 0) continue;
+
             let joiners = [];
             if (s.j) {
+                // FIXED: We no longer filter out leaders. Anyone unlocked can be a joiner.
                 for (let slot = 0; slot < 4; slot++) {
                     let bestJ = unlocked.map(n => ({ n, i: calcPowerScore(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
                     joiners.push(bestJ);
@@ -291,63 +295,51 @@ window.calculateOptimalLineups = () => {
 
 // --- THE CORRECTED BRAIN: MULTIPLIER SCORING ---
 function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
-    let skillBuckets = {}; 
+    let pools = {};
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    // Group occurrences of specific hero-skills
-    const heroSkillMap = {}; // { "Jabel_s0": { p, m, ids, count } }
+    // Count total occurrences of every hero in the 7-man setup
+    const counts = {};
+    const allHeroes = [...leaders, ...joiners];
+    allHeroes.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
 
-    const processHero = (name, isLeader) => {
-        if (name === "None" || !name) return;
+    Object.keys(counts).forEach(name => {
         const d = HEROES[name];
-        const r = roster[name] || { s1:5, s2:5, s3:5, widget:10 };
-
-        // 1. Widget Logic: Summed by Stat Type
-        if (isLeader && d.widget && d.widget.context === ctx && allowWidgets) {
+        const r = roster[name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
+        const n = counts[name];
+        
+        // 1. Widgets (Leaders only, Context specific, Additive per stat type)
+        if (leaders.includes(name) && d.widget && d.widget.context === ctx && allowWidgets) {
             widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
         }
 
-        // 2. Skill Logic: Track how many times each unique skill is present
-        const skillLimit = isLeader ? d.skills.length : 1;
-        for (let i = 0; i < skillLimit; i++) {
-            const key = `${name}_s${i}`;
-            const s = d.skills[i];
-            if (!heroSkillMap[key]) {
-                const x = s.values[r[`s${i+1}`] - 1];
-                heroSkillMap[key] = { 
-                    p: s.getChance(x), 
-                    m: s.getMagnitude(x), 
-                    ids: s.ids, 
-                    duration: s.duration || 0,
-                    count: 0 
-                };
+        // 2. Skills
+        d.skills.forEach((s, si) => {
+            if (si > 0 && !leaders.includes(name)) return; // Only leaders provide S2/S3
+            
+            const x = s.values[r[`s${si+1}`]-1];
+            const p = s.getChance(x);
+            const m = s.getMagnitude(x);
+            const countForThisSkill = (si === 0) ? n : 1; // Independence only on S1 for joiners
+
+            let ev;
+            if (p >= 1.0) {
+                ev = Array.isArray(m) ? m.map(v => countForThisSkill * v) : countForThisSkill * m;
+            } else {
+                const pAny = 1 - Math.pow(1 - p, countForThisSkill);
+                ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? pAny * v : (1 - Math.pow(1 - pAny, s.duration)) * v) : (s.duration === 0 ? pAny * m : (1 - Math.pow(1 - pAny, s.duration)) * m);
             }
-            heroSkillMap[key].count++;
-        }
-    };
 
-    leaders.forEach(n => processHero(n, true));
-    joiners.forEach(n => processHero(n, false));
-
-    // 3. Apply Independence Rule to Hero-Skill groups and sum into ID buckets
-    for (const key in heroSkillMap) {
-        const item = heroSkillMap[key];
-        // Probability of at least one proc across 'n' copies
-        const pWave = 1 - Math.pow(1 - item.p, item.count);
-        // Expected Uptime for duration skills
-        const uptime = item.duration === 0 ? pWave : (1 - Math.pow(1 - pWave, item.duration));
-        
-        item.ids.forEach((id, idx) => {
-            const magnitude = Array.isArray(item.m) ? item.m[idx] : item.m;
-            skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * magnitude);
+            s.ids.forEach((id, idx) => {
+                pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev);
+            });
         });
-    }
+    });
 
-    // 4. Final Product: (Widgets) * (Skills)
+    // 3. Final Multiplier calculation
     let totalMult = 1.0;
     Object.values(widgetBuckets).forEach(v => totalMult *= (1 + v));
-    Object.values(skillBuckets).forEach(v => totalMult *= (1 + v));
-
+    Object.values(pools).forEach(v => totalMult *= (1 + v));
     return totalMult;
 }
 
