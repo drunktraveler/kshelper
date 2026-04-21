@@ -17,6 +17,28 @@ let state = {
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
     const sel = document.getElementById('hero-select');
+     // 1. Target all hero selects: the main one and the three in calibration
+    const mainSelect = document.getElementById('hero-select');
+    const calibrationSelects = document.querySelectorAll('.rep-hero');
+    
+    // Combine them into one array to populate all at once
+    const allHeroDropdowns = [mainSelect, ...calibrationSelects];
+
+    allHeroDropdowns.forEach(sel => {
+        if (!sel) return;
+        
+        // Clear existing and add "None"
+        sel.innerHTML = '<option value="None">None</option>';
+        
+        // Populate with Hero names from HEROES DB
+        Object.keys(HEROES).sort().forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.innerText = name; // Title Case names from heroes.js
+            sel.appendChild(opt);
+        });
+    });
+    
     if(sel) {
         sel.innerHTML = '<option value="None">None</option>';
         Object.keys(HEROES).sort().forEach(n => {
