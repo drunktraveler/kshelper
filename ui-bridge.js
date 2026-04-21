@@ -270,10 +270,22 @@ function renderRosterUI() {
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
         card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-lg shadow-blue-900/20' : 'opacity-40 border-transparent bg-slate-950/20'}`;
         let skillsHtml = h.skills.map((s, i) => `<div class="mt-2"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase">${n}</div></div>${r.unlocked ? `<div class="space-y-3">${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
-        grid.appendChild(card);
+        card.innerHTML = `<div class="flex items-center gap-3 mb-2">
+        <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>
+        <div class="font-bold text-xs uppercase">${n}</div>
+    </div>
+    ${r.unlocked ? `
+        <div class="space-y-3">
+            <div>
+                <span class="text-[8px] text-slate-500 font-black uppercase">Development Level</span>
+                ${renderStarSelector(n, r.starIndex)}
+            </div>
+            ${skillsHtml}
+            ${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}
+        </div>` : ''}`;grid.appendChild(card);
     });
 }
+
 window.updateRoster = (n,k,v) => { roster[n][k]=v; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
 
 window.openHeroModal = (side, index) => {
@@ -455,89 +467,80 @@ window.calculateOptimalLineups = () => {
 
 // --- THE CORRECTED BRAIN: MULTIPLIER SCORING ---
 function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
-    let skillBuckets = {}; // { 101: sumEV, 102: sumEV ... }
+    let skillBuckets = {}; 
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
+    const useStats = document.getElementById('use-account-stats').checked && nakedStats;
     
-    // Group occurrences of specific hero-skills to handle Independence vs Additivity
+    const allHeroes = [...leaders.map(n => ({name: n, isL: true})), ...joiners.map(n => ({name: n, isL: false}))];
     const heroSkillCounts = {}; 
 
-    // Solo Attack Rule: Widgets are 0 if no joiners in offense
-    const widgetsActive = (ctx === 'def' || joiners.length > 0) && allowWidgets;
+    // Solo Attack Rule
+    const widgetsDisabled = (ctx === 'off' && joiners.length === 0) || !allowWidgets;
 
-    // 1. Map all 7 heroes (Leaders get all skills, Joiners get S1)
-    const allHeroes = [
-        ...leaders.map(n => ({name: n, isL: true})), 
-        ...joiners.map(n => ({name: n, isL: false}))
-    ];
+    // Stat multipliers for the account
+    let statMultiplier = 1.0;
 
     allHeroes.forEach(hero => {
         if (hero.name === "None" || !hero.name) return;
         const d = HEROES[hero.name];
-        const r = roster[hero.name] || {s1:5, s2:5, s3:5, widget:10};
+        const r = roster[hero.name];
+        const type = d.type.toLowerCase().slice(0, 3); // 'inf', 'cav', or 'arc'
 
-        // A. Handle Widgets (Global Layer - Additive within same stat type)
-        if (hero.isL && d.widget && d.widget.context === ctx && widgetsActive) {
+        // 1. STAT SCALING (Diminishing Returns Math)
+        if (useStats && hero.isL) {
+            // Get Star bonus from template
+            const starBonus = GROWTH_TEMPLATES[d.template][r.starIndex];
+            // Get Widget flat stat from widgets.js
+            const flatWidgetStat = d.widget ? WIDGET_STATS[d.template][r.widget] : 0;
+
+            // Damage Area Growth: (Atk * Leth)
+            const curAtk = 100 + nakedStats[`${type}_att`];
+            const curLeth = 100 + nakedStats[`${type}_leth`];
+            
+            const attGain = (curAtk + starBonus) / curAtk;
+            const lethGain = (curLeth + flatWidgetStat) / curLeth;
+            
+            statMultiplier *= (attGain * lethGain);
+            
+            // Note: We skip Def/HP growth for simplicity as Atk/Leth is the primary driver 
+            // of the "Power Score" in the sim, but you can add them if preferred.
+        }
+
+        // 2. WIDGET MULTIPLIERS (Additive within types)
+        if (hero.isL && d.widget && d.widget.context === ctx && !widgetsDisabled) {
             widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
         }
 
-        // B. Collect Skills (Differentiate Hilde S1 from Hilde S2)
-        const skillLimit = hero.isL ? d.skills.length : 1;
-        for (let i = 0; i < skillLimit; i++) {
-            const skillKey = `${hero.name}_s${i}`;
-            const s = d.skills[i];
-            const x = s.values[r[`s${i+1}`] - 1];
-            
+        // 3. SKILLS
+        const skillsToProcess = hero.isL ? d.skills : [d.skills[0]];
+        skillsToProcess.forEach((s, si) => {
+            const skillKey = `${hero.name}_s${si}`;
             if (!heroSkillCounts[skillKey]) {
-                heroSkillCounts[skillKey] = { 
-                    p: s.getChance(x), 
-                    m: s.getMagnitude(x), 
-                    ids: s.ids, 
-                    duration: s.duration || 0,
-                    count: 0 
-                };
+                const x = s.values[r[`s${si+1}`]-1];
+                heroSkillCounts[skillKey] = { p: s.getChance(x), m: s.getMagnitude(x), ids: s.ids, duration: s.duration, count: 0 };
             }
             heroSkillCounts[skillKey].count++;
-        }
+        });
     });
 
-    // 2. Resolve Skill Buckets
+    // 4. Resolve Skills and Final Multiplier
     for (const key in heroSkillCounts) {
         const item = heroSkillCounts[key];
-        let ev;
-
-        if (item.p >= 1.0) {
-            // PASSIVE RULE: Simple additivity (n * m)
-            ev = Array.isArray(item.m) ? item.m.map(v => v * item.count) : item.m * item.count;
-        } else {
-            // CHANCE RULE: Independence (1 - (1-p)^n)
-            const pAny = 1 - Math.pow(1 - item.p, item.count);
-            // Uptime logic for duration-based chance skills
-            const uptime = item.duration === 0 ? pAny : (1 - Math.pow(1 - pAny, item.duration));
-            ev = Array.isArray(item.m) ? item.m.map(v => uptime * v) : uptime * item.m;
-        }
-
+        const pAny = 1 - Math.pow(1 - item.p, item.count);
+        const uptime = item.duration === 0 ? pAny : (1 - Math.pow(1 - pAny, item.duration));
         item.ids.forEach((id, idx) => {
-            const val = Array.isArray(ev) ? ev[idx] : ev;
-            skillBuckets[id] = (skillBuckets[id] || 0) + val;
+            const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
+            skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag);
         });
     }
 
-    // 3. Final Multiplicative Cross-Product
-    // Baseline 1.0x Interaction Constant
-    let totalMult = 1.00; 
+    let total = statMultiplier;
+    Object.values(widgetBuckets).forEach(v => total *= (1 + v));
+    Object.values(skillBuckets).forEach(v => total *= (1 + v));
 
-    // Step 1: Multiply Widget Groups (1 + sumStatA) * (1 + sumStatB)...
-    Object.values(widgetBuckets).forEach(v => {
-        if (v > 0) totalMult *= (1 + v);
-    });
-
-    // Step 2: Multiply Skill ID Buckets (1 + sumEV101) * (1 + sumEV102)...
-    Object.values(skillBuckets).forEach(v => {
-        if (v > 0) totalMult *= (1 + v);
-    });
-
-    return totalMult;
+    return total;
 }
+
 function gatherSetup() {
     const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
     const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
