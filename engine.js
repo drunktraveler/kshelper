@@ -5,9 +5,15 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false, isOptimizing = false) {
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
+    
+    // Bear Trap Config: 10 Defense, 83.3333 Health
     const defP = isBear ? {
         counts: { inf: 1000000, cav: 0, arc: 0 },
-        avgBase: { inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
+        avgBase: { 
+            inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 },
+            cav: { atk: 0, def: 0, leth: 0, hp: 0 },
+            arc: { atk: 0, def: 0, leth: 0, hp: 0 }
+        },
         weights: { inf: { t7: 1, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
 
@@ -71,7 +77,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     }
 
     if (!isOptimizing && !isBear) {
-        const mS = Object.values(m_cur).reduce((a,b)=>a+b), eS = Object.values(e_cur).reduce((a,b)=>a+b);
+        const mS = Object.values(m_cur).reduce((a,b)=>a+b, 0), eS = Object.values(e_cur).reduce((a,b)=>a+b, 0);
         if (mS > eS) { for(let k in e_cur) e_cur[k] = 0; } else if (eS > mS) { for(let k in m_cur) m_cur[k] = 0; }
     }
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
@@ -92,15 +98,12 @@ function processBatches(batches) {
 }
 
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Interaction Bonus (+10% Dmg)"];
+    let pools = {}, starBonus = 0, logs = ["Always Active: interaction Bonus (+10% Dmg)"];
     ['inf','cav','arc'].forEach(u => {
-        if (proc.weights[u].t7 > 0) logs.push(`Tier 7+ (${u}): ${(proc.weights[u].t7*100).toFixed(0)}% Eff`);
-        if (proc.weights[u].tg3 > 0) logs.push(`TrueGold (${u}): ${(proc.weights[u].tg3*100).toFixed(0)}% Eff`);
+        if (proc.weights[u].t7 > 0) logs.push(`Tier 7+ (${u}): ${(proc.weights[u].t7*100).toFixed(0)}% Effective`);
+        if (proc.weights[u].tg3 > 0) logs.push(`TrueGold (${u}): ${(proc.weights[u].tg3*100).toFixed(0)}% Effective`);
     });
-
     const isSolo = sideKey === 'atk' && side.batches.length === 1 && !isBear;
-
-    // Use unique source rule
     const heroCounts = {}; side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
 
     Object.keys(heroCounts).forEach(name => {
@@ -110,14 +113,13 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
         d.skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
             const x = s.values[h[`s${si+1}`]-1];
-            // Independence for duplicate joiners
             const p = shiftFn ? shiftFn(s.getChance(x), luckMode) : s.getChance(x);
             const count = (si === 0) ? heroCounts[name] : 1; 
             const effP = 1 - Math.pow(1 - p, count);
             const m = s.getMagnitude(x), effDur = isBear ? 0 : s.duration;
             let ev = Array.isArray(m) ? m.map(v => effDur === 0 ? effP * v : (1 - Math.pow(1 - effP, effDur)) * v) : (effDur === 0 ? effP * m : (1 - Math.pow(1 - effP, effDur)) * m);
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hW));
-            if (luckMode === 'average' || !shiftFn) logs.push(`${name} (x${count}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            if (luckMode === 'average' || !shiftFn) logs.push(`${name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
