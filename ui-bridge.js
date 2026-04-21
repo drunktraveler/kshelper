@@ -238,17 +238,18 @@ window.runOptimizer = (mode) => {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if (unlocked.length < 3) return alert("Unlock more heroes in the vault.");
+    if (unlocked.length < 3) return alert("Please unlock at least 3 heroes in the vault.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
     resArea.innerHTML = '';
 
-    // Grouping by Type for Leader Constraint
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
-    if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) 
-        return alert("Roster must include at least 1 hero of each type (Inf/Cav/Arc).");
+    
+    if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) {
+        return alert("Unlock at least 1 hero of each type (Inf/Cav/Arc).");
+    }
 
     const scens = [
         {l:"Solo Attack (No Widgets)", c:"off", j:false, w:false},
@@ -260,119 +261,125 @@ window.calculateOptimalLineups = () => {
     scens.forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
 
-        // Brute Force Leaders: 1 of each type
+        // 1. Brute-force every valid Leader combination (1 of each type)
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
                     const trio = [i, c, a];
-                    let joiners = [];
+                    let currentJoiners = [];
 
                     if (s.j) {
-                        // Sequential greedy search for 4 joiners (maximizes marginal gain)
+                        // 2. Greedy search for 4 joiners (most significant marginal gain)
                         for (let slot = 0; slot < 4; slot++) {
-                            let bestJ = unlocked.map(n => ({
-                                name: n,
-                                score: calcPowerScore(trio, [...joiners, n], s.c, s.w)
+                            let bestJ = unlocked.map(name => ({
+                                name,
+                                score: calcPowerScore(trio, [...currentJoiners, name], s.c, s.w)
                             })).sort((a,b) => b.score - a.score)[0].name;
-                            joiners.push(bestJ);
+                            currentJoiners.push(bestJ);
                         }
                     }
 
-                    const finalScore = calcPowerScore(trio, joiners, s.c, s.w);
+                    const finalScore = calcPowerScore(trio, currentJoiners, s.c, s.w);
                     if (finalScore > best.score) {
-                        best = { leaders: trio, joiners, score: finalScore };
+                        best = { leaders: trio, joiners: currentJoiners, score: finalScore };
                     }
                 }
             }
         }
 
-        // --- RENDER RESULTS (Clean & Big Icons) ---
+        // --- RENDER RESULTS ---
         const card = document.createElement('div');
-        card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center h-32";
+        card.className = "glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-28";
         card.innerHTML = `
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-2">
                 <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest">${s.l}</div>
                 <div class="flex items-center">
                     <div class="flex -space-x-3">
-                        ${best.leaders.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-900" title="${n}">`).join('')}
+                        ${best.leaders.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 bg-slate-900 shadow-lg" title="${n}">`).join('')}
                     </div>
                     ${s.j ? `
-                        <div class="h-10 w-px bg-slate-800 mx-4"></div>
-                        <div class="flex -space-x-2">
-                            ${best.joiners.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 opacity-60">`).join('')}
+                        <div class="h-8 w-px bg-slate-800 mx-4"></div>
+                        <div class="flex -space-x-2 opacity-50">
+                            ${best.joiners.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 bg-slate-950">`).join('')}
                         </div>
                     ` : ''}
                 </div>
             </div>
             <div class="text-right">
-                <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Power Score</div>
-                <div class="text-4xl font-black text-white tracking-tighter">${best.score.toFixed(3)}x</div>
+                <div class="text-3xl font-black text-white">${best.score.toFixed(3)}x</div>
             </div>`;
         resArea.appendChild(card);
     });
 };
 
+// --- THE CORRECTED BRAIN: MULTIPLIER SCORING ---
 function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
     let skillBuckets = {}; // { 101: sumEV, 102: sumEV ... }
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
     // 1. Group heroes to handle the "Independence Rule" for duplicates
-    const heroCounts = {};
-    leaders.forEach(n => { if(n !== "None") heroCounts[n] = (heroCounts[n] || 0) + 1; });
-    joiners.forEach(n => { if(n !== "None") heroCounts[n] = (heroCounts[n] || 0) + 1; });
+    const allHeroes = [...leaders.map(n => ({name: n, isL: true})), ...joiners.map(n => ({name: n, isL: false}))];
+    const heroSkillCounts = {}; 
 
-    Object.keys(heroCounts).forEach(name => {
-        const d = HEROES[name];
-        const r = roster[name];
-        const count = heroCounts[name];
-        const isL = leaders.includes(name);
+    // Determine if widgets are disabled (Solo Attack Rule)
+    const widgetsDisabled = (ctx === 'off' && joiners.length === 0) || !allowWidgets;
 
-        // A. Handle Widgets (Only if Leader, context matches, and allowed)
-        if (isL && d.widget && d.widget.context === ctx && allowWidgets) {
+    allHeroes.forEach(hero => {
+        if (hero.name === "None" || !hero.name) return;
+        const d = HEROES[hero.name];
+        const r = roster[hero.name] || {s1:5, s2:5, s3:5, widget:10};
+        const isL = hero.isL;
+
+        // A. Handle Widgets (Additive within same stat type, Multiplicative across types)
+        if (isL && d.widget && d.widget.context === ctx && !widgetsDisabled) {
             widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
         }
 
-        // B. Handle Skills
-        // Leaders use all skills (S1, S2, S3). Joiners ONLY use S1.
-        const skillLimit = isL ? d.skills.length : 1;
-
-        for (let i = 0; i < skillLimit; i++) {
-            const s = d.skills[i];
-            const x = s.values[r[`s${i+1}`] - 1];
-            const p = s.getChance(x);
-            const m = s.getMagnitude(x);
-            
-            // INDEPENDENCE MATH
-            // Independence only applies if the hero is duplicated (n > 1)
-            // Note: Joiners only have S1, so for S2/S3 the count is effectively 1
-            const effectiveCount = (i === 0) ? count : 1; 
-            
-            let ev;
-            if (p >= 1.0) {
-                // Passives stack additively per copy
-                ev = Array.isArray(m) ? m.map(v => v * effectiveCount) : m * effectiveCount;
-            } else {
-                // Chance skills: 1 - (fail chance ^ n)
-                const probAnyTrigger = 1 - Math.pow(1 - p, effectiveCount);
-                ev = Array.isArray(m) ? m.map(v => probAnyTrigger * v) : probAnyTrigger * m;
+        // B. Collect Skills
+        const skillsToProcess = isL ? d.skills : [d.skills[0]];
+        skillsToProcess.forEach((s, si) => {
+            const skillKey = `${hero.name}_s${si}`;
+            if (!heroSkillCounts[skillKey]) {
+                const x = s.values[r[`s${si+1}`]-1];
+                heroSkillCounts[skillKey] = { 
+                    p: s.getChance(x), 
+                    m: s.getMagnitude(x), 
+                    ids: s.ids, 
+                    duration: s.duration || 0,
+                    count: 0 
+                };
             }
-
-            // C. Add to ID Buckets
-            s.ids.forEach((id, idx) => {
-                const val = Array.isArray(ev) ? ev[idx] : ev;
-                skillBuckets[id] = (skillBuckets[id] || 0) + val;
-            });
-        }
+            heroSkillCounts[skillKey].count++;
+        });
     });
 
-    // 2. Final Cross-Product
-    let total = 1.0;
-    // Multiplied Widget Stat Groups
-    Object.values(widgetBuckets).forEach(v => { if (v > 0) total *= (1 + v); });
-    // Multiplied Skill ID Buckets
-    Object.values(skillBuckets).forEach(v => { total *= (1 + v); });
+    // 2. Aggregate Skills into ID Buckets using Independence + Duration Math
+    for (const key in heroSkillCounts) {
+        const item = heroSkillCounts[key];
+        
+        // Probability logic:
+        // 1. Chance that at least one copy of this hero triggers the skill in a wave:
+        const pWave = 1 - Math.pow(1 - item.p, item.count);
+        
+        // 2. Expected Uptime over the duration (if dur=0, uptime = pWave):
+        const uptime = item.duration === 0 ? pWave : (1 - Math.pow(1 - pWave, item.duration));
+        
+        item.ids.forEach((id, idx) => {
+            const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
+            skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag);
+        });
+    }
 
-    return total;
+    // 3. Final Multiplicative Product
+    let totalMult = 1.0;
+    
+    // Multiply unique widget stat groups
+    Object.values(widgetBuckets).forEach(v => { if (v > 0) totalMult *= (1 + v); });
+    
+    // Multiply unique skill ID buckets
+    Object.values(skillBuckets).forEach(v => { if (v > 0) totalMult *= (1 + v); });
+
+    return totalMult;
 }
 
 function gatherSetup() {
