@@ -1,8 +1,10 @@
 import { HEROES } from './heroes.js';
-import { runCombatSim, isAlive } from './engine.js';
+import { WIDGET_STATS } from './widgets.js';
+import { runCombatSim } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
+let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
@@ -39,6 +41,126 @@ window.init = () => {
     window.addBatch('atk', true); window.addBatch('def', true);
     window.updateGrids(); renderRosterUI(); window.showTab('battle');
 };
+
+window.toggleAccountStats = () => {
+    const isEnabled = document.getElementById('use-account-stats').checked;
+    document.getElementById('account-stats-ui').classList.toggle('hidden', !isEnabled);
+};
+
+window.reverseEngineerAccount = () => {
+    const ctx = document.getElementById('report-ctx').value;
+    const reportHeroes = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
+    
+    // Grab report values (Infantry example, repeat for Cav/Arc)
+    const reportVal = {
+        inf_att: parseFloat(document.getElementById('rep-inf-att').value) || 0,
+        inf_def: parseFloat(document.getElementById('rep-inf-def').value) || 0,
+        inf_leth: parseFloat(document.getElementById('rep-inf-leth').value) || 0,
+        inf_hp: parseFloat(document.getElementById('rep-inf-hp').value) || 0,
+        cav_att: parseFloat(document.getElementById('rep-cav-att').value) || 0,
+        cav_def: parseFloat(document.getElementById('rep-cav-def').value) || 0,
+        cav_leth: parseFloat(document.getElementById('rep-cav-leth').value) || 0,
+        cav_hp: parseFloat(document.getElementById('rep-cav-hp').value) || 0,
+        arc_att: parseFloat(document.getElementById('rep-arc-att').value) || 0,
+        arc_def: parseFloat(document.getElementById('rep-arc-def').value) || 0,
+        arc_leth: parseFloat(document.getElementById('rep-arc-leth').value) || 0,
+        arc_hp: parseFloat(document.getElementById('rep-arc-hp').value) || 0,
+    };
+
+    // Calculate Widget Multiplier to subtract
+    let widgetMult = 1.0;
+    let widgetStatMap = { attack: 0, defense: 0, lethality: 0, health: 0 };
+    
+    reportHeroes.forEach(name => {
+        if(name === "None") return;
+        const d = HEROES[name];
+        const r = roster[name];
+        if (d.widget && d.widget.context === ctx) widgetMult += WIDGET_GROWTH[r.widget];
+    });
+
+    // Subtraction logic
+    const results = {};
+    const stats = ['att', 'def', 'leth', 'hp'];
+    const types = ['inf', 'cav', 'arc'];
+
+    types.forEach(t => {
+        stats.forEach(s => {
+            let val = reportVal[`${t}_${s}`];
+            // 1. Divide by widget multiplier
+            val = val / widgetMult;
+            
+            // 2. Subtract Hero Star/Widget Flat Bonuses
+            reportHeroes.forEach(name => {
+                if(name === "None") return;
+                const d = HEROES[name];
+                const r = roster[name];
+                if (d.type.toLowerCase().slice(0,3) === t) {
+                    if (s === 'att' || s === 'def') {
+                        val -= GROWTH_TEMPLATES[d.template][(r.s1*6)]; // Simplified star lookup
+                    } else {
+                        val -= WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
+                    }
+                }
+            });
+            results[`${t}_${s}`] = val;
+        });
+    });
+
+    nakedStats = results;
+    localStorage.setItem('ks_naked_stats', JSON.stringify(nakedStats));
+    renderNakedStats();
+};
+
+function renderNakedStats() {
+    const div = document.getElementById('naked-stats-display');
+    div.classList.remove('hidden');
+    div.innerHTML = Object.entries(nakedStats).map(([key, val]) => `
+        <div class="text-center">
+            <div class="text-[8px] text-slate-500 uppercase font-black">${key.replace('_',' ')}</div>
+            <div class="text-xs font-bold text-blue-400">${val.toFixed(1)}%</div>
+        </div>
+    `).join('');
+}
+
+// --- 2. THE ACCOUNT-AWARE OPTIMIZER ---
+
+function calcTotalPower(leaders, joiners, ctx, allowWidgets) {
+    const skillMultiplier = calcPowerScore(leaders, joiners, ctx, allowWidgets);
+    if (!document.getElementById('use-account-stats').checked || !nakedStats) return skillMultiplier;
+
+    // Calculate Stat Growth Multiplier
+    let currentStats = { ...nakedStats };
+    let widgetMult = 1.0;
+
+    // Add hero/widget bonuses from the candidate trio
+    leaders.forEach(name => {
+        if(name === "None") return;
+        const d = HEROES[name];
+        const r = roster[name];
+        const type = d.type.toLowerCase().slice(0,3);
+
+        if (d.widget && d.widget.context === ctx && allowWidgets) widgetMult += WIDGET_GROWTH[r.widget];
+        
+        currentStats[`${type}_att`] += GROWTH_TEMPLATES[d.template][(r.s1*6)];
+        currentStats[`${type}_def`] += GROWTH_TEMPLATES[d.template][(r.s1*6)];
+        currentStats[`${type}_leth`] += WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
+        currentStats[`${type}_hp`] += WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
+    });
+
+    // TPF Calculation: product of the 4 stat "areas" multiplied by skill buckets
+    // We normalize this by dividing by the "Naked" area to see the actual growth factor
+    let statFactor = 1.0;
+    Object.keys(currentStats).forEach(key => {
+        statFactor *= (1 + (currentStats[key] * widgetMult / 100));
+    });
+
+    let nakedFactor = 1.0;
+    Object.keys(nakedStats).forEach(key => {
+        nakedFactor *= (1 + (nakedStats[key] / 100));
+    });
+
+    return (statFactor / nakedFactor) * skillMultiplier;
+}
 
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
