@@ -363,8 +363,8 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
     }
 
     // 3. Final Multiplicative Cross-Product
-    // Baseline 1.1x Interaction Constant
-    let totalMult = 1.10; 
+    // Baseline 1.0x Interaction Constant
+    let totalMult = 1.00; 
 
     // Step 1: Multiply Widget Groups (1 + sumStatA) * (1 + sumStatB)...
     Object.values(widgetBuckets).forEach(v => {
