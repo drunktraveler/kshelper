@@ -15,35 +15,27 @@
         .f-inf { background: #3b82f6; transition: width 0.4s; }
         .f-cav { background: #f59e0b; transition: width 0.4s; }
         .f-arc { background: #10b981; transition: width 0.4s; }
-        .hero-circle { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
+        .hero-circle { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #1e293b; background: #0f172a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.8rem; font-weight: 800; color: #475569; transition: 0.2s; position: relative; overflow: hidden; }
         .hero-circle.active { border-color: #3b82f6; background: #1e293b; color: white; }
         .hero-leader { border-color: rgba(245, 158, 11, 0.4); }
         .stat-row { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 30px; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        /* Title Case Headers */
-        button { text-transform: none !important; }
         button, select, div, span { text-transform: none !important; }
-        .uppercase { text-transform: uppercase !important; }
-        .uppercase-label { text-transform: uppercase !important; letter-spacing: 0.05em; }
-        .tracking-widest { text-transform: uppercase !important; }
-
-        /* Proper Tab Styling */
-        #btn-tab-battle, #btn-tab-form, #btn-tab-bear, #btn-tab-roster { text-transform: none; font-weight: 800; }
-
     </style>
 </head>
 <body class="p-4 md:p-8">
     <div class="max-w-5xl mx-auto space-y-6">
         <header class="flex justify-between items-center mb-8">
-            <h1 class="text-xl font-black text-blue-500 tracking-tighter uppercase">Kingshot Calculator</h1>
+            <h1 class="text-xl font-black text-blue-500 uppercase tracking-tighter">Kingshot Calculator</h1>
             <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex text-xs font-bold">
-                <button onclick="window.showTab('battle')" id="btn-tab-battle" class="px-4 py-2">Battle Sim</button>
-                <button onclick="window.showTab('formation')" id="btn-tab-form" class="px-4 py-2">Formations</button>
-                <button onclick="window.showTab('bear')" id="btn-tab-bear" class="px-4 py-2">Bear</button>
-                <button onclick="window.showTab('roster')" id="btn-tab-roster" class="px-4 py-2">Best Heroes</button>
+                <button onclick="window.showTab('battle')" id="btn-tab-battle">Battle Sim</button>
+                <button onclick="window.showTab('formation')" id="btn-tab-form">Formations</button>
+                <button onclick="window.showTab('bear')" id="btn-tab-bear">Bear</button>
+                <button onclick="window.showTab('roster')" id="btn-tab-roster">Best Heroes</button>
             </div>
         </header>
 
+        <!-- Battle Tab -->
         <div id="battle-tab" class="space-y-6">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="glass-card p-6 border-l-4 border-emerald-500/30">
@@ -71,7 +63,6 @@
                     <div class="flex gap-2" id="def-hero-grid"></div>
                 </div>
             </div>
-
             <div class="max-w-2xl mx-auto space-y-4">
                 <div class="glass-card overflow-hidden"><div id="stat-table" class="p-2 space-y-0"></div></div>
                 <div class="flex gap-4">
@@ -81,22 +72,22 @@
                     <button onclick="window.handleSimulation()" class="flex-grow bg-blue-900/30 border border-blue-500/20 text-blue-400 font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Run Simulation</button>
                 </div>
             </div>
-
             <div id="result-screen" class="hidden max-w-2xl mx-auto pb-12 pt-12">
                 <div class="glass-card p-8 border-t-4 border-blue-500">
                     <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Battle Analysis</h2>
                     <p class="text-slate-500 text-xs font-bold mb-8" id="result-waves"></p>
                     <div class="grid grid-cols-2 gap-12 mb-8 border-b border-slate-800 pb-8">
-                        <div><p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker survivors</p><div class="text-4xl font-black mb-2" id="res-atk-total"></div><div class="text-xs text-slate-400 leading-relaxed" id="res-atk-details"></div></div>
-                        <div><p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender survivors</p><div class="text-4xl font-black text-right mb-2" id="res-def-total"></div><div class="text-xs text-slate-400 text-right leading-relaxed" id="res-def-details"></div></div>
+                        <div><p class="text-[10px] font-black uppercase text-emerald-500 mb-4">Attacker</p><div class="text-4xl font-black mb-2" id="res-atk-total"></div><div class="text-xs text-slate-400" id="res-atk-details"></div></div>
+                        <div><p class="text-[10px] font-black uppercase text-red-500 mb-4 text-right">Defender</p><div class="text-4xl font-black text-right mb-2" id="res-def-total"></div><div class="text-xs text-slate-400 text-right" id="res-def-details"></div></div>
                     </div>
                     <div class="h-1.5 bg-slate-800 rounded-full relative overflow-hidden mb-8"><div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700 z-10"></div><div id="luck-bar-inner" class="absolute inset-y-0 bg-blue-500 transition-all duration-1000 z-20"></div></div>
                     <button id="toggle-details-btn" onclick="window.toggleDetails()" class="text-[10px] font-black uppercase text-blue-500 tracking-widest">View Combat Buffs +</button>
-                    <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-400 space-y-1 max-h-64 overflow-y-auto"></div>
+                    <div id="battle-details" class="hidden mt-6 pt-6 border-t border-slate-800 font-mono text-[10px] text-slate-400 space-y-1"></div>
                 </div>
             </div>
         </div>
 
+        <!-- Formation Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8">
                 <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Formation Heatmap</h2>
@@ -115,6 +106,7 @@
             </div>
         </div>
 
+        <!-- Bear Tab -->
         <div id="bear-tab" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8 border-t-4 border-amber-500">
                 <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Bear Trap Optimizer</h2>
@@ -122,8 +114,8 @@
                     <div id="bear-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
                     <div class="space-y-6">
                         <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                            <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Expected Damage</span>
-                            <div id="bear-total-dmg" class="text-3xl font-black mt-2 text-white">0</div>
+                            <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Max Estimated Damage</span>
+                            <div id="bear-total-dmg" class="text-3xl font-black mt-2">0</div>
                             <p id="bear-best-form" class="text-xs text-slate-400 mt-1"></p>
                         </div>
                         <button onclick="window.runOptimizer('bear')" class="w-full bg-amber-600 py-4 rounded-xl text-xs uppercase font-black">Run Bear Heatmap</button>
@@ -132,59 +124,57 @@
             </div>
         </div>
 
+        <!-- Roster Tab -->
         <div id="roster-tab" class="hidden max-w-5xl mx-auto space-y-6 pb-12">
+            <div class="glass-card p-8 border-l-4 border-blue-500 mb-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-sm font-black uppercase text-slate-400 tracking-widest">Account Stats Calibration</h3>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase">Use Account Stats</span>
+                        <input type="checkbox" id="use-account-stats" onchange="window.toggleAccountStats()" class="w-4 h-4 accent-blue-500">
+                    </label>
+                </div>
+                <div id="account-stats-ui" class="hidden space-y-6">
+                    <div class="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 mb-6">
+                        <p class="text-[10px] text-blue-400 font-bold mb-4 uppercase text-center">Enter current Battle Report stats</p>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-4 px-4">
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Infantry Att%</label><input type="number" id="rep-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Infantry Def%</label><input type="number" id="rep-inf-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Infantry Leth%</label><input type="number" id="rep-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Infantry HP%</label><input type="number" id="rep-inf-hp" class="input-dark !py-1 text-xs" value="500"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Cavalry Att%</label><input type="number" id="rep-cav-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Cavalry Def%</label><input type="number" id="rep-cav-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Cavalry Leth%</label><input type="number" id="rep-cav-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Cavalry HP%</label><input type="number" id="rep-cav-hp" class="input-dark !py-1 text-xs" value="500"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Archer Att%</label><input type="number" id="rep-arc-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Archer Def%</label><input type="number" id="rep-arc-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Archer Leth%</label><input type="number" id="rep-arc-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                            <div><label class="text-[9px] text-slate-600 block uppercase">Archer HP%</label><input type="number" id="rep-arc-hp" class="input-dark !py-1 text-xs" value="500"></div>
+                        </div>
+                        <div class="mt-8 flex flex-wrap gap-4 items-end px-4 border-t border-slate-800 pt-6">
+                            <div class="flex-grow">
+                                <label class="text-[9px] text-slate-600 block uppercase mb-1">Report Leaders</label>
+                                <div class="flex gap-2" id="report-hero-selects">
+                                    <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                                    <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                                    <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[9px] text-slate-600 block uppercase mb-1">Context</label>
+                                <select id="report-ctx" class="input-dark !py-1 text-[10px]"><option value="off">Attack</option><option value="def">Defense</option></select>
+                            </div>
+                            <button onclick="window.reverseEngineerAccount()" class="bg-blue-900/50 border border-blue-500/30 text-blue-400 px-6 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition-all">Calibrate</button>
+                        </div>
+                    </div>
+                    <div id="naked-stats-display" class="hidden grid grid-cols-3 gap-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800"></div>
+                </div>
+            </div>
+
             <div class="glass-card p-8">
                 <div class="flex justify-between items-center mb-8">
-                    <div><h2 class="text-2xl font-black uppercase tracking-tight">Hero Vault</h2><p class="text-slate-500 text-xs font-bold">Configure unlocked heroes and widget levels.</p></div>
-                    <div class="glass-card p-6 border-l-4 border-blue-500 mb-8">
-    <div class="flex justify-between items-center mb-6">
-        <h3 class="text-sm font-black uppercase text-slate-400 tracking-widest">Account Stats Calibration</h3>
-        <label class="flex items-center gap-2 cursor-pointer">
-            <span class="text-[10px] font-bold text-slate-500 uppercase">Use Account Stats</span>
-            <input type="checkbox" id="use-account-stats" onchange="window.toggleAccountStats()" class="w-4 h-4 accent-blue-500">
-        </label>
-    </div>
-
-    <div id="account-stats-ui" class="hidden space-y-6">
-        <div class="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 mb-6">
-            <p class="text-[10px] text-blue-400 font-bold mb-4 uppercase">Step 1: Enter stats from a Battle Report</p>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Att%</label><input type="number" id="rep-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Def%</label><input type="number" id="rep-inf-def" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Leth%</label><input type="number" id="rep-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry HP%</label><input type="number" id="rep-inf-hp" class="input-dark !py-1 text-xs" value="500"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Att%</label><input type="number" id="rep-cav-att" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Def%</label><input type="number" id="rep-cav-def" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Leth%</label><input type="number" id="rep-cav-leth" class="input-dark !py-1 text-xs" value="500"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry HP%</label><input type="number" id="rep-cav-hp" class="input-dark !py-1 text-xs" value="500"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Att%</label><input type="number" id="rep-arc-att" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Def%</label><input type="number" id="rep-arc-def" class="input-dark !py-1 text-xs" value="1000"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Leth%</label><input type="number" id="rep-arc-leth" class="input-dark !py-1 text-xs" value="500"></div>
-                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer HP%</label><input type="number" id="rep-arc-hp" class="input-dark !py-1 text-xs" value="500"></div>
-            </div>
-            <div class="mt-6 flex flex-wrap gap-4 items-end">
-                <div class="flex-grow">
-                    <label class="text-[9px] text-slate-600 block uppercase mb-1">3 Leaders used in that report</label>
-                    <div class="flex gap-2" id="report-hero-selects">
-                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
-                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
-                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
-                    </div>
-                </div>
-                <div>
-                    <label class="text-[9px] text-slate-600 block uppercase mb-1">Report Context</label>
-                    <select id="report-ctx" class="input-dark !py-1 text-[10px]"><option value="off">Rally Attack</option><option value="def">Garrison</option></select>
-                </div>
-                <button onclick="window.reverseEngineerAccount()" class="bg-blue-900/50 border border-blue-500/30 text-blue-400 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition-all">Calculate Naked Stats</button>
-            </div>
-        </div>
-
-        <div id="naked-stats-display" class="hidden grid grid-cols-3 gap-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-            <!-- Values like "Naked Infantry Att: 156.4%" injected here -->
-        </div>
-            </div>
-</div>
-                    <button onclick="window.calculateOptimalLineups()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3 rounded-xl text-xs uppercase tracking-widest">Find Best Teams</button>
+                    <div><h2 class="text-2xl font-black uppercase tracking-tight">Hero Vault</h2></div>
+                    <button onclick="window.calculateOptimalLineups()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs uppercase tracking-widest shadow-xl">Find Best Teams</button>
                 </div>
                 <div id="optimizer-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 hidden"></div>
                 <div id="roster-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
@@ -192,10 +182,10 @@
         </div>
     </div>
 
-    <!-- Modal -->
+    <!-- Hero Modal -->
     <div id="heroModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
         <div class="bg-slate-900 w-full max-w-sm rounded-3xl p-8 border border-slate-800 relative">
-            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 tracking-widest text-center">Hero Setup</h3>
+            <h3 id="modalTitle" class="text-xs font-black uppercase text-blue-500 mb-6 text-center tracking-widest">Hero Config</h3>
             <div class="space-y-6">
                 <select id="hero-select" class="input-dark bg-slate-950 w-full"></select>
                 <div id="skill-inputs" class="space-y-4"></div>
