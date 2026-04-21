@@ -3,19 +3,24 @@ import { runCombatSim, isAlive } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
+let activeSlot = { side: null, index: null };
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) },
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) }
 };
-let activeSlot = { side: null, index: null };
-let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
 window.init = () => {
+    // 1. Sync Roster (Assume Max by default for new unlocks)
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
+    
+    // 2. Populate Battle Select (Title Case)
     const sel = document.getElementById('hero-select');
     if(sel) {
         sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => sel.innerHTML += `<option value="${n}">${n}</option>`);
+        Object.keys(HEROES).sort().forEach(n => {
+            const name = n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+            sel.innerHTML += `<option value="${n}">${name}</option>`;
+        });
         sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
     }
     
@@ -153,15 +158,19 @@ window.updateGrids = () => {
 };
 
 window.handleSimulation = async () => {
-    const setup = gatherSetup(); const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rBest, rWorst, modeLabel;
+    const setup = gatherSetup();
+    const simMode = document.getElementById('sim-mode-select').value;
+    let rAvg, rLuck, rBad, modeLabel;
+
     if (simMode === 'monte-carlo') {
         modeLabel = "Deep Sim (100 Runs)";
         const runs = 100; let batch = [];
         for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
         batch.sort((a,b) => (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc));
+        
         const atkWins = batch.filter(r => (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) > (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)).length;
         const winner = atkWins >= 50 ? 'atk' : 'def';
+
         rAvg = {
             m_cur: { inf: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs:0, cav: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs:0, arc: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs:0 },
             e_cur: { inf: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs:0, cav: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs:0, arc: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs:0 },
@@ -169,21 +178,24 @@ window.handleSimulation = async () => {
             atk_mults: batch[50].atk_mults, def_mults: batch[50].def_mults,
             startAtk: batch[0].startAtk, startDef: batch[0].startDef
         };
-        rWorst = batch[0]; rBest = batch[runs-1];
+        rBad = batch[0]; rLuck = batch[runs-1];
     } else {
+        modeLabel = "Quick Sim (Estimate)";
         rAvg = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rWorst = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
     }
+
     const screen = document.getElementById('result-screen'); screen.classList.remove('hidden');
     const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / (r.startDef||1) ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / (r.startAtk||1) );
-    const sMin = getScore(rBest), sMax = getScore(rWorst);
+    const sMin = getScore(rLuck), sMax = getScore(rBad);
     document.getElementById('luck-bar-inner').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
     document.getElementById('luck-bar-inner').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rWorst.m_cur.inf+rWorst.m_cur.cav+rWorst.m_cur.arc).toLocaleString()} - ${Math.round(rBest.m_cur.inf+rBest.m_cur.cav+rBest.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBest.e_cur.inf+rBest.e_cur.cav+rBest.e_cur.arc).toLocaleString()} - ${Math.round(rWorst.e_cur.inf+rWorst.e_cur.cav+rWorst.e_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    document.getElementById('result-waves').innerText = `Simulation ended after ${rAvg.wave} waves`;
+    
+    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
+    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    document.getElementById('result-waves').innerText = `Simulation complete after ${rAvg.wave} waves`;
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
@@ -226,33 +238,57 @@ window.runOptimizer = (mode) => {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if(unlocked.length < 3) return alert("Unlock heroes.");
+    if(unlocked.length < 3) return alert("Unlock heroes in the roster.");
     const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
-    const byType = { Inf: [], Cav: [], Arc: [] }; unlocked.forEach(n => byType[HEROES[n].type].push(n));
-    if(!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock 1 of each type.");
-
-    const scens = [{l:"Solo Attack",c:"off",j:false,w:false},{l:"Solo Defense",c:"def",j:false,w:true},{l:"Rally w/ Joiners",c:"off",j:true,w:true},{l:"Garrison w/ Joiners",c:"def",j:true,w:true}];
     
+    const byType = { Inf: [], Cav: [], Arc: [] };
+    unlocked.forEach(n => byType[HEROES[n].type].push(n));
+
+    const scens = [
+        {l:"Solo Attack (No Widgets)", c:"off", j:false, w:false},
+        {l:"Solo Defense (Widgets Active)", c:"def", j:false, w:true},
+        {l:"Rally Attack w/ Joiners", c:"off", j:true, w:true},
+        {l:"Garrison Defense w/ Joiners", c:"def", j:true, w:true}
+    ];
+
     scens.forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
-        for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
-            const trio = [i, c, a]; let joiners = [];
+        // Force 1 hero of each type for leaders
+        for (let i of (byType.Inf.length ? byType.Inf : ["None"])) 
+        for (let c of (byType.Cav.length ? byType.Cav : ["None"])) 
+        for (let a of (byType.Arc.length ? byType.Arc : ["None"])) {
+            const trio = [i, c, a].filter(n => n !== "None");
+            if (trio.length < 1) continue;
+
+            let joiners = [];
             if (s.j) {
                 for (let slot = 0; slot < 4; slot++) {
-                    let bestJ = unlocked.map(n => ({ n, i: calcCrossProduct(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
+                    let bestJ = unlocked.map(n => ({ n, i: calcPowerScore(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
                     joiners.push(bestJ);
                 }
             }
-            const score = calcCrossProduct(trio, joiners, s.c, s.w);
+            const score = calcPowerScore(trio, joiners, s.c, s.w);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
-        const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-24";
-        card.innerHTML = `<div class="flex items-center gap-3"><div class="flex flex-col"><span class="text-[8px] font-black text-blue-400 mb-2">${s.l}</span><div class="flex -space-x-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 bg-slate-900 shadow-lg">`).join('')}</div></div>${s.j?`<div class="flex -space-x-1 opacity-50 ml-4">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 bg-slate-950">`).join('')}</div>`:''}</div><div class="text-2xl font-black">${best.score.toFixed(3)}x</div>`;
+
+        const card = document.createElement('div');
+        card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center h-28";
+        card.innerHTML = `
+            <div class="flex flex-col gap-2">
+                <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest">${s.l}</div>
+                <div class="flex items-center gap-3">
+                    <div class="flex -space-x-2">
+                        ${best.leaders.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 bg-slate-900 shadow-lg" title="${n}">`).join('')}
+                    </div>
+                    ${s.j ? `<div class="h-8 w-px bg-slate-800 mx-2"></div><div class="flex -space-x-1 opacity-50">${best.joiners.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-slate-700">`).join('')}</div>` : ''}
+                </div>
+            </div>
+            <div class="text-right"><div class="text-[9px] text-slate-500 uppercase font-bold mb-1 tracking-tighter">Multiplier</div><div class="text-3xl font-black text-white">${best.score.toFixed(3)}x</div></div>`;
         resArea.appendChild(card);
     });
 };
 
-function calcCrossProduct(leaders, joiners, ctx, allowWidgets) {
+function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
     let skillBuckets = {}; 
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
@@ -261,28 +297,34 @@ function calcCrossProduct(leaders, joiners, ctx, allowWidgets) {
 
     allHeroes.forEach(hero => {
         if (hero.n === "None" || !hero.n) return;
-        const d = HEROES[hero.n], r = roster[hero.n];
-        const hWVal = (d.widget && d.widget.context === ctx && allowWidgets) ? WIDGET_GROWTH[r.widget] : 0;
-        if (hero.isL && hWVal > 0) widgetBuckets[d.widget.stat] += hWVal;
+        const d = HEROES[hero.n], r = roster[hero.n] || {s1:5,s2:5,s3:5,widget:10};
 
+        // 1. Widgets (Additive within same stat type)
+        if (hero.isL && d.widget && d.widget.context === ctx && allowWidgets) {
+            widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        }
+
+        // 2. Skills (Track for Independence Rule)
         const skills = hero.isL ? d.skills : [d.skills[0]];
         skills.forEach((s, si) => {
             const key = `${hero.n}_s${si}`;
-            if (!heroSkillCounts[key]) heroSkillCounts[key] = { p: s.getChance(s.values[r['s'+(si+1)]-1]), m: s.getMagnitude(s.values[r['s'+(si+1)]-1]), ids: s.ids, count: 0, hWVal };
+            if (!heroSkillCounts[key]) heroSkillCounts[key] = { p: s.getChance(s.values[r['s'+(si+1)]-1]), m: s.getMagnitude(s.values[r['s'+(si+1)]-1]), ids: s.ids, count: 0 };
             heroSkillCounts[key].count++;
         });
     });
 
+    // 3. Sum Skill Buckets
     for (const key in heroSkillCounts) {
         const item = heroSkillCounts[key];
-        const effP = 1 - Math.pow(1 - item.p, item.count);
+        const effectiveProb = 1 - Math.pow(1 - item.p, item.count);
         item.ids.forEach((id, idx) => {
             const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
-            skillBuckets[id] = (skillBuckets[id] || 0) + (effP * mag * (1 + item.hWVal));
+            skillBuckets[id] = (skillBuckets[id] || 0) + (effectiveProb * mag);
         });
     }
 
-    let total = 1.0;
+    // 4. Final Product (Including 1.1x Interaction Constant)
+    let total = 1.10; 
     Object.values(widgetBuckets).forEach(v => total *= (1 + v));
     Object.values(skillBuckets).forEach(v => total *= (1 + v));
     return total;
