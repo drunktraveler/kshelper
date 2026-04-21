@@ -2,6 +2,7 @@ import { UNITS } from './units.js';
 import { HEROES } from './heroes.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
+export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false, isOptimizing = false) {
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
@@ -126,4 +127,4 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     return { units: {all:mult}, star: starBonus, logs };
 }
 
-export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
+
