@@ -136,6 +136,54 @@
             <div class="glass-card p-8">
                 <div class="flex justify-between items-center mb-8">
                     <div><h2 class="text-2xl font-black uppercase tracking-tight">Hero Vault</h2><p class="text-slate-500 text-xs font-bold">Configure unlocked heroes and widget levels.</p></div>
+                    <div class="glass-card p-6 border-l-4 border-blue-500 mb-8">
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-sm font-black uppercase text-slate-400 tracking-widest">Account Stats Calibration</h3>
+        <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-[10px] font-bold text-slate-500 uppercase">Use Account Stats</span>
+            <input type="checkbox" id="use-account-stats" onchange="window.toggleAccountStats()" class="w-4 h-4 accent-blue-500">
+        </label>
+    </div>
+
+    <div id="account-stats-ui" class="hidden space-y-6">
+        <div class="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 mb-6">
+            <p class="text-[10px] text-blue-400 font-bold mb-4 uppercase">Step 1: Enter stats from a Battle Report</p>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Att%</label><input type="number" id="rep-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Def%</label><input type="number" id="rep-inf-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry Leth%</label><input type="number" id="rep-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Infantry HP%</label><input type="number" id="rep-inf-hp" class="input-dark !py-1 text-xs" value="500"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Att%</label><input type="number" id="rep-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Def%</label><input type="number" id="rep-inf-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry Leth%</label><input type="number" id="rep-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Cavalry HP%</label><input type="number" id="rep-inf-hp" class="input-dark !py-1 text-xs" value="500"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Att%</label><input type="number" id="rep-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Def%</label><input type="number" id="rep-inf-def" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer Leth%</label><input type="number" id="rep-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
+                <div><label class="text-[9px] text-slate-600 block uppercase mb-1">Archer HP%</label><input type="number" id="rep-inf-hp" class="input-dark !py-1 text-xs" value="500"></div>
+            </div>
+            <div class="mt-6 flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="text-[9px] text-slate-600 block uppercase mb-1">3 Leaders used in that report</label>
+                    <div class="flex gap-2" id="report-hero-selects">
+                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                        <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[9px] text-slate-600 block uppercase mb-1">Report Context</label>
+                    <select id="report-ctx" class="input-dark !py-1 text-[10px]"><option value="off">Rally Attack</option><option value="def">Garrison</option></select>
+                </div>
+                <button onclick="window.reverseEngineerAccount()" class="bg-blue-900/50 border border-blue-500/30 text-blue-400 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition-all">Calculate Naked Stats</button>
+            </div>
+        </div>
+
+        <div id="naked-stats-display" class="hidden grid grid-cols-3 gap-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+            <!-- Values like "Naked Infantry Att: 156.4%" injected here -->
+        </div>
+            </div>
+</div>
                     <button onclick="window.calculateOptimalLineups()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3 rounded-xl text-xs uppercase tracking-widest">Find Best Teams</button>
                 </div>
                 <div id="optimizer-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 hidden"></div>
