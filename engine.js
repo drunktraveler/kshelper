@@ -99,30 +99,59 @@ function processBatches(batches) {
 }
 
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: interaction Bonus (+10% Dmg)"];
+    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
+    
+    // 1. Log Troop Abilities
     ['inf','cav','arc'].forEach(u => {
-        if (proc.weights[u].t7 > 0) logs.push(`Tier 7+ (${u}): ${(proc.weights[u].t7*100).toFixed(0)}% Effective`);
-        if (proc.weights[u].tg3 > 0) logs.push(`TrueGold (${u}): ${(proc.weights[u].tg3*100).toFixed(0)}% Effective`);
+        const w = proc.weights[u];
+        if (w.t7 > 0) logs.push(`Requirement Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% Effective`);
+        if (w.tg3 > 0) logs.push(`Requirement TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% Effective`);
     });
+
     const isSolo = sideKey === 'atk' && side.batches.length === 1 && !isBear;
-    const heroCounts = {}; side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
+
+    // 2. Count ALL copies of every hero in the 7-man lineup
+    const heroCounts = {};
+    side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
 
     Object.keys(heroCounts).forEach(name => {
-        const d = HEROES[name]; const h = side.heroes.find(x => x.name === name);
+        const d = HEROES[name];
+        const h = side.heroes.find(x => x.name === name);
         starBonus += (h.starBonus || 0);
-        const hW = (d.widget && d.widget.context === (sideKey==='atk'?'off':'def') && !isSolo) ? (1 + WIDGET_GROWTH[h.widgetLv || 0]) : 1.0;
+        const widgetLv = h.widgetLv || 0;
+        const hWidget = (d.widget && d.widget.context === (sideKey==='atk'?'off':'def') && !isSolo) ? (1 + WIDGET_GROWTH[widgetLv]) : 1.0;
+
+        // 3. Process Skills
         d.skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
             const x = s.values[h[`s${si+1}`]-1];
             const p = shiftFn ? shiftFn(s.getChance(x), luckMode) : s.getChance(x);
-            const count = (si === 0) ? heroCounts[name] : 1; 
-            const effP = 1 - Math.pow(1 - p, count);
-            const m = s.getMagnitude(x), effDur = isBear ? 0 : s.duration;
-            let ev = Array.isArray(m) ? m.map(v => effDur === 0 ? effP * v : (1 - Math.pow(1 - effP, effDur)) * v) : (effDur === 0 ? effP * m : (1 - Math.pow(1 - effP, effDur)) * m);
-            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hW));
-            if (luckMode === 'average' || !shiftFn) logs.push(`${name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            const m = s.getMagnitude(x);
+            const effDur = isBear ? 0 : s.duration;
+
+            // Independence Rule: Applies to Skill 1 for everyone. Skill 2/3 only for Leaders (count=1).
+            // If the hero is a Leader, their count is the total (L+J). If only a Joiner, count is J.
+            const isLeaderSlot = side.heroes.slice(0,3).some(lh => lh.name === name);
+            if (!isLeaderSlot && si > 0) return; // Only leaders provide S2/S3
+
+            const n = (si === 0) ? heroCounts[name] : 1;
+            
+            let ev;
+            if (p >= 1.0) {
+                // Passives stack additively
+                ev = Array.isArray(m) ? m.map(v => n * v) : n * m;
+            } else {
+                // Chance-based independence
+                const pAny = 1 - Math.pow(1 - p, n);
+                ev = Array.isArray(m) ? m.map(v => effDur === 0 ? pAny * v : (1 - Math.pow(1 - pAny, effDur)) * v) : (effDur === 0 ? pAny * m : (1 - Math.pow(1 - pAny, effDur)) * m);
+            }
+
+            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget));
+            // Always push logs if we are in Average mode so the user can see them
+            if (luckMode === 'average') logs.push(`${name} (x${n}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
+
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
     return { units: {all:mult}, star: starBonus, logs };
 }
