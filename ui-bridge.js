@@ -73,14 +73,27 @@ window.toggleAccountStats = () => {
 
 // 2. Add the Star/Substage Dropdown Renderer
 function renderStarSelector(name, currentIndex) {
-    let html = `<select onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
+    // We add onclick="event.stopPropagation()" to ensure clicking the menu 
+    // doesn't toggle the hero's unlocked status.
+    let html = `<select 
+                onclick="event.stopPropagation()" 
+                onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
                 class="bg-slate-800 text-[10px] text-slate-300 rounded px-2 py-1 outline-none border border-slate-700 w-full mt-1 cursor-pointer hover:border-blue-500 transition-colors">`;
+    
     for (let i = 0; i <= 30; i++) {
         const star = Math.floor(i / 6);
         const sub = i % 6;
-        const label = star === 5 ? "5-0 (Max Star)" : `Star: ${star}-${sub}`;
+        let label = "";
+        
+        if (i === 30) {
+            label = "5-0 (Max Star)";
+        } else {
+            label = `Star: ${star}-${sub}`;
+        }
+        
         html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${label}</option>`;
-        if (star === 5) break; // 5-star has no substages
+        
+        if (i === 30) break; 
     }
     return html + `</select>`;
 }
