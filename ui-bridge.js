@@ -295,54 +295,89 @@ window.calculateOptimalLineups = () => {
 
 // --- THE CORRECTED BRAIN: MULTIPLIER SCORING ---
 function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
-    let pools = {};
+    let skillBuckets = {}; // { 101: sumEV, 102: sumEV ... }
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    // Count total occurrences of every hero in the 7-man setup
-    const counts = {};
-    const allHeroes = [...leaders, ...joiners];
-    allHeroes.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
+    // Group occurrences of specific hero-skills to handle Independence vs Additivity
+    const heroSkillCounts = {}; 
 
-    Object.keys(counts).forEach(name => {
-        const d = HEROES[name];
-        const r = roster[name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
-        const n = counts[name];
-        
-        // 1. Widgets (Leaders only, Context specific, Additive per stat type)
-        if (leaders.includes(name) && d.widget && d.widget.context === ctx && allowWidgets) {
+    // Solo Attack Rule: Widgets are 0 if no joiners in offense
+    const widgetsActive = (ctx === 'def' || joiners.length > 0) && allowWidgets;
+
+    // 1. Map all 7 heroes (Leaders get all skills, Joiners get S1)
+    const allHeroes = [
+        ...leaders.map(n => ({name: n, isL: true})), 
+        ...joiners.map(n => ({name: n, isL: false}))
+    ];
+
+    allHeroes.forEach(hero => {
+        if (hero.name === "None" || !hero.name) return;
+        const d = HEROES[hero.name];
+        const r = roster[hero.name] || {s1:5, s2:5, s3:5, widget:10};
+
+        // A. Handle Widgets (Global Layer - Additive within same stat type)
+        if (hero.isL && d.widget && d.widget.context === ctx && widgetsActive) {
             widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
         }
 
-        // 2. Skills
-        d.skills.forEach((s, si) => {
-            if (si > 0 && !leaders.includes(name)) return; // Only leaders provide S2/S3
+        // B. Collect Skills (Differentiate Hilde S1 from Hilde S2)
+        const skillLimit = hero.isL ? d.skills.length : 1;
+        for (let i = 0; i < skillLimit; i++) {
+            const skillKey = `${hero.name}_s${i}`;
+            const s = d.skills[i];
+            const x = s.values[r[`s${i+1}`] - 1];
             
-            const x = s.values[r[`s${si+1}`]-1];
-            const p = s.getChance(x);
-            const m = s.getMagnitude(x);
-            const countForThisSkill = (si === 0) ? n : 1; // Independence only on S1 for joiners
-
-            let ev;
-            if (p >= 1.0) {
-                ev = Array.isArray(m) ? m.map(v => countForThisSkill * v) : countForThisSkill * m;
-            } else {
-                const pAny = 1 - Math.pow(1 - p, countForThisSkill);
-                ev = Array.isArray(m) ? m.map(v => s.duration === 0 ? pAny * v : (1 - Math.pow(1 - pAny, s.duration)) * v) : (s.duration === 0 ? pAny * m : (1 - Math.pow(1 - pAny, s.duration)) * m);
+            if (!heroSkillCounts[skillKey]) {
+                heroSkillCounts[skillKey] = { 
+                    p: s.getChance(x), 
+                    m: s.getMagnitude(x), 
+                    ids: s.ids, 
+                    duration: s.duration || 0,
+                    count: 0 
+                };
             }
-
-            s.ids.forEach((id, idx) => {
-                pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev);
-            });
-        });
+            heroSkillCounts[skillKey].count++;
+        }
     });
 
-    // 3. Final Multiplier calculation
-    let totalMult = 1.0;
-    Object.values(widgetBuckets).forEach(v => totalMult *= (1 + v));
-    Object.values(pools).forEach(v => totalMult *= (1 + v));
+    // 2. Resolve Skill Buckets
+    for (const key in heroSkillCounts) {
+        const item = heroSkillCounts[key];
+        let ev;
+
+        if (item.p >= 1.0) {
+            // PASSIVE RULE: Simple additivity (n * m)
+            ev = Array.isArray(item.m) ? item.m.map(v => v * item.count) : item.m * item.count;
+        } else {
+            // CHANCE RULE: Independence (1 - (1-p)^n)
+            const pAny = 1 - Math.pow(1 - item.p, item.count);
+            // Uptime logic for duration-based chance skills
+            const uptime = item.duration === 0 ? pAny : (1 - Math.pow(1 - pAny, item.duration));
+            ev = Array.isArray(item.m) ? item.m.map(v => uptime * v) : uptime * item.m;
+        }
+
+        item.ids.forEach((id, idx) => {
+            const val = Array.isArray(ev) ? ev[idx] : ev;
+            skillBuckets[id] = (skillBuckets[id] || 0) + val;
+        });
+    }
+
+    // 3. Final Multiplicative Cross-Product
+    // Baseline 1.1x Interaction Constant
+    let totalMult = 1.10; 
+
+    // Step 1: Multiply Widget Groups (1 + sumStatA) * (1 + sumStatB)...
+    Object.values(widgetBuckets).forEach(v => {
+        if (v > 0) totalMult *= (1 + v);
+    });
+
+    // Step 2: Multiply Skill ID Buckets (1 + sumEV101) * (1 + sumEV102)...
+    Object.values(skillBuckets).forEach(v => {
+        if (v > 0) totalMult *= (1 + v);
+    });
+
     return totalMult;
 }
-
 function gatherSetup() {
     const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
     const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
