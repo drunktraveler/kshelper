@@ -3,23 +3,19 @@ import { runCombatSim, isAlive } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
-let activeSlot = { side: null, index: null };
-let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) },
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) }
 };
+let activeSlot = { side: null, index: null };
+let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
-    
     const sel = document.getElementById('hero-select');
     if(sel) {
         sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => { 
-            const displayName = n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
-            sel.innerHTML += `<option value="${n}">${displayName}</option>`; 
-        });
+        Object.keys(HEROES).sort().forEach(n => sel.innerHTML += `<option value="${n}">${n}</option>`);
         sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
     }
     
@@ -230,113 +226,66 @@ window.runOptimizer = (mode) => {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if(unlocked.length < 3) return alert("Unlock heroes in the roster.");
+    if(unlocked.length < 3) return alert("Unlock heroes.");
+    const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
+    const byType = { Inf: [], Cav: [], Arc: [] }; unlocked.forEach(n => byType[HEROES[n].type].push(n));
+    if(!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock 1 of each type.");
+
+    const scens = [{l:"Solo Attack",c:"off",j:false,w:false},{l:"Solo Defense",c:"def",j:false,w:true},{l:"Rally w/ Joiners",c:"off",j:true,w:true},{l:"Garrison w/ Joiners",c:"def",j:true,w:true}];
     
-    const byType = { Inf: [], Cav: [], Arc: [] };
-    unlocked.forEach(n => byType[HEROES[n].type].push(n));
-    if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock at least 1 hero of each type.");
-
-    const resArea = document.getElementById('optimizer-results');
-    resArea.classList.remove('hidden'); resArea.innerHTML = '';
-
-    const scens = [
-        {l:"Solo Attack", c:"off", j:false, w:false},
-        {l:"Solo Defense", c:"def", j:false, w:true},
-        {l:"Rally Attack", c:"off", j:true, w:true},
-        {l:"Garrison Defense", c:"def", j:true, w:true}
-    ];
-
     scens.forEach(s => {
         let best = { leaders: [], joiners: [], score: 0 };
         for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
-            const trio = [i, c, a];
-            let joiners = [];
+            const trio = [i, c, a]; let joiners = [];
             if (s.j) {
-                // Iterative selection of best joiners
                 for (let slot = 0; slot < 4; slot++) {
-                    let bestJ = unlocked.map(n => ({ n, i: calcScore(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
+                    let bestJ = unlocked.map(n => ({ n, i: calcCrossProduct(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
                     joiners.push(bestJ);
                 }
             }
-            const score = calcScore(trio, joiners, s.c, s.w);
+            const score = calcCrossProduct(trio, joiners, s.c, s.w);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
-
-        const card = document.createElement('div');
-        card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center min-h-[110px]";
-        const title = s.l.charAt(0).toUpperCase() + s.l.slice(1);
-        
-        card.innerHTML = `
-            <div class="flex flex-col gap-3">
-                <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest">${title}</div>
-                <div class="flex items-center">
-                    <div class="flex -space-x-3">
-                        ${best.leaders.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-900 shadow-xl" title="${n}">`).join('')}
-                    </div>
-                    ${s.j ? `
-                    <div class="h-10 w-px bg-slate-800 mx-4"></div>
-                    <div class="flex -space-x-2 opacity-60">
-                        ${best.joiners.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 bg-slate-950">`).join('')}
-                    </div>` : ''}
-                </div>
-            </div>
-            <div class="text-right">
-                <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Power Multiplier</div>
-                <div class="text-4xl font-black text-white tracking-tighter">${best.score.toFixed(3)}x</div>
-            </div>`;
+        const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-24";
+        card.innerHTML = `<div class="flex items-center gap-3"><div class="flex flex-col"><span class="text-[8px] font-black text-blue-400 mb-2">${s.l}</span><div class="flex -space-x-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 bg-slate-900 shadow-lg">`).join('')}</div></div>${s.j?`<div class="flex -space-x-1 opacity-50 ml-4">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 bg-slate-950">`).join('')}</div>`:''}</div><div class="text-2xl font-black">${best.score.toFixed(3)}x</div>`;
         resArea.appendChild(card);
     });
 };
-function calcScore(leaders, joiners, ctx, allowWidgets) {
+
+function calcCrossProduct(leaders, joiners, ctx, allowWidgets) {
     let skillBuckets = {}; 
     let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    const allHeroes = [
-        ...leaders.map(n => ({name: n, isL: true})), 
-        ...joiners.map(n => ({name: n, isL: false}))
-    ];
-
-    // Track identical hero-skills for independence math
+    const allHeroes = [...leaders.map(n => ({n, isL: true})), ...joiners.map(n => ({n, isL: false}))];
     const heroSkillCounts = {}; 
 
     allHeroes.forEach(hero => {
-        if (hero.name === "None" || !hero.name) return;
-        const d = HEROES[hero.name];
-        const r = roster[hero.name];
+        if (hero.n === "None" || !hero.n) return;
+        const d = HEROES[hero.n], r = roster[hero.n];
+        const hWVal = (d.widget && d.widget.context === ctx && allowWidgets) ? WIDGET_GROWTH[r.widget] : 0;
+        if (hero.isL && hWVal > 0) widgetBuckets[d.widget.stat] += hWVal;
 
-        // 1. Widgets (Additive within same stat type, Multiplicative across)
-        if (hero.isL && d.widget && d.widget.context === ctx && allowWidgets) {
-            widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
-        }
-
-        // 2. Skills
-        const skillsToProcess = hero.isL ? d.skills : [d.skills[0]];
-        skillsToProcess.forEach((s, sIdx) => {
-            const skillKey = `${hero.name}_s${sIdx}`;
-            if (!heroSkillCounts[skillKey]) heroSkillCounts[skillKey] = { p: s.getChance(s.values[r['s'+(sIdx+1)]-1]), m: s.getMagnitude(s.values[r['s'+(sIdx+1)]-1]), ids: s.ids, count: 0 };
-            heroSkillCounts[skillKey].count++;
+        const skills = hero.isL ? d.skills : [d.skills[0]];
+        skills.forEach((s, si) => {
+            const key = `${hero.n}_s${si}`;
+            if (!heroSkillCounts[key]) heroSkillCounts[key] = { p: s.getChance(s.values[r['s'+(si+1)]-1]), m: s.getMagnitude(s.values[r['s'+(si+1)]-1]), ids: s.ids, count: 0, hWVal };
+            heroSkillCounts[key].count++;
         });
     });
 
-    // 3. Aggregate Skills into ID Buckets using Independence Formula
     for (const key in heroSkillCounts) {
         const item = heroSkillCounts[key];
-        const effectiveProb = 1 - Math.pow(1 - item.p, item.count);
-        
+        const effP = 1 - Math.pow(1 - item.p, item.count);
         item.ids.forEach((id, idx) => {
-            const magnitude = Array.isArray(item.m) ? item.m[idx] : item.m;
-            skillBuckets[id] = (skillBuckets[id] || 0) + (effectiveProb * magnitude);
+            const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
+            skillBuckets[id] = (skillBuckets[id] || 0) + (effP * mag * (1 + item.hWVal));
         });
     }
 
-    // 4. Calculate Final Product
-    let totalMult = 1.0;
-    // Multiplied Widget Groups
-    Object.values(widgetBuckets).forEach(v => { totalMult *= (1 + v); });
-    // Multiplied Skill Buckets
-    Object.values(skillBuckets).forEach(v => { totalMult *= (1 + v); });
-
-    return totalMult;
+    let total = 1.0;
+    Object.values(widgetBuckets).forEach(v => total *= (1 + v));
+    Object.values(skillBuckets).forEach(v => total *= (1 + v));
+    return total;
 }
 
 function gatherSetup() {
