@@ -61,19 +61,19 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 const tSht = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : shift(p, sL);
 
                 if (u==='arc') {
-                    if (w.t7 > 0) abil *= (1 + (tSht(0.1) * w.t7)); // Volley
-                    const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0);
-                    if (windP > 0) abil *= (1 + (tSht(windP) * 0.5)); // Howling Wind
+                if (w.t7 > 0) abil *= (1 + (tSht(0.1) * w.t7)); 
+                const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0);
+                if (windP > 0) abil *= (1 + (tSht(windP) * 0.5)); 
                 }
                 if (u==='cav') {
-                    const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0);
-                    if (lanceP > 0) abil *= (1 + tSht(lanceP)); // Assault Lance
+                const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0);
+                if (lanceP > 0) abil *= (1 + tSht(lanceP));
                 }
                 if (tf==='inf') {
                     const tw = tP.weights.inf;
-                    if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); // Bands of Steel
+                    if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); 
                     const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0);
-                    if (shieldP > 0) abil *= (1 - (tSht(shieldP) * 0.36)); // Unyielding Shield
+                    if (shieldP > 0) abil *= (1 - (tSht(shieldP) * 0.36));
                 }
 
                 let kills;
