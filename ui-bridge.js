@@ -10,7 +10,6 @@ let state = {
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
-// --- INITIALIZATION ---
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10 }; });
     const sel = document.getElementById('hero-select');
@@ -36,25 +35,27 @@ window.init = () => {
     window.updateGrids(); renderRosterUI(); window.showTab('battle');
 };
 
+// --- TAB SYSTEM ---
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
     Object.keys(screens).forEach(k => {
         const el = document.getElementById(screens[k]);
         if (el) el.classList.toggle('hidden', k !== tab);
-        if (document.getElementById(btns[k])) document.getElementById(btns[k]).className = k === tab ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
+        if (document.getElementById(btns[k])) document.getElementById(btns[k]).className = k === tab ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold uppercase";
     });
 };
 
+// --- BATCH ---
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     if (!container) return;
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 mb-2";
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
     div.innerHTML = `<div class="flex justify-between items-center"><div class="flex gap-2">
             <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}</select>
-            <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}</select>
-        </div>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}</div>
+            <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
+            </select></div>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}</div>
         <div class="grid grid-cols-3 gap-2">
             <input type="number" class="batch-inf input-dark text-blue-400" value="500000" oninput="window.updateFormation('${side}')"><input type="number" class="batch-cav input-dark text-amber-400" value="200000" oninput="window.updateFormation('${side}')"><input type="number" class="batch-arc input-dark text-emerald-400" value="300000" oninput="window.updateFormation('${side}')">
         </div>`;
@@ -77,14 +78,7 @@ window.updateFormation = (side) => {
     }
 };
 
-window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row'); if (!row) return;
-    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
-    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
-    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
-    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
-};
-
+// --- ROSTER ---
 function renderLevelPicker(hero, key, current, isRoster = true) {
     let h = `<div class="flex gap-1">`;
     for(let i=1; i<=5; i++) {
@@ -106,15 +100,15 @@ function renderRosterUI() {
         const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50' : 'opacity-40 border-transparent bg-slate-950/20'}`;
+        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-lg shadow-blue-900/20' : 'opacity-40 border-transparent bg-slate-950/20'}`;
         let skillsHtml = h.skills.map((s, i) => `<div class="mt-2"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
         card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase">${n}</div></div>${r.unlocked ? `<div class="space-y-3">${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
         grid.appendChild(card);
     });
 }
+window.updateRoster = (n,k,v) => { roster[n][k]=v; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
 
-window.updateRoster = (n, k, v) => { roster[n][k] = v; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-
+// --- BATTLE LOGIC ---
 window.openHeroModal = (side, index) => {
     activeSlot = { side, index }; const h = state[side].heroes[index];
     modalTemp = { s1: h.s1, s2: h.s2, s3: h.s3 };
@@ -122,7 +116,6 @@ window.openHeroModal = (side, index) => {
     renderSkillsInModal(h.name, index);
     document.getElementById('heroModal').classList.replace('hidden', 'flex');
 };
-
 window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index); };
 
 function renderSkillsInModal(name, slot) {
@@ -135,21 +128,11 @@ function renderSkillsInModal(name, slot) {
         container.appendChild(div);
     }
 }
-
-function updateGrids() {
-    ['atk','def'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`); if(!container) return; container.innerHTML = '';
-        state[side].heroes.forEach((h, i) => {
-            const div = document.createElement('div');
-            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
-            if (h.name !== 'None') {
-                div.innerHTML = `<span style="position:absolute;z-index:1">${h.name[0]}</span><img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2" onerror="this.style.opacity='0'">`;
-            } else { div.innerText = (i + 1); }
-            div.onclick = () => window.openHeroModal(side, i);
-            container.appendChild(div);
-        });
-    });
-}
+window.saveHeroConfig = () => {
+    const name = document.getElementById('hero-select').value;
+    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, star: 5, sub: 0, widgetLv: roster[name]?.widget || 0 };
+    window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
+};
 
 window.updateGrids = () => {
     ['atk','def'].forEach(side => {
@@ -166,6 +149,7 @@ window.updateGrids = () => {
     });
 };
 
+// --- SIMULATION & OPTIMIZERS ---
 window.handleSimulation = async () => {
     const setup = gatherSetup(); const simMode = document.getElementById('sim-mode-select').value;
     let rAvg, rBest, rWorst;
@@ -198,12 +182,11 @@ window.handleSimulation = async () => {
     
     document.getElementById('res-atk-total').innerText = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString();
     document.getElementById('res-def-total').innerText = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString();
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     document.getElementById('result-waves').innerText = `Simulation ended after ${rAvg.wave} waves`;
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
-// --- TERNARY HEATMAP GENERATOR ---
 window.runOptimizer = (mode) => {
     const setup = gatherSetup(); const atkTotal = 1000000;
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
@@ -229,12 +212,11 @@ window.runOptimizer = (mode) => {
         }
     }
     const plotId = mode==='bear'?'bear-plot':'ternary-plot';
-    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:12, opacity:0.8, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:0,b:0} });
+    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Portland', size:8 }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:0,b:0} });
     if(mode==='bear') { document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString(); document.getElementById('bear-best-form').innerText = `Best Bear Split: ${best.form[0]}/${best.form[1]}/${best.form[2]}`; }
     else { document.getElementById('opt-best-score').innerText = `Best: +${Math.round(best.score).toLocaleString()} survivors`; document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`; }
 };
 
-// --- ROSTER OPTIMIZER (Additive Widget Caveat) ---
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
     if(unlocked.length < 3) return alert("Unlock heroes.");
@@ -247,10 +229,10 @@ window.calculateOptimalLineups = () => {
         for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
             const trio = [i, c, a]; let joiners = [];
             if (s.j) {
-                const rem = unlocked.filter(n => !trio.includes(n));
-                joiners = rem.map(n => ({ n, i: calcCrossProduct(trio, [n], s.c) })).sort((a,b)=>b.i-a.i).slice(0, 4).map(x => x.n);
+                const pool = unlocked.filter(n => !trio.includes(n));
+                joiners = pool.map(n => ({ n, i: calcScore(trio, [n], s.c) })).sort((a,b)=>b.i-a.i).slice(0, 4).map(x => x.n);
             }
-            const score = calcCrossProduct(trio, joiners, s.c);
+            const score = calcScore(trio, joiners, s.c);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
         const card = document.createElement('div'); card.className="glass-card p-4 border-t-2 border-blue-500 flex justify-between items-center h-24";
@@ -259,8 +241,7 @@ window.calculateOptimalLineups = () => {
     });
 };
 
-
-function calcCrossProduct(leaders, joiners, ctx) {
+function calcScore(leaders, joiners, ctx) {
     let pools = {}, widgets = { attack:0, defense:0, lethality:0, health:0 };
     leaders.forEach(n => {
         const d = HEROES[n], r = roster[n];
@@ -289,16 +270,31 @@ function gatherSetup() {
         def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
     };
 }
-window.saveHeroConfig = () => {
-    const name = document.getElementById('hero-select').value;
-    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, star: 5, sub: 0, widgetLv: roster[name]?.widget || 0 };
-    window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
+
+function getCombinations(arr, size) {
+    let res = []; function h(start, c) { if(c.length===size){res.push([...c]);return;} for(let i=start;i<arr.length;i++){c.push(arr[i]);h(i+1,c);c.pop();} }
+    h(0, []); return res;
+}
+
+window.updateStatColors = (el) => {
+    const row = el.closest('.stat-row'); if (!row) return;
+    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
+    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
+    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
+    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
+};
+
+window.handleBearSim = () => {
+    const r = runCombatSim(gatherSetup(), 'average', 'average', 10, true);
+    document.getElementById('bear-total-dmg').innerText = Math.round(r.totalDmg).toLocaleString();
 };
 
 window.toggleDetails = () => {
-    const isHidden = document.getElementById('battle-details').classList.toggle('hidden');
+    const box = document.getElementById('battle-details');
+    const isHidden = box.classList.toggle('hidden');
     document.getElementById('toggle-details-btn').innerText = isHidden ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
 };
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
+
 document.addEventListener('DOMContentLoaded', window.init);
