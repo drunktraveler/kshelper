@@ -349,18 +349,18 @@ window.runOptimizer = (mode) => {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if (unlocked.length < 3) return alert("Please unlock at least 3 heroes in the Hero Vault.");
+    if (unlocked.length < 3) return alert("Unlock at least 3 heroes.");
     
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-1 md:col-span-2 text-center py-12"><div class="text-blue-500 font-black animate-pulse tracking-widest">ANALYZING COMBINATIONS...</div></div>';
+    resArea.innerHTML = '<div class="col-span-1 md:col-span-2 text-center py-12"><div class="text-blue-500 font-black animate-pulse tracking-widest uppercase">Analyzing Best-In-Slot Synergies...</div></div>';
+
+    // Best-in-Slot Joiner Pool (S1 focus)
+    const joinerWhiteList = ['Chenko', 'Amane', 'Howard', 'Eric', 'Gordon', 'Fahd', 'Saul', 'Hilde'];
+    const joinerCandidates = unlocked.filter(n => joinerWhiteList.includes(n));
 
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
-
-    if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) {
-        return alert("Requirement: Unlock at least one of each type (Inf, Cav, Arc).");
-    }
 
     const scenarios = [
         { l: "Solo Attack", c: "off", j: 0, w: false, b: false },
@@ -370,33 +370,24 @@ window.calculateOptimalLineups = () => {
         { l: "Optimal Bear", c: "off", j: 4, w: true, b: true }
     ];
 
-    // Use a small timeout to allow the "Analyzing" UI to render before the heavy loop
     setTimeout(() => {
         resArea.innerHTML = ''; 
-        
         scenarios.forEach(s => {
             let best = { leaders: [], joiners: [], score: -1 };
 
-            // Brute Force Leaders
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
                         const leaders = [i, c, a];
                         let currentJoiners = [];
 
-                        // Iterative best-fit for joiners (to handle up to 4 duplicates)
                         if (s.j > 0) {
                             for (let slot = 0; slot < s.j; slot++) {
-                                let bestJ = null;
-                                let maxJScore = -1;
-                                
-                                unlocked.forEach(cand => {
-                                    const testJoiners = [...currentJoiners, cand];
-                                    const score = calcPowerScore(leaders, testJoiners, s.c, s.w, s.b);
-                                    if (score > maxJScore) {
-                                        maxJScore = score;
-                                        bestJ = cand;
-                                    }
+                                let bestJ = null, maxJScore = -1;
+                                // Use pruned candidates for joiner slots
+                                joinerCandidates.forEach(cand => {
+                                    const score = calcPowerScore(leaders, [...currentJoiners, cand], s.c, s.w, s.b);
+                                    if (score > maxJScore) { maxJScore = score; bestJ = cand; }
                                 });
                                 currentJoiners.push(bestJ);
                             }
