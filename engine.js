@@ -20,7 +20,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt((p * (1 - p)) / 12); // 12 waves for meaningful luck spread
+        const sigma = Math.sqrt((p * (1 - p)) / 12); 
         const shifted = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
         return Math.max(0, Math.min(1, shifted));
     };
@@ -48,16 +48,14 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 let atk = b.atk * (1 + (sS.stats[u+'_att'] + sMod.star)/100), leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100), hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
-                let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
                 let abil = 1.0; const w = sP.weights[u];
-
                 const tSht = (p, id) => {
                     if (isStochastic) {
                         const res = Math.random() < p ? 1 : 0;
                         if (res === 1) troopProcs[side][id]++;
                         return res;
                     }
-                    return shift(p, sL) >= 0.5 ? 1 : 0; // Purely deterministic
+                    return shift(p, sL) >= 0.5 ? 1 : 0;
                 };
 
                 if (u==='arc') { 
@@ -76,6 +74,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     if (shieldP > 0 && tSht(shieldP, 'sh')) abil *= 0.64; 
                 }
 
+                let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
+
                 let kills;
                 if (isBear) {
                     kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * 1.25;
@@ -90,14 +90,13 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break; 
     }
 
-    if (isStochastic) {
-        ['atk', 'def'].forEach(s => {
-            const p = troopProcs[s], logArr = s === 'atk' ? m_skill.logs : e_skill.logs;
-            if (p.ds > 0) logArr.push(`[Troop] Archer Procs: ${p.ds} times`);
-            if (p.ln > 0) logArr.push(`[Troop] Cav Procs: ${p.ln} times`);
-            if (p.sh > 0) logArr.push(`[Troop] Inf Procs: ${p.sh} times`);
-        });
-    }
+    // Add procs to logs
+    ['atk', 'def'].forEach(s => {
+        const p = troopProcs[s], logArr = s === 'atk' ? m_skill.logs : e_skill.logs;
+        if (p.ds > 0) logArr.push(`[Troop] Archer Abilities: Triggered ${p.ds} times`);
+        if (p.ln > 0) logArr.push(`[Troop] Cav Abilities: Triggered ${p.ln} times`);
+        if (p.sh > 0) logArr.push(`[Troop] Inf Abilities: Triggered ${p.sh} times`);
+    });
 
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
@@ -150,7 +149,7 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             }
 
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget));
-            if (isStochastic && p < 1.0) logs.push(`${name}: ${s.name} (Triggered ${triggerCount} times)`);
+            if (isStochastic && p < 1.0) logs.push(`${name}: ${s.name} (Triggered ~${triggerCount} times)`);
             else logs.push(`${name} (x${n}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
