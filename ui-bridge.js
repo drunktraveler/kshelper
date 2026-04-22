@@ -304,8 +304,8 @@ window.runOptimizer = (mode) => {
     const setup = gatherSetup(); 
     const atkTotal = 1000000;
 
-    // 1. If Bear Mode, override stats with the Bear Tab inputs
     if(isBear) {
+        // 1. Pull user stats (which already include their heroes/widgets)
         setup.atk.stats = { 
             inf_att: parseFloat(document.getElementById('bear-inf-att').value), 
             inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
@@ -314,76 +314,66 @@ window.runOptimizer = (mode) => {
             arc_att: parseFloat(document.getElementById('bear-arc-att').value), 
             arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
         };
-        
-        // 2. IMPORTANT: Automatically find the best Bear Hero Lineup for the simulation
-        // We reuse the logic we just perfected in the Roster tab.
-        const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-        if (unlocked.length >= 3) {
-            let bestLineup = { leaders: [], joiners: [], score: -1 };
-            const byType = { Inf: [], Cav: [], Arc: [] };
-            unlocked.forEach(n => byType[HEROES[n].type].push(n));
-            
-            // Simplified find for the sim (Pick the first valid types, or use a pre-stored best)
-            // For highest accuracy, we use the specific "Optimal Bear" hero logic:
-            for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
-                const score = calcPowerScore([i,c,a], [], 'off', true, true);
-                if (score > bestLineup.score) bestLineup = { leaders: [i,c,a], score };
-            }
-            setup.atk.heroes = [...bestLineup.leaders, "None", "None", "None", "None"].map(n => 
-                n === "None" ? {name:"None"} : {name: n, s1:5, s2:5, s3:5, starIndex:30, widgetLv: roster[n].widget}
-            );
-        }
+        // Ensure no hero multipliers are added (as they are already in the report stats)
+        setup.atk.heroes = []; 
     }
 
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
     let score101080 = 0;
-     let defenders = [];
-    if(mode==='meta') { for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) defenders.push({inf:i/100, cav:j/100, arc:(100-i-j)/100}); }
-    else if(mode==='current') { 
-        const d = setup.def.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
-        const t = d.inf+d.cav+d.arc||1;
-        defenders.push({inf:d.inf/t, cav:d.cav/t, arc:d.arc/t});
-    }
-    else defenders.push({inf:1, cav:0, arc:0}); // Bear is 100% Inf defender
 
-    // Run the heatmap scan
-    for (let i = 0; i <= 100; i += 5) { // Step 5 for speed
-        for (let j = 0; j <= 100 - i; j += 5) {
+    // 2. Heatmap Scan
+    for (let i = 0; i <= 100; i += 2) { // Higher precision (step 2)
+        for (let j = 0; j <= 100 - i; j += 2) {
             let k = 100-i-j;
-            let totalNet = 0;
             
-            defenders.forEach(d => {
-                let s = JSON.parse(JSON.stringify(setup));
-                s.atk.batches = [{ 
-                    tier: isBear ? parseInt(document.getElementById('bear-inf-tier').value) : 10, 
-                    tg: isBear ? parseInt(document.getElementById('bear-inf-tg').value) : 3, 
-                    inf: i * (atkTotal/100), cav: j * (atkTotal/100), arc: k * (atkTotal/100) 
-                }];
-                const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                let out = isBear ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-                totalNet += out;
-                if(isBear && i===10 && j===10) score101080 = out;
-            });
+            let s = JSON.parse(JSON.stringify(setup));
+            // IMPORTANT: Create three distinct batches so engine.js uses correct Tier/TG for each type
+            s.atk.batches = [
+                { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * 10000, cav: 0, arc: 0 },
+                { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 10000, arc: 0 },
+                { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 10000 }
+            ];
 
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(totalNet);
-            if (totalNet > best.score) best = { score: totalNet, form: [i,j,k] };
+            // Bear is 100% Inf defender
+            const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
+            
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(r.totalDmg);
+            
+            if (r.totalDmg > best.score) best = { score: r.totalDmg, form: [i,j,k] };
+            if (i === 10 && j === 10) score101080 = r.totalDmg;
         }
     }
 
-    // Rendering results
+    // 3. Rendering with two markers
     const plotId = isBear ? 'bear-plot' : 'ternary-plot';
-    // ... (Plotly code remains same) ...
-    Plotly.newPlot(plotId, [
-        { type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Viridis', size:8 } },
-        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', mode:'markers', marker:{size:15, symbol:'star', color:'red'} }
-    ], { ternary: { sum:100, aaxis:{title:'Inf'}, baxis:{title:'Cav'}, caxis:{title:'Arc'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0} });
+    const traces = [
+        { 
+            type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, 
+            mode:'markers', 
+            marker:{ color:dataPoints.z, colorscale:'Viridis', size:6, opacity: 0.8 },
+            hovertemplate: 'Inf: %{a}%<br>Cav: %{b}%<br>Arc: %{c}%<extra></extra>'
+        },
+        { 
+            // 10/10/80 Marker
+            type:'scatterternary', a:[10], b:[10], c:[80], name:'Standard 10/10/80', 
+            mode:'markers', marker:{size:12, symbol:'circle-open', color:'white', line:{width:3}} 
+        },
+        { 
+            // Optimal Marker
+            type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', 
+            mode:'markers', marker:{size:16, symbol:'star', color:'#fbbf24', line:{width:2, color:'black'}} 
+        }
+    ];
+
+    Plotly.newPlot(plotId, traces, { 
+        ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, 
+        paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0}, showlegend: false 
+    });
 
     if(isBear) { 
-        document.getElementById('bear-total-dmg').innerText = `Max Score: ${Math.round(best.score).toLocaleString()}`; 
-        // FIX: The ID in HTML is bear-opt-form
         document.getElementById('bear-opt-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
         const gain = ((best.score / (score101080 || 1)) - 1) * 100;
-        document.getElementById('bear-comparison').innerText = `Gain vs 10/10/80: +${gain.toFixed(1)}%`;
+        document.getElementById('bear-comparison').innerText = `This formation deals ${gain.toFixed(1)}% more damage than 10/10/80.`;
     }
 };
 
