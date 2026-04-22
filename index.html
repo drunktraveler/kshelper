@@ -108,21 +108,50 @@
 
         <!-- Bear Tab -->
         <div id="bear-tab" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
-            <div class="glass-card p-8 border-t-4 border-amber-500">
-                <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Bear Trap Optimizer</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-                    <div id="bear-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
-                    <div class="space-y-6">
-                        <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                            <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Max Estimated Damage</span>
-                            <div id="bear-total-dmg" class="text-3xl font-black mt-2">0</div>
-                            <p id="bear-best-form" class="text-xs text-slate-400 mt-1"></p>
-                        </div>
-                        <button onclick="window.runOptimizer('bear')" class="w-full bg-amber-600 py-4 rounded-xl text-xs uppercase font-black">Run Bear Heatmap</button>
-                    </div>
+    <div class="glass-card p-8 border-t-4 border-amber-500">
+        <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Bear Trap Optimizer</h2>
+        
+        <!-- Bear Specific Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-slate-950/40 rounded-2xl border border-slate-800">
+            <!-- Infantry Bear Stats -->
+            <div class="space-y-3">
+                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-blue-400 uppercase">Infantry</span>
+                    <select id="bear-inf-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
                 </div>
+                <input type="number" id="bear-inf-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
+                <input type="number" id="bear-inf-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
+            </div>
+            <!-- Cavalry Bear Stats -->
+            <div class="space-y-3">
+                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-amber-500 uppercase">Cavalry</span>
+                    <select id="bear-cav-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                </div>
+                <input type="number" id="bear-cav-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
+                <input type="number" id="bear-cav-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
+            </div>
+            <!-- Archer Bear Stats -->
+            <div class="space-y-3">
+                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-emerald-500 uppercase">Archers</span>
+                    <select id="bear-arc-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                </div>
+                <input type="number" id="bear-arc-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
+                <input type="number" id="bear-arc-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
             </div>
         </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div id="bear-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
+            <div class="space-y-6">
+                <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                    <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Recommended Formation</span>
+                    <div id="bear-opt-form" class="text-3xl font-black mt-2 text-white">-- / -- / --</div>
+                    <p id="bear-comparison" class="text-xs text-slate-400 mt-2 font-medium"></p>
+                </div>
+                <button onclick="window.runOptimizer('bear')" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-4 rounded-xl text-xs uppercase transition-all">Calculate Optimal Split</button>
+            </div>
+        </div>
+    </div>
+</div>
 
         <!-- Roster Tab -->
         <div id="roster-tab" class="hidden max-w-5xl mx-auto space-y-6 pb-12">
