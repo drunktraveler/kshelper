@@ -110,32 +110,38 @@
         <div id="bear-tab" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
     <div class="glass-card p-8 border-t-4 border-amber-500">
         <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Bear Trap Optimizer</h2>
+        <p class="text-slate-500 text-xs mb-6 italic">Enter your stats exactly as shown on your profile (not report).</p>
         
-        <!-- Bear Specific Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-slate-950/40 rounded-2xl border border-slate-800">
-            <!-- Infantry Bear Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 p-6 bg-slate-950/40 rounded-2xl border border-slate-800">
+            <!-- Infantry -->
             <div class="space-y-3">
-                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-blue-400 uppercase">Infantry</span>
-                    <select id="bear-inf-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                <div class="flex justify-between items-center"><span class="text-[10px] font-black text-blue-400 uppercase">Infantry</span></div>
+                <div class="flex gap-2">
+                    <select id="bear-inf-tier" class="input-dark !py-1 text-[10px] flex-grow"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
+                    <select id="bear-inf-tg" class="input-dark !py-1 text-[10px] flex-grow"><option value="5">TG5</option><option value="3" selected>TG3</option><option value="0">TG0</option></select>
                 </div>
-                <input type="number" id="bear-inf-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
-                <input type="number" id="bear-inf-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Attack %</label><input type="number" id="bear-inf-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Lethality %</label><input type="number" id="bear-inf-leth" class="input-dark !py-1 text-xs" value="500"></div>
             </div>
-            <!-- Cavalry Bear Stats -->
+            <!-- Cavalry -->
             <div class="space-y-3">
-                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-amber-500 uppercase">Cavalry</span>
-                    <select id="bear-cav-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                <div class="flex justify-between items-center"><span class="text-[10px] font-black text-amber-500 uppercase">Cavalry</span></div>
+                <div class="flex gap-2">
+                    <select id="bear-cav-tier" class="input-dark !py-1 text-[10px] flex-grow"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
+                    <select id="bear-cav-tg" class="input-dark !py-1 text-[10px] flex-grow"><option value="5">TG5</option><option value="3" selected>TG3</option><option value="0">TG0</option></select>
                 </div>
-                <input type="number" id="bear-cav-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
-                <input type="number" id="bear-cav-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Attack %</label><input type="number" id="bear-cav-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Lethality %</label><input type="number" id="bear-cav-leth" class="input-dark !py-1 text-xs" value="500"></div>
             </div>
-            <!-- Archer Bear Stats -->
+            <!-- Archer -->
             <div class="space-y-3">
-                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-emerald-500 uppercase">Archers</span>
-                    <select id="bear-arc-tier" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400 outline-none"><option value="11">T11</option><option value="10" selected>T10</option></select>
+                <div class="flex justify-between items-center"><span class="text-[10px] font-black text-emerald-500 uppercase">Archers</span></div>
+                <div class="flex gap-2">
+                    <select id="bear-arc-tier" class="input-dark !py-1 text-[10px] flex-grow"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
+                    <select id="bear-arc-tg" class="input-dark !py-1 text-[10px] flex-grow"><option value="5">TG5</option><option value="3" selected>TG3</option><option value="0">TG0</option></select>
                 </div>
-                <input type="number" id="bear-arc-att" class="input-dark !py-1 text-xs" placeholder="Attack %" value="1000">
-                <input type="number" id="bear-arc-leth" class="input-dark !py-1 text-xs" placeholder="Lethality %" value="500">
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Attack %</label><input type="number" id="bear-arc-att" class="input-dark !py-1 text-xs" value="1000"></div>
+                <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Lethality %</label><input type="number" id="bear-arc-leth" class="input-dark !py-1 text-xs" value="500"></div>
             </div>
         </div>
 
@@ -145,9 +151,10 @@
                 <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
                     <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Recommended Formation</span>
                     <div id="bear-opt-form" class="text-3xl font-black mt-2 text-white">-- / -- / --</div>
+                    <p id="bear-total-dmg" class="text-xl font-bold text-amber-500 mt-2">0</p>
                     <p id="bear-comparison" class="text-xs text-slate-400 mt-2 font-medium"></p>
                 </div>
-                <button onclick="window.runOptimizer('bear')" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-4 rounded-xl text-xs uppercase transition-all">Calculate Optimal Split</button>
+                <button onclick="window.runOptimizer('bear')" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-4 rounded-xl text-xs uppercase transition-all shadow-lg">Run Bear Optimization</button>
             </div>
         </div>
     </div>
