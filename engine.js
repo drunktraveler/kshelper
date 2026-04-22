@@ -25,12 +25,11 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         return Math.max(0, Math.min(1, shifted));
     };
 
+    let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
     const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
 
     let wave = 0, totalDmg = 0;
-    let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
-
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < 2000) {
         wave++;
         const mf = (['infantry','cavalry','archers'].find(u => m_cur[u.slice(0,3)] > 1) || 'archers').slice(0,3);
@@ -51,31 +50,30 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
                 
-                // --- CORRECTED TROOP ABILITY MATH ---
                 let abil = 1.0; const w = sP.weights[u];
-                const getVal = (p, id) => {
+                const getAbilVal = (p, id) => {
                     if (isStochastic) {
-                        const res = Math.random() < p ? 1 : 0;
-                        if (res === 1) troopProcs[side][id]++;
-                        return res;
+                        const hit = Math.random() < p ? 1 : 0;
+                        if (hit) troopProcs[side][id]++;
+                        return hit;
                     }
-                    return shift(p, sL); // Use the probability itself as a multiplier
+                    return shift(p, sL); // Probability as multiplier for deterministic/optimizer
                 };
 
                 if (u==='arc') { 
-                    if (w.t7 > 0) abil *= (1 + getVal(0.1, 'ds') * w.t7); 
+                    if (w.t7 > 0) abil *= (1 + getAbilVal(0.1, 'ds') * w.t7); 
                     const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); 
-                    if (windP > 0) abil *= (1 + getVal(windP, 'ds') * 0.5); 
+                    if (windP > 0) abil *= (1 + getAbilVal(windP, 'ds') * 0.5); 
                 }
                 if (u==='cav') { 
                     const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0); 
-                    if (lanceP > 0) abil *= (1 + getVal(lanceP, 'ln') * 1.0); 
+                    if (lanceP > 0) abil *= (1 + getAbilVal(lanceP, 'ln') * 1.0); 
                 }
                 if (tf==='inf') { 
                     const tw = tP.weights.inf; 
                     if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); 
                     const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0); 
-                    if (shieldP > 0) abil *= (1 - (getVal(shieldP, 'sh') * 0.36)); 
+                    if (shieldP > 0) abil *= (1 - (getAbilVal(shieldP, 'sh') * 0.36)); 
                 }
 
                 let kills;
@@ -92,17 +90,17 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break; 
     }
 
-    // Always Log Troop Abilities
-    ['atk', 'def'].forEach(side => {
-        const p = side==='atk'?atkP:defP, logArr = side === 'atk' ? m_skill.logs : e_skill.logs;
+    // Always log troop status
+    ['atk', 'def'].forEach(s => {
+        const p = s==='atk'?atkP:defP, logArr = s === 'atk' ? m_skill.logs : e_skill.logs;
         ['inf','cav','arc'].forEach(u => {
-            if (p.weights[u].t7 > 0) logArr.push(`[Troop] ${u} Tier 7+ Active`);
-            if (p.weights[u].tg3 > 0) logArr.push(`[Troop] ${u} TG3/5 Active`);
+            if (p.weights[u].t7 > 0) logArr.push(`[Troop] ${u} Tier 7+ Enabled`);
+            if (p.weights[u].tg3 > 0) logArr.push(`[Troop] ${u} TG3/5 Enabled`);
         });
         if (isStochastic) {
-            if (troopProcs[side].ds > 0) logArr.push(`[Proc] Archer Multi-Hit: ${troopProcs[side].ds} times`);
-            if (troopProcs[side].ln > 0) logArr.push(`[Proc] Cavalry Lances: ${troopProcs[side].ln} times`);
-            if (troopProcs[side].sh > 0) logArr.push(`[Proc] Infantry Shields: ${troopProcs[side].sh} times`);
+            if (troopProcs[s].ds > 0) logArr.push(`[Proc] Archer Double Strike: ${troopProcs[s].ds} hits`);
+            if (troopProcs[s].ln > 0) logArr.push(`[Proc] Cavalry Lances: ${troopProcs[s].ln} hits`);
+            if (troopProcs[s].sh > 0) logArr.push(`[Proc] Infantry Shields: ${troopProcs[s].sh} hits`);
         }
     });
 
@@ -151,7 +149,6 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
                 const rate = triggerCount / (n * 100);
                 ev = Array.isArray(m) ? m.map(v => rate * v) : rate * m;
             } else {
-                // FIXED: Multi-hero probability stacking for Deterministic ranges
                 const prob = shiftFn(p, luckMode);
                 const pAny = 1 - Math.pow(1 - prob, n);
                 ev = Array.isArray(m) ? m.map(v => dur === 0 ? pAny * v : (1 - Math.pow(1 - pAny, dur)) * v) : (dur === 0 ? pAny * m : (1 - Math.pow(1 - pAny, dur)) * m);
