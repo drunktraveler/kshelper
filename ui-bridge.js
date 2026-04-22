@@ -320,11 +320,7 @@ window.runOptimizer = (mode) => {
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
     const userTotal = userSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
     const leadTier = userSide.batches[0].tier, leadTG = userSide.batches[0].tg;
-
-    const oppSide = optRole === 'atk' ? setup.def : setup.atk;
-    const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : (optRole === 'atk' ? setup.def : setup.atk).batches.reduce((s,b)=> s + (b.inf+b.cav+b.arc), 0);
-    const leadTG = userSide.batches[0].tg;
-
+    
      if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
     else if (mode === 'current') {
         const side = optRole === 'atk' ? setup.def : setup.atk;
