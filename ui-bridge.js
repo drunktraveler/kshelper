@@ -309,12 +309,25 @@ window.handleSimulation = async () => {
     screen.classList.remove('hidden');
     
     const sum = (c) => Math.round(c.inf + c.cav + c.arc);
+    // Display Median Results
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
+
+    // Restore Wave Count
+    document.getElementById('result-waves').innerHTML = `
+        <span class="text-blue-400">${modeLabel}</span><br>
+        Avg Combat Duration: <span class="text-white">${rAvg.wave} Waves</span>
+    `;
+
+    // Absolute Ranges
+    const atkMin = sum(rWorst.m_cur);
+    const atkMax = sum(rBest.m_cur);
+    const defMin = sum(rBest.e_cur);
+    const defMax = sum(rWorst.e_cur);
     
     // Ranges: Show absolute min and absolute max
-    document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
+    document.getElementById('res-atk-range').innerText = `Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}`;
+    document.getElementById('res-def-range').innerText = `Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}`;
 
     // Luck Bar: Flipped logic for flipped labels
     // We want a high score (Atk win) to push the bar to the LEFT (Atk Domination side)
