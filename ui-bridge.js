@@ -265,6 +265,8 @@ window.handleSimulation = async () => {
     const simMode = document.getElementById('sim-mode-select').value;
     const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     let rAvg, rBest, rWorst, modeLabel;
+    const sAvg = score(rAvg), sMin = score(rWorst), sMax = score(rBest);
+    const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
 
     if (simMode === 'monte-carlo') {
         modeLabel = "Stochastic Sampling (100 Runs)";
@@ -283,7 +285,11 @@ window.handleSimulation = async () => {
     screen.classList.remove('hidden');
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
-    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black">${modeLabel}</span><br>Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>`;
+    document.getElementById('result-waves').innerHTML = `
+        <span class="text-blue-400 font-black">${modeLabel}</span><br>
+        Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>
+        ${simMode === 'monte-carlo' ? `<br>Visualized Battle Luck: <span class="text-amber-500">${luckPct.toFixed(0)}th Percentile</span>` : ''}
+    `;
 
     document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
