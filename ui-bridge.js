@@ -452,74 +452,89 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
     let skillBuckets = {};
     let widgetMult = 1.0;
     
-    // 1. Widget Percentage Multiplier
+    // 1. Global Widget Multiplier (Leaders only)
     if (allowWidgets) {
         leaders.forEach(n => {
             const d = HEROES[n];
             const r = roster[n];
-            if (d.widget && d.widget.context === ctx) widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
+            if (d && d.widget && d.widget.context === ctx) {
+                widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
+            }
         });
     }
 
-    // 2. Skill Multipliers
+    // 2. Tally Skill Counts (Leaders get S1-S3, Joiners S1 only)
     const manifest = {}; 
-    leaders.forEach(n => { if(!manifest[n]) manifest[n]={s1:0,s2:0,s3:0}; manifest[n].s1++; manifest[n].s2++; manifest[n].s3++; });
-    joiners.forEach(n => { if(!manifest[n]) manifest[n]={s1:0,s2:0,s3:0}; manifest[n].s1++; });
+    leaders.forEach(n => {
+        if(!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
+        manifest[n].s1++; manifest[n].s2++; manifest[n].s3++;
+    });
+    joiners.forEach(n => {
+        if(!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
+        manifest[n].s1++;
+    });
 
+    // 3. Process Buckets
     for (const name in manifest) {
         const d = HEROES[name];
         const r = roster[name];
+        if (!d) continue;
+
         d.skills.forEach((s, si) => {
             const count = manifest[name][`s${si+1}`];
-            if (!count) return;
-            if (isBear && !s.ids.some(id => id < 200)) return;
+            if (!count || count <= 0) return;
 
             const lvl = r[`s${si+1}`] || 5;
             const p = s.getChance(s.values[lvl-1]);
             const m = s.getMagnitude(s.values[lvl-1]);
             const dur = isBear ? 0 : (s.duration || 0);
-            const pAny = 1 - Math.pow(1 - p, count);
-            const uptime = (dur === 0) ? pAny : (1 - Math.pow(1 - pAny, dur));
+
+            let effectiveMagnitude;
+
+            if (p >= 1.0) {
+                // PASSIVE STACKING: 10% x 3 heroes = 30%
+                effectiveMagnitude = count * 1.0; // The '1.0' represents uptime
+            } else {
+                // CHANCE STACKING: Uptime-based (Independence Rule)
+                const pAny = 1 - Math.pow(1 - p, count);
+                effectiveMagnitude = (dur === 0) ? pAny : (1 - Math.pow(1 - pAny, dur));
+            }
 
             s.ids.forEach((id, idx) => {
+                // BEAR LEAK FIX: Strictly block non-1xx IDs during Bear calculation
+                if (isBear && id >= 200) return;
+
                 const mag = Array.isArray(m) ? m[idx] : m;
-                skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag);
+                skillBuckets[id] = (skillBuckets[id] || 0) + (effectiveMagnitude * mag);
             });
         });
     }
 
+    // 4. Combine Buckets Multiplicatively
     let skillMult = 1.0;
     Object.values(skillBuckets).forEach(v => skillMult *= (1 + v));
 
-    // 3. Stat Effect Multiplier (The "Account Growth" factor)
+    // 5. Apply Account Stat Scaling
     let statEffect = 1.0;
     const isUsingStats = document.getElementById('use-account-stats').checked && nakedStats;
 
     if (isUsingStats) {
         let totalGain = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
-            // We use Attack + Lethality as the primary power indicators for the multiplier
-            const nakedAtt = nakedStats[`${t}_att`] || 1; 
+            const nakedAtt = nakedStats[`${t}_att`] || 1;
             const nakedLeth = nakedStats[`${t}_leth`] || 1;
-            
-            let flatsAtt = 0;
-            let flatsLeth = 0;
+            let flatsAtt = 0, flatsLeth = 0;
 
             leaders.forEach(n => {
                 const d = HEROES[n];
                 const r = roster[n];
-                if (d.type.toLowerCase().slice(0,3) === t) {
+                if (d && d.type.toLowerCase().slice(0,3) === t) {
                     flatsAtt += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     if (d.widget) flatsLeth += (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
 
-            // How much better are these stats than the naked base?
-            const attGain = (nakedAtt + flatsAtt) / nakedAtt;
-            const lethGain = (nakedLeth + flatsLeth) / nakedLeth;
-            
-            // Average the gain across types to get a "Lineup Stat Multiplier"
-            totalGain += (attGain * lethGain);
+            totalGain += ((nakedAtt + flatsAtt) / nakedAtt) * ((nakedLeth + flatsLeth) / nakedLeth);
         });
         statEffect = totalGain / 3;
     }
