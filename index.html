@@ -90,7 +90,13 @@
         <!-- Formation Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
             <div class="glass-card p-8">
-                <h2 class="text-2xl font-black uppercase tracking-tight mb-2">Formation Heatmap</h2>
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
+                    <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button id="opt-role-atk" onclick="window.setOptRole('atk')" class="px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white">I AM ATTACKER</button>
+                        <button id="opt-role-def" onclick="window.setOptRole('def')" class="px-3 py-1 text-[10px] font-bold text-slate-500">I AM DEFENDER</button>
+                    </div>
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
                     <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
                     <div class="space-y-6">
