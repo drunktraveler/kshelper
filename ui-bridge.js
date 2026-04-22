@@ -384,39 +384,72 @@ window.handleSimulation = async () => {
 };
 
 window.runOptimizer = (mode) => {
-    const setup = gatherSetup(); const atkTotal = 1000000;
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
-    let defenders = [];
-    if(mode==='meta') { for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) defenders.push({inf:i/100, cav:j/100, arc:(100-i-j)/100}); }
-    else if(mode==='current') { const d=setup.def.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0}); const t=d.inf+d.cav+d.arc||1; defenders.push({inf:d.inf/t,cav:d.cav/t,arc:d.arc/t}); }
-    else defenders.push({inf:1,cav:0,arc:0});
+    const isBear = mode === 'bear';
+    const setup = gatherSetup(); 
+    const atkTotal = 1000000;
+    
+    // Override setup if in Bear Tab specifically
+    if(isBear) {
+        setup.atk.stats = {
+            inf_att: parseFloat(document.getElementById('bear-inf-att').value),
+            inf_leth: parseFloat(document.getElementById('bear-inf-leth').value),
+            cav_att: parseFloat(document.getElementById('bear-cav-att').value),
+            cav_leth: parseFloat(document.getElementById('bear-cav-leth').value),
+            arc_att: parseFloat(document.getElementById('bear-arc-att').value),
+            arc_leth: parseFloat(document.getElementById('bear-arc-leth').value),
+        };
+    }
 
-    for (let i = 20; i <= 100; i += 2) {
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
+    let score101080 = 0;
+
+    // Start at 0% Inf for Bear, 20% for PVP
+    const minInf = isBear ? 0 : 20;
+
+    for (let i = minInf; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j; let totalNet = 0; let wins = 0;
-            defenders.forEach(d => {
-                let s = JSON.parse(JSON.stringify(setup));
-                s.atk.batches = [{ tier:10, tg:3, inf:i*10000, cav:j*10000, arc:k*10000 }];
-                if(mode!=='bear') s.def.batches = [{ tier:10, tg:3, inf:d.inf*atkTotal, cav:d.cav*atkTotal, arc:d.arc*atkTotal }];
-                // isOptimizing = true forces raw survivors (prevents binary 1/0 result)
-                const r = runCombatSim(s, 'average', 'average', 100, mode==='bear', true);
-                let outcome = mode==='bear' ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-                if(outcome > 0) wins++; totalNet += outcome;
-            });
-            const score = mode === 'meta' ? (wins/defenders.length) : totalNet;
+            let k = 100-i-j;
+            let curSetup = JSON.parse(JSON.stringify(setup));
+            curSetup.atk.batches = [{ 
+                tier: isBear ? parseInt(document.getElementById('bear-inf-tier').value) : 10, 
+                tg: 3, inf: i*10000, cav: j*10000, arc: k*10000 
+            }];
+            
+            const r = runCombatSim(curSetup, 'average', 'average', 100, isBear, true);
+            let score = isBear ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
+            
+            if (isBear && i === 10 && j === 10) score101080 = score;
+
             dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
             if (score > best.score) best = { score, form: [i,j,k] };
         }
     }
-    const plotId = mode==='bear'?'bear-plot':'ternary-plot';
-    Plotly.newPlot(plotId, [{ type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:10, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' }], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0} });
+
+    // TERNARY PLOT WITH HIGHLIGHTS
+    const mainTrace = { 
+        type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', 
+        marker:{ color:dataPoints.z, colorscale:'Hot', size:8, symbol:'square' },
+        hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' 
+    };
+
+    const markers = [
+        { type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', mode:'markers', marker:{size:12, symbol:'cross', color:'white', line:{width:2, color:'black'}} },
+        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', mode:'markers', marker:{size:15, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }
+    ];
+
+    const plotId = isBear ? 'bear-plot' : 'ternary-plot';
+    Plotly.newPlot(plotId, [mainTrace, ...markers], { 
+        ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, 
+        paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, showlegend: false, margin:{l:0,r:0,t:40,b:0} 
+    });
     
-    if(mode==='bear') { 
-        document.getElementById('bear-total-dmg').innerText = Math.round(best.score).toLocaleString(); 
-        document.getElementById('bear-best-form').innerText = `Best Split: ${best.form[0]}% Inf / ${best.form[1]}% Cav / ${best.form[2]}% Arc`;
+    if(isBear) {
+        document.getElementById('bear-opt-form').innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+        const gain = ((best.score / score101080) - 1) * 100;
+        document.getElementById('bear-comparison').innerText = `This formation deals ${gain.toFixed(1)}% more damage than 10/10/80.`;
     } else {
         document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-        document.getElementById('opt-best-score').innerText = `Survival Margin: +${Math.round(best.score).toLocaleString()} troops`;
+        document.getElementById('opt-best-score').innerText = `Best Result: +${Math.round(best.score).toLocaleString()} survivors`;
     }
 };
 
@@ -429,10 +462,11 @@ window.calculateOptimalLineups = () => {
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
 
     const scens = [
-        {l:"Solo Attack", c:"off", j:false, w:false},
-        {l:"Solo Defense", c:"def", j:false, w:true},
-        {l:"Rally w/ Joiners", c:"off", j:true, w:true},
-        {l:"Garrison w/ Joiners", c:"def", j:true, w:true}
+        {l:"Solo Attack", c:"off", j:false, w:false, b:false},
+        {l:"Solo Defense", c:"def", j:false, w:true, b:false},
+        {l:"Rally w/ Joiners", c:"off", j:true, w:true, b:false},
+        {l:"Garrison w/ Joiners", c:"def", j:true, w:true, b:false},
+        {l:"Optimal Bear (10 Waves)", c:"off", j:true, w:true, b:true}
     ];
 
     scens.forEach(s => {
@@ -451,7 +485,7 @@ window.calculateOptimalLineups = () => {
                     joiners.push(bestJ);
                 }
             }
-            const score = calcPowerScore(trio, joiners, s.c, s.w);
+            const score = calcPowerScore(trio, joiners, s.c, s.w, s.b);
             if (score > best.score) best = { leaders: trio, joiners, score };
         }
 
@@ -528,6 +562,7 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
         const skillsToProcess = hero.isL ? d.skills : [d.skills[0]];
         skillsToProcess.forEach((s, si) => {
             const skillKey = `${hero.name}_s${si}`;
+            if (isBear && !s.ids.some(id => id === 101 || id === 102)) return;
             if (!heroSkillCounts[skillKey]) {
                 const x = s.values[r[`s${si+1}`]-1];
                 heroSkillCounts[skillKey] = { p: s.getChance(x), m: s.getMagnitude(x), ids: s.ids, duration: s.duration, count: 0 };
