@@ -314,6 +314,8 @@ window.runOptimizer = (mode) => {
     const oppSide = optRole === 'atk' ? setup.def : setup.atk;
     const userTotal = userSide.batches.reduce((s,b)=> s + (b.inf+b.cav+b.arc), 0) || 1;
     const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : (optRole === 'atk' ? setup.def : setup.atk).batches.reduce((s,b)=> s + (b.inf+b.cav+b.arc), 0);
+    const leadTier = userSide.batches[0].tier; // Sync tiers to prevent "Mirror Loss"
+    const leadTG = userSide.batches[0].tg;
 
     if (isBear) { 
         opponents.push({inf: 1, cav: 0, arc: 0}); 
@@ -335,29 +337,25 @@ window.runOptimizer = (mode) => {
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
                 
+                // USER FORMATION
+                const userBatches = userSide.batches.map(b => ({
+                    tier: b.tier, tg: b.tg,
+                    inf: (i/100) * sum(b), cav: (j/100) * sum(b), arc: (k/100) * sum(b)
+                }));
+
+                // OPPONENT FORMATION (Sync Tier/TG with User)
+                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf * userTotal, cav: opp.cav * userTotal, arc: opp.arc * userTotal };
+
                 if (isBear) {
-                    // Force the optimizer to use separate batches for Bear to calculate sq_min correctly
-                    s.atk.stats = { 
-                        inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
-                        cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
-                        arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
-                    };
                     s.atk.batches = [
                         { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * (userTotal/100), cav: 0, arc: 0 },
                         { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * (userTotal/100), arc: 0 },
                         { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * (userTotal/100) }
                     ];
+                } else if (optRole === 'atk') {
+                    s.atk.batches = userBatches; s.def.batches = [oppBatch];
                 } else {
-                    // Normalization Fix: Enemy has identical army size as User for Meta/Custom
-                    const userBatches = userSide.batches.map(b => ({
-                        tier: b.tier, tg: b.tg,
-                        inf: (i/100) * (b.inf+b.cav+b.arc), cav: (j/100) * (b.inf+b.cav+b.arc), arc: (k/100) * (b.inf+b.cav+b.arc)
-                    }));
-                    // Meta/Custom opponent uses the user's total army size
-                    const oppBatch = { tier: 11, tg: 5, inf: opp.inf * oppTotal, cav: opp.cav * oppTotal, arc: opp.arc * oppTotal };
-
-                    if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
-                    else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                    s.atk.batches = [oppBatch]; s.def.batches = userBatches;
                 }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
