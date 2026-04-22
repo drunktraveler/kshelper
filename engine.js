@@ -66,7 +66,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 let kills;
                 if (isBear) {
-                    kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * sMod.units.all * 1.25;
+                    kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * wave_s_mult * 1.25;
                     totalDmg += kills;
                 } else {
                     kills = (Math.sqrt(sC[u])*sq_min*atk*leth*interaction*abil*sMod.units.all*Math.pow(1.15,3))/(df*hp*100);
