@@ -369,6 +369,7 @@ window.runOptimizer = (mode) => {
     // 2. Interaction Bias Fix: Scale User Batches
     const targetTotal = 100000;
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
+    const userTotalTroops = userSide.batches.reduce((s,b)=> s + b.inf + b.cav + b.arc, 0) || 1;
     const userOriginalSum = userSide.batches.reduce((s,b)=> s + b.inf + b.cav + b.arc, 0) || 1;
     const scaleFactor = targetTotal / userOriginalSum;
 
@@ -389,11 +390,18 @@ window.runOptimizer = (mode) => {
 
                 // Scale User Batches to maintain interaction bias while applying current i/j/k formation
                 const userBatches = userSide.batches.map(b => {
-                    const bTotal = (b.inf + b.cav + b.arc) || 1;
-                    const bRatio = bTotal / userOriginalSum;
-                    // Apply the test formation (i,j,k) to the scaled batch
-                    return { tier: b.tier, tg: b.tg, inf: i * (targetTotal/100) * bRatio, cav: j * (targetTotal/100) * bRatio, arc: k * (targetTotal/100) * bRatio };
-                });
+    const bSize = b.inf + b.cav + b.arc;
+    const bWeight = bSize / userTotalTroops; // Percentage of the army this batch represents
+    
+    // Distribute the TEST formation (i,j,k) across this batch's weight
+    return {
+        tier: b.tier,
+        tg: b.tg,
+        inf: (i/100) * userTotalTroops * bWeight,
+        cav: (j/100) * userTotalTroops * bWeight,
+        arc: (k/100) * userTotalTroops * bWeight
+    };
+});
 
                 if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
                 else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
