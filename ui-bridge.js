@@ -342,16 +342,15 @@ window.calculateOptimalLineups = () => {
     
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-2 text-center py-4 text-blue-400 animate-pulse font-black">ANALYZING COMBINATIONS...</div>';
+    resArea.innerHTML = '<div class="col-span-1 md:col-span-2 text-center py-12"><div class="text-blue-500 font-black animate-pulse tracking-widest">ANALYZING COMBINATIONS...</div></div>';
 
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
 
     if (!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) {
-        return alert("You need at least one hero of each type (Inf, Cav, Arc) unlocked.");
+        return alert("Requirement: Unlock at least one of each type (Inf, Cav, Arc).");
     }
 
-    // Define Scenarios
     const scenarios = [
         { l: "Solo Attack", c: "off", j: 0, w: false, b: false },
         { l: "Solo Defense", c: "def", j: 0, w: true, b: false },
@@ -360,100 +359,132 @@ window.calculateOptimalLineups = () => {
         { l: "Optimal Bear", c: "off", j: 4, w: true, b: true }
     ];
 
+    // Use a small timeout to allow the "Analyzing" UI to render before the heavy loop
     setTimeout(() => {
-        resArea.innerHTML = '';
+        resArea.innerHTML = ''; 
+        
         scenarios.forEach(s => {
-            let best = { leaders: [], joiners: [], score: -Infinity };
+            let best = { leaders: [], joiners: [], score: -1 };
 
-            // 1. Brute Force Leaders (1 of each type)
+            // Brute Force Leaders
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
                         const leaders = [i, c, a];
-                        let joiners = [];
+                        let currentJoiners = [];
 
+                        // Iterative best-fit for joiners (to handle up to 4 duplicates)
                         if (s.j > 0) {
-                            // 2. Optimized Joiner Selection
-                            // Since joiners only contribute S1 and uptime stacks via Independence Rule,
-                            // we can find the best joiner by testing every hero in all 4 slots.
-                            // Because marginal utility of the same joiner decreases, we pick them one by one.
-                            // This "Iterative Best-Fit" is effectively brute force for independent variables.
                             for (let slot = 0; slot < s.j; slot++) {
                                 let bestJ = null;
-                                let maxJScore = -Infinity;
+                                let maxJScore = -1;
                                 
                                 unlocked.forEach(cand => {
-                                    const testJoiners = [...joiners, cand];
+                                    const testJoiners = [...currentJoiners, cand];
                                     const score = calcPowerScore(leaders, testJoiners, s.c, s.w, s.b);
                                     if (score > maxJScore) {
                                         maxJScore = score;
                                         bestJ = cand;
                                     }
                                 });
-                                joiners.push(bestJ);
+                                currentJoiners.push(bestJ);
                             }
                         }
 
-                        const finalScore = calcPowerScore(leaders, joiners, s.c, s.w, s.b);
+                        const finalScore = calcPowerScore(leaders, currentJoiners, s.c, s.w, s.b);
                         if (finalScore > best.score) {
-                            best = { leaders, joiners, score: finalScore };
+                            best = { leaders, joiners: currentJoiners, score: finalScore };
                         }
                     }
                 }
             }
-
             renderOptimizerCard(s, best, resArea);
         });
-    }, 50);
+    }, 100);
 };
+
+function renderOptimizerCard(scenario, best, container) {
+    const card = document.createElement('div');
+    card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4";
+    
+    const isStats = document.getElementById('use-account-stats').checked;
+    // Format the score: if it's raw power (stats), use shorthand, else use multiplier
+    const scoreDisplay = isStats ? (best.score / 1000000).toFixed(2) + "M" : best.score.toFixed(3) + "x";
+
+    card.innerHTML = `
+        <div class="flex flex-col md:flex-row items-center gap-6 w-full">
+            <div class="text-center md:text-left min-w-[120px]">
+                <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">${scenario.l}</div>
+                <div class="text-2xl font-black text-white">${scoreDisplay}</div>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+                <div class="flex -space-x-3">
+                    ${best.leaders.map(n => `
+                        <div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-800 overflow-hidden shadow-lg z-10">
+                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            ${best.joiners.length > 0 ? `
+                <div class="flex flex-wrap gap-1 justify-center opacity-60">
+                    ${best.joiners.map(n => `
+                        <div class="w-10 h-10 rounded-full border border-slate-700 bg-slate-900 overflow-hidden">
+                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+    container.appendChild(card);
+}
 
 function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
     let skillBuckets = {};
     let widgetMult = 1.0;
     
-    // 1. Calculate Global Widget Multiplier (Product of 3 leader widgets)
+    // 1. Global Widget Multiplier (Product of leader widgets)
     if (allowWidgets) {
         leaders.forEach(n => {
             const d = HEROES[n];
+            const r = roster[n];
             if (d.widget && d.widget.context === ctx) {
-                widgetMult *= (1 + WIDGET_GROWTH[roster[n].widget]);
+                widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
             }
         });
     }
 
-    // 2. Consolidate Hero Counts (Leader counts for S1, S2, S3. Joiners only S1)
-    const heroManifest = {}; // name: { s1_count: N, s2_count: N, s3_count: N }
-    
+    // 2. Map counts: Leaders contribute to all 3 skill slots, Joiners only S1
+    const manifest = {}; 
     leaders.forEach(n => {
-        if (!heroManifest[n]) heroManifest[n] = { s1: 0, s2: 0, s3: 0 };
-        heroManifest[n].s1++; heroManifest[n].s2++; heroManifest[n].s3++;
+        if (!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
+        manifest[n].s1++; manifest[n].s2++; manifest[n].s3++;
     });
     joiners.forEach(n => {
-        if (!heroManifest[n]) heroManifest[n] = { s1: 0, s2: 0, s3: 0 };
-        heroManifest[n].s1++;
+        if (!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
+        manifest[n].s1++;
     });
 
-    // 3. Apply Independence Rule to Skills
-    Object.keys(heroManifest).forEach(name => {
+    // 3. Process Skills with Independence Rule
+    for (const name in manifest) {
         const d = HEROES[name];
         const r = roster[name];
-        
         d.skills.forEach((s, si) => {
-            const count = heroManifest[name][`s${si+1}`];
-            if (count === 0) return;
+            const count = manifest[name][`s${si+1}`];
+            if (!count || count <= 0) return;
 
-            // Bear Trap Filter: Only IDs 101, 102 (Numerical buffs)
+            // Bear filter: ID 1xx only
             if (isBear && !s.ids.some(id => id < 200)) return;
-            // PvP Filter: If not bear, exclude non-combat skills if necessary (not needed based on your IDs)
 
-            const level = r[`s${si+1}`] || 5;
-            const p = s.getChance(s.values[level-1]);
-            const m = s.getMagnitude(s.values[level-1]);
+            const lvl = r[`s${si+1}`] || 1;
+            const p = s.getChance(s.values[lvl-1]);
+            const m = s.getMagnitude(s.values[lvl-1]);
             const dur = isBear ? 0 : (s.duration || 0);
 
-            // Probability that at least one hero triggers the skill
             const pAny = 1 - Math.pow(1 - p, count);
-            // Expected uptime across waves based on duration
             const uptime = (dur === 0) ? pAny : (1 - Math.pow(1 - pAny, dur));
 
             s.ids.forEach((id, idx) => {
@@ -461,23 +492,21 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
                 skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag);
             });
         });
-    });
+    }
 
-    // 4. Final Aggregation
     let skillTotalMult = 1.0;
     Object.values(skillBuckets).forEach(v => skillTotalMult *= (1 + v));
 
-    // 5. Account Stats Integration (The most important fix)
-    if (document.getElementById('use-account-stats').checked && nakedStats) {
-        let totalWeightedStat = 0;
-        const types = ['inf', 'cav', 'arc'];
-        
-        types.forEach(t => {
-            // Base Naked Stat
-            let baseAtt = nakedStats[`${t}_att`];
-            let baseLeth = nakedStats[`${t}_leth`];
+    // 4. Score Calculation
+    const isUsingStats = document.getElementById('use-account-stats').checked && nakedStats;
+    
+    if (isUsingStats) {
+        let totalPower = 0;
+        ['inf', 'cav', 'arc'].forEach(t => {
+            let baseAtt = nakedStats[`${t}_att`] || 0;
+            let baseLeth = nakedStats[`${t}_leth`] || 0;
 
-            // Add Flat Hero Stars & Widget Stats
+            // Add Flat Stars/Widgets from Leaders
             leaders.forEach(n => {
                 const d = HEROES[n];
                 const r = roster[n];
@@ -487,18 +516,13 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
                 }
             });
 
-            // Apply global Widget Multiplier and Skill Multiplier
-            // Note: In simplified power score, we treat Att * Leth as the efficiency metric
-            const finalAtt = baseAtt * widgetMult * skillTotalMult;
-            const finalLeth = baseLeth * widgetMult * skillTotalMult;
-            
-            totalWeightedStat += (finalAtt * finalLeth);
+            // (Base + Flats) * WidgetGlobal * SkillTotal
+            // We use (Attack * Lethality) as a proxy for total damage potential
+            totalPower += (baseAtt * widgetMult * skillTotalMult) * (baseLeth * widgetMult * skillTotalMult);
         });
-        
-        return totalWeightedStat;
+        return totalPower;
     }
 
-    // Default: Return abstract multiplier if no account stats
     return skillTotalMult * widgetMult;
 }
 
