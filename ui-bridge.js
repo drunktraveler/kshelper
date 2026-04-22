@@ -317,11 +317,14 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
+    // VOLUME FIX: Correctly sum ALL batches for army total
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
+    const oppSide = optRole === 'atk' ? setup.def : setup.atk;
     const userTotal = userSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
+    const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : oppSide.batches.reduce((s,b)=> s + sum(b), 0);
     const leadTier = userSide.batches[0].tier, leadTG = userSide.batches[0].tg;
-    
-     if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
+
+    if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
     else if (mode === 'current') {
         const side = optRole === 'atk' ? setup.def : setup.atk;
         const d = side.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
@@ -339,10 +342,18 @@ window.runOptimizer = (mode) => {
             let k=100-i-j, wins=0, totalNet=0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                const userBatches = userSide.batches.map(b => ({ tier: b.tier, tg: b.tg, inf: (i/100)*sum(b), cav: (j/100)*sum(b), arc: (k/100)*sum(b) }));
-                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf*userTotal, cav: opp.cav*userTotal, arc: opp.arc*userTotal };
+                
+                // DISTRIBUTE % over TOTAL user army
+                const userBatches = userSide.batches.map(b => ({
+                    tier: b.tier, tg: b.tg,
+                    inf: (i/100) * (b.inf+b.cav+b.arc),
+                    cav: (j/100) * (b.inf+b.cav+b.arc),
+                    arc: (k/100) * (b.inf+b.cav+b.arc)
+                }));
+                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf*oppTotal, cav: opp.cav*oppTotal, arc: opp.arc*oppTotal };
 
                 if (isBear) {
+                    // FORCE 3 Batches for Bear to trigger diversity bonus sqrt(x)
                     s.atk.batches = [
                         { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * (userTotal/100), cav: 0, arc: 0 },
                         { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * (userTotal/100), arc: 0 },
