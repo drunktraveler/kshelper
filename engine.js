@@ -3,6 +3,7 @@ import { HEROES } from './heroes.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
+
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false, isOptimizing = false) {
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
@@ -66,7 +67,10 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 let kills;
                 if (isBear) {
-                    kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * wave_s_mult * 1.25;
+                    // Fix: Define the missing wave_s_mult (usually 1.0 for the simulation start)
+                    // and ensure the formula uses the values correctly.
+                    const bear_scaling = 1.0; 
+                    kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * bear_scaling * 1.25;
                     totalDmg += kills;
                 } else {
                     kills = (Math.sqrt(sC[u])*sq_min*atk*leth*interaction*abil*sMod.units.all*Math.pow(1.15,3))/(df*hp*100);
