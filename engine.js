@@ -22,7 +22,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
         const sigma = Math.sqrt((p * (1 - p)) / 12); 
-        return mode === 'lucky' ? Math.min(1, p + 1.96 * sigma) : Math.max(0, p - 1.96 * sigma);
+        const shifted = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
+        return Math.max(0, Math.min(1, shifted));
     };
 
     // Track procs for logs
@@ -55,13 +56,17 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 // --- TROOP ABILITY LOGIC ---
                 let abil = 1.0; const w = sP.weights[u];
                 const tSht = (p, id) => {
-                    const res = isStochastic ? (Math.random() < p ? 1 : 0) : (shift(p, sL) > p ? 1 : (shift(p, sL) < p ? 0 : (Math.random() < p ? 1 : 0)));
-                    if (isStochastic && res === 1) troopProcs[side][id]++;
-                    return res;
+                    if (isStochastic) {
+                        const res = Math.random() < p ? 1 : 0;
+                        if (res === 1) troopProcs[side][id]++;
+                        return res;
+                    }
+                    // Deterministic: If shifted prob > 0.5, treat as triggered
+                    return shift(p, sL) >= 0.5 ? 1 : 0;
                 };
 
                 if (u==='arc') { 
-                    if (w.t7 > 0 && tSht(0.1, 'ds')) abil *= (1 + w.t7); 
+                    if (w.t7 > 0 && tSht(0.1, 'ds')) abil *= (1 + 0.2 * w.t7); // T7 Archer bonus
                     const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); 
                     if (windP > 0 && tSht(windP, 'ds')) abil *= 1.5; 
                 }
