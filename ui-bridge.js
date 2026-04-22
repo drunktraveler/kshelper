@@ -347,23 +347,26 @@ window.runOptimizer = (mode) => {
     // 3. Rendering with two markers
     const plotId = isBear ? 'bear-plot' : 'ternary-plot';
     const traces = [
-        { 
-            type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, 
-            mode:'markers', 
-            marker:{ color:dataPoints.z, colorscale:'Viridis', size:6, opacity: 0.8 },
-            hovertemplate: 'Inf: %{a}%<br>Cav: %{b}%<br>Arc: %{c}%<extra></extra>'
-        },
-        { 
-            // 10/10/80 Marker
-            type:'scatterternary', a:[10], b:[10], c:[80], name:'Standard 10/10/80', 
-            mode:'markers', marker:{size:12, symbol:'circle-open', color:'white', line:{width:3}} 
-        },
-        { 
-            // Optimal Marker
-            type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', 
-            mode:'markers', marker:{size:16, symbol:'star', color:'#fbbf24', line:{width:2, color:'black'}} 
-        }
-    ];
+    { 
+        type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, 
+        mode:'markers', 
+        marker:{ color:dataPoints.z, colorscale:'Viridis', size:6, opacity: 0.7 }
+    },
+    { 
+        // 10/10/80 Marker - NOW RED
+        type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', 
+        mode:'markers+text', 
+        text: ['10/10/80'], textposition: 'bottom center',
+        marker:{size:12, symbol:'circle-open', color:'#ff4444', line:{width:3}} 
+    },
+    { 
+        // Optimal Marker - GOLD STAR
+        type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', 
+        mode:'markers+text',
+        text: ['BEST'], textposition: 'top center',
+        marker:{size:18, symbol:'star', color:'#fbbf24', line:{width:2, color:'black'}} 
+    }
+];
 
     Plotly.newPlot(plotId, traces, { 
         ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, 
