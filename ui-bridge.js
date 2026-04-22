@@ -1,7 +1,7 @@
 import { HEROES } from './heroes.js';
-import { WIDGET_STATS } from './widgets.js';
-import { runCombatSim } from './engine.js';
+import { runCombatSim, isAlive } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
+import { WIDGET_STATS } from './widgets.js';
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
@@ -9,28 +9,41 @@ let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 
 let state = {
-    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, star: 5, sub: 0, widgetLv: 10 })) }
+    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
 
-// --- INITIALIZATION ---
+// --- 1. INITIALIZATION ---
 window.init = () => {
-    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
+    console.log("Kingshot Hub: Initializing logic...");
     
-    // Populate all hero selects (Battle + Calibration)
-    const selects = [document.getElementById('hero-select'), ...document.querySelectorAll('.rep-hero')];
-    selects.forEach(s => {
-        if(!s) return;
-        s.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => s.innerHTML += `<option value="${n}">${n}</option>`);
+    // Sync roster with DB
+    Object.keys(HEROES).forEach(n => { 
+        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
     });
 
+    // Populate all hero selects
+    const mainSel = document.getElementById('hero-select');
+    const calibSels = document.querySelectorAll('.rep-hero');
+    const allDropdowns = [mainSel, ...calibSels];
+
+    allDropdowns.forEach(sel => {
+        if(!sel) return;
+        sel.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => {
+            sel.innerHTML += `<option value="${n}">${n}</option>`;
+        });
+    });
+
+    if(mainSel) mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
+
+    // Build Stat Table (Battle Tab)
     const table = document.getElementById('stat-table');
-    const categories = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
-    const units = ["Infantry", "Cavalry", "Archer"];
     if(table) {
+        const units = ["Infantry", "Cavalry", "Archer"];
+        const cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
         table.innerHTML = '';
-        units.forEach(u => categories.forEach(c => {
+        units.forEach(u => cats.forEach(c => {
             const row = document.createElement('div'); row.className = "stat-row";
             row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
             const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
@@ -38,155 +51,22 @@ window.init = () => {
             table.appendChild(row);
         }));
     }
+
     window.addBatch('atk', true); window.addBatch('def', true);
-    window.updateGrids(); renderRosterUI(); window.showTab('battle');
+    window.updateGrids(); renderRosterUI(); 
+    if(nakedStats) renderNakedStats();
+    window.showTab('battle');
 };
 
-window.toggleAccountStats = () => {
-    const isEnabled = document.getElementById('use-account-stats').checked;
-    document.getElementById('account-stats-ui').classList.toggle('hidden', !isEnabled);
-};
-
-// --- Roster Logic with Fixed StopPropagation ---
-function renderStarSelector(name, currentIndex) {
-    let html = `<select onclick="event.stopPropagation()" onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
-                class="bg-slate-800 text-[10px] text-slate-300 rounded px-2 py-1 outline-none border border-slate-700 w-full mt-1 cursor-pointer hover:border-blue-500 transition-colors">`;
-    for (let i = 0; i <= 30; i++) {
-        const star = Math.floor(i / 6), sub = i % 6;
-        html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${star === 5 ? '5.0 (Max)' : 'Star: '+star+'.'+sub}</option>`;
-        if (star === 5) break; 
-    }
-    return html + `</select>`;
-}
-
-window.reverseEngineerAccount = () => {
-    const ctx = document.getElementById('report-ctx').value;
-    const reportHeroes = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
-    
-    // Grab report values (Infantry example, repeat for Cav/Arc)
-    const reportVal = {
-        inf_att: parseFloat(document.getElementById('rep-inf-att').value) || 0,
-        inf_def: parseFloat(document.getElementById('rep-inf-def').value) || 0,
-        inf_leth: parseFloat(document.getElementById('rep-inf-leth').value) || 0,
-        inf_hp: parseFloat(document.getElementById('rep-inf-hp').value) || 0,
-        cav_att: parseFloat(document.getElementById('rep-cav-att').value) || 0,
-        cav_def: parseFloat(document.getElementById('rep-cav-def').value) || 0,
-        cav_leth: parseFloat(document.getElementById('rep-cav-leth').value) || 0,
-        cav_hp: parseFloat(document.getElementById('rep-cav-hp').value) || 0,
-        arc_att: parseFloat(document.getElementById('rep-arc-att').value) || 0,
-        arc_def: parseFloat(document.getElementById('rep-arc-def').value) || 0,
-        arc_leth: parseFloat(document.getElementById('rep-arc-leth').value) || 0,
-        arc_hp: parseFloat(document.getElementById('rep-arc-hp').value) || 0,
-    };
-
-    // Calculate Widget Multiplier to subtract
-    let widgetMult = 1.0;
-    let widgetStatMap = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    
-    reportHeroes.forEach(name => {
-        if(name === "None") return;
-        const d = HEROES[name];
-        const r = roster[name];
-        if (d.widget && d.widget.context === ctx) widgetMult += WIDGET_GROWTH[r.widget];
-    });
-
-    // Subtraction logic
-    const results = {};
-    const stats = ['att', 'def', 'leth', 'hp'];
-    const types = ['inf', 'cav', 'arc'];
-
-    types.forEach(t => {
-        stats.forEach(s => {
-            let val = reportVal[`${t}_${s}`];
-            // 1. Divide by widget multiplier
-            val = val / widgetMult;
-            
-            // 2. Subtract Hero Star/Widget Flat Bonuses
-            reportHeroes.forEach(name => {
-                if(name === "None") return;
-                const d = HEROES[name];
-                const r = roster[name];
-                if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') {
-                        val -= GROWTH_TEMPLATES[d.template][(r.s1*6)]; // Simplified star lookup
-                    } else {
-                        val -= WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
-                    }
-                }
-            });
-            results[`${t}_${s}`] = val;
-        });
-    });
-
-    nakedStats = results;
-    localStorage.setItem('ks_naked_stats', JSON.stringify(nakedStats));
-    renderNakedStats();
-};
-
-function renderNakedStats() {
-    const div = document.getElementById('naked-stats-display');
-    div.classList.remove('hidden');
-    div.innerHTML = Object.entries(nakedStats).map(([key, val]) => `
-        <div class="text-center">
-            <div class="text-[8px] text-slate-500 uppercase font-black">${key.replace('_',' ')}</div>
-            <div class="text-xs font-bold text-blue-400">${val.toFixed(1)}%</div>
-        </div>
-    `).join('');
-}
-
-// --- 2. THE ACCOUNT-AWARE OPTIMIZER ---
-
-function calcTotalPower(leaders, joiners, ctx, allowWidgets) {
-    const skillMultiplier = calcPowerScore(leaders, joiners, ctx, allowWidgets);
-    if (!document.getElementById('use-account-stats').checked || !nakedStats) return skillMultiplier;
-
-    // Calculate Stat Growth Multiplier
-    let currentStats = { ...nakedStats };
-    let widgetMult = 1.0;
-
-    // Add hero/widget bonuses from the candidate trio
-    leaders.forEach(name => {
-        if(name === "None") return;
-        const d = HEROES[name];
-        const r = roster[name];
-        const type = d.type.toLowerCase().slice(0,3);
-
-        if (d.widget && d.widget.context === ctx && allowWidgets) widgetMult += WIDGET_GROWTH[r.widget];
-        
-        currentStats[`${type}_att`] += GROWTH_TEMPLATES[d.template][(r.s1*6)];
-        currentStats[`${type}_def`] += GROWTH_TEMPLATES[d.template][(r.s1*6)];
-        currentStats[`${type}_leth`] += WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
-        currentStats[`${type}_hp`] += WIDGET_STATS[d.template] ? WIDGET_STATS[d.template][r.widget] : 0;
-    });
-
-    // TPF Calculation: product of the 4 stat "areas" multiplied by skill buckets
-    // We normalize this by dividing by the "Naked" area to see the actual growth factor
-    let statFactor = 1.0;
-    Object.keys(currentStats).forEach(key => {
-        statFactor *= (1 + (currentStats[key] * widgetMult / 100));
-    });
-
-    let nakedFactor = 1.0;
-    Object.keys(nakedStats).forEach(key => {
-        nakedFactor *= (1 + (nakedStats[key] / 100));
-    });
-
-    return (statFactor / nakedFactor) * skillMultiplier;
-}
-
+// --- 2. GLOBAL UI HANDLERS ---
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
-    const labels = { battle: 'Battle Sim', formation: 'Formations', bear: 'Bear', roster: 'Best Heroes' };
-    
     Object.keys(screens).forEach(k => {
         const el = document.getElementById(screens[k]);
         if (el) el.classList.toggle('hidden', k !== tab);
         const b = document.getElementById(btns[k]);
-        if (b) {
-            b.innerText = labels[k];
-            b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
-        }
+        if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
 };
 
@@ -221,19 +101,41 @@ window.updateFormation = (side) => {
     }
 };
 
+window.updateStatColors = (el) => {
+    const row = el.closest('.stat-row'); if (!row) return;
+    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
+    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
+    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
+    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
+};
+
+// --- 3. ROSTER RENDERERS ---
 function renderLevelPicker(hero, key, current, isRoster = true) {
     let h = `<div class="flex gap-1">`;
     for(let i=1; i<=5; i++) {
         const action = isRoster ? `window.updateRoster('${hero}','${key}',${i})` : `window.updateModalLevel('${key}',${i})`;
-        h += `<button onclick="event.stopPropagation(); ${action}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
+        h += `<button onclick="event.stopPropagation(); ${action}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}">${i}</button>`;
     }
     return h + `</div>`;
 }
 
 function renderWidgetPicker(hero, current) {
     let h = `<div class="flex flex-wrap gap-1 max-w-[150px]">`;
-    for(let i=0; i<=10; i++) h += `<button onclick="event.stopPropagation(); window.updateRoster('${hero}','widget',${i})" class="w-5 h-5 rounded text-[8px] font-bold ${current == i ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
+    for(let i=0; i<=10; i++) {
+        h += `<button onclick="event.stopPropagation(); window.updateRoster('${hero}','widget',${i})" class="w-5 h-5 rounded text-[8px] font-bold ${current == i ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
+    }
     return h + `</div>`;
+}
+
+function renderStarSelector(name, currentIndex) {
+    let html = `<select onclick="event.stopPropagation()" onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
+                class="bg-slate-800 text-[10px] text-slate-300 rounded px-2 py-1 outline-none border border-slate-700 w-full mt-1 cursor-pointer hover:border-blue-500 transition-colors">`;
+    for (let i = 0; i <= 30; i++) {
+        const star = Math.floor(i / 6), sub = i % 6;
+        html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${star === 5 ? '5.0 (Max)' : 'Star: '+star+'.'+sub}</option>`;
+        if (star === 5) break; 
+    }
+    return html + `</select>`;
 }
 
 function renderRosterUI() {
@@ -244,13 +146,13 @@ function renderRosterUI() {
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
         card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-lg shadow-blue-900/20' : 'opacity-40 border-transparent bg-slate-950/20'}`;
         let skillsHtml = h.skills.map((s, i) => `<div class="mt-2" onclick="event.stopPropagation()"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shadow-inner"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase tracking-tighter">${n}</div></div>${r.unlocked ? `<div class="space-y-3"><div><span class="text-[8px] text-slate-500 font-black uppercase">Star Level</span>${renderStarSelector(n, r.starIndex)}</div>${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800" onclick="event.stopPropagation()"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
+        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shadow-inner"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase tracking-tighter">${n}</div></div>${r.unlocked ? `<div class="space-y-3"><div><span class="text-[8px] text-slate-500 font-black uppercase">Development Level</span>${renderStarSelector(n, r.starIndex)}</div>${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800" onclick="event.stopPropagation()"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
         grid.appendChild(card);
     });
 }
+window.updateRoster = (n,k,v) => { roster[n][k]=parseInt(v); localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
 
-window.updateRoster = (n,k,v) => { roster[n][k]=v; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-
+// --- 4. BATTLE LOGIC ---
 window.openHeroModal = (side, index) => {
     activeSlot = { side, index }; const h = state[side].heroes[index];
     modalTemp = { s1: h.s1, s2: h.s2, s3: h.s3 };
@@ -272,7 +174,7 @@ function renderSkillsInModal(name, slot) {
 }
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
-    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, star: 5, sub: 0, widgetLv: roster[name]?.widget || 0 };
+    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30, widgetLv: roster[name]?.widget || 0 };
     window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
@@ -291,240 +193,56 @@ window.updateGrids = () => {
     });
 };
 
-window.handleSimulation = async () => {
-    const setup = gatherSetup();
-    const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rLuck, rBad, modeLabel;
-
-    if (simMode === 'monte-carlo') {
-        modeLabel = "Deep Sim (100 Runs)";
-        const runs = 100; let batch = [];
-        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a,b) => (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc));
-        
-        const atkWins = batch.filter(r => (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) > (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)).length;
-        const winner = atkWins >= 50 ? 'atk' : 'def';
-
-        rAvg = {
-            m_cur: { inf: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs:0, cav: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs:0, arc: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs:0 },
-            e_cur: { inf: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs:0, cav: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs:0, arc: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs:0 },
-            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
-            atk_mults: batch[50].atk_mults, def_mults: batch[50].def_mults,
-            startAtk: batch[0].startAtk, startDef: batch[0].startDef
-        };
-        rBad = batch[0]; rLuck = batch[runs-1];
-    } else {
-        modeLabel = "Quick Sim (Estimate)";
-        rAvg = runCombatSim(setup, 'average', 'average');
-        rLuck = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rBad = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
-    }
-
-    const screen = document.getElementById('result-screen'); screen.classList.remove('hidden');
-    const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / (r.startDef||1) ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / (r.startAtk||1) );
-    const sMin = getScore(rLuck), sMax = getScore(rBad);
-    document.getElementById('luck-bar-inner').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
-    document.getElementById('luck-bar-inner').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    
-    document.getElementById('res-atk-total').innerHTML = `<span>${Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rBad.m_cur.inf+rBad.m_cur.cav+rBad.m_cur.arc).toLocaleString()} - ${Math.round(rLuck.m_cur.inf+rLuck.m_cur.cav+rLuck.m_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('res-def-total').innerHTML = `<span>${Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString()}</span><div class="text-[10px] text-slate-500 italic">Range: ${Math.round(rLuck.e_cur.inf+rLuck.e_cur.cav+rLuck.e_cur.arc).toLocaleString()} - ${Math.round(rBad.e_cur.inf+rBad.e_cur.cav+rBad.e_cur.arc).toLocaleString()}</div>`;
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[ATTACKER BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mb-2 mt-4">[DEFENDER BUFFS]</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    document.getElementById('result-waves').innerText = `Simulation complete after ${rAvg.wave} waves`;
-    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
+// --- 5. ACCOUNT CALIBRATION ---
+window.toggleAccountStats = () => {
+    const isEnabled = document.getElementById('use-account-stats').checked;
+    document.getElementById('account-stats-ui').classList.toggle('hidden', !isEnabled);
 };
 
-// --- OPTIMIZER (Updated for Bear Stats & Highlights) ---
-window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear';
-    const setup = gatherSetup();
-    const atkTotal = 1000000;
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
-    let score101080 = 0;
-
-    if(isBear) {
-        setup.atk.stats = {
-            inf_att: parseFloat(document.getElementById('bear-inf-att').value),
-            inf_leth: parseFloat(document.getElementById('bear-inf-leth').value),
-            cav_att: parseFloat(document.getElementById('bear-cav-att').value),
-            cav_leth: parseFloat(document.getElementById('bear-cav-leth').value),
-            arc_att: parseFloat(document.getElementById('bear-arc-att').value),
-            arc_leth: parseFloat(document.getElementById('bear-arc-leth').value),
-        };
-    }
-
-    const minInf = isBear ? 0 : 20;
-    for (let i = minInf; i <= 100; i += 2) {
-        for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j;
-            let curS = JSON.parse(JSON.stringify(setup));
-            curS.atk.batches = [{ 
-                tier: isBear ? parseInt(document.getElementById('bear-inf-tier').value) : 10, // Simplified for loop
-                tg: isBear ? parseInt(document.getElementById('bear-inf-tg').value) : 3, 
-                inf: i*10000, cav: j*10000, arc: k*10000 
-            }];
-            const r = runCombatSim(curS, 'average', 'average', 100, isBear, true);
-            let score = isBear ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-            if (isBear && i === 10 && j === 10) score101080 = score;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
-            if (score > best.score) best = { score, form: [i,j,k] };
-        }
-    }
-
-    const mainTrace = { type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:10, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' };
-    const markers = [
-        { type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', mode:'markers', marker:{size:12, symbol:'cross', color:'white', line:{width:2, color:'black'}} },
-        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', mode:'markers', marker:{size:15, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }
-    ];
-
-    Plotly.newPlot(isBear?'bear-plot':'ternary-plot', [mainTrace, ...markers], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0}, showlegend: false });
+window.reverseEngineerAccount = () => {
+    const ctx = document.getElementById('report-ctx').value;
+    const reportHeroes = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
-    if(isBear) {
-        document.getElementById('bear-total-dmg').innerText = `Max Dealt: ${Math.round(best.score).toLocaleString()}`;
-        document.getElementById('bear-best-form').innerText = `Best Split: ${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-        const gain = ((best.score / (score101080 || 1)) - 1) * 100;
-        document.getElementById('bear-comparison').innerText = `This is ${gain.toFixed(1)}% more damage than the 10/10/80 standard.`;
-    } else {
-        document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-        document.getElementById('opt-best-score').innerText = `Best margin: +${Math.round(best.score).toLocaleString()} survivors`;
-    }
-};
+    const reportVal = {};
+    ['inf','cav','arc'].forEach(t => ['att','def','leth','hp'].forEach(s => {
+        reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
+    }));
 
-window.calculateOptimalLineups = () => {
-    const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if(unlocked.length < 3) return alert("Unlock heroes in the roster.");
-    const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
-    
-    const byType = { Inf: [], Cav: [], Arc: [] };
-    unlocked.forEach(n => byType[HEROES[n].type].push(n));
+    let widgetSum = 0;
+    reportHeroes.forEach(name => {
+        if(name === "None") return;
+        if (HEROES[name].widget && HEROES[name].widget.context === ctx) widgetSum += WIDGET_GROWTH[roster[name].widget];
+    });
 
-    const scens = [
-        {l:"Solo Attack", c:"off", j:false, w:false, b:false},
-        {l:"Solo Defense", c:"def", j:false, w:true, b:false},
-        {l:"Rally w/ Joiners", c:"off", j:true, w:true, b:false},
-        {l:"Garrison w/ Joiners", c:"def", j:true, w:true, b:false},
-        {l:"Optimal Bear (10 Waves)", c:"off", j:true, w:true, b:true}
-    ];
-
-    scens.forEach(s => {
-        let best = { leaders: [], joiners: [], score: 0 };
-        for (let i of (byType.Inf.length?byType.Inf:["None"])) 
-        for (let c of (byType.Cav.length?byType.Cav:["None"])) 
-        for (let a of (byType.Arc.length?byType.Arc:["None"])) {
-            const trio = [i, c, a].filter(n => n !== "None");
-            if(trio.length === 0) continue;
-
-            let joiners = [];
-            if (s.j) {
-                // FIXED: We no longer filter out leaders. Anyone unlocked can be a joiner.
-                for (let slot = 0; slot < 4; slot++) {
-                    let bestJ = unlocked.map(n => ({ n, i: calcPowerScore(trio, [...joiners, n], s.c, s.w) })).sort((a,b)=>b.i-a.i)[0].n;
-                    joiners.push(bestJ);
+    const results = {};
+    ['inf','cav','arc'].forEach(t => {
+        ['att','def','leth','hp'].forEach(s => {
+            let val = reportVal[`${t}_${s}`] / (1 + widgetSum);
+            reportHeroes.forEach(name => {
+                if(name === "None") return;
+                const d = HEROES[name];
+                if (d.type.toLowerCase().slice(0,3) === t) {
+                    if (s === 'att' || s === 'def') val -= GROWTH_TEMPLATES[d.template][roster[name].starIndex];
+                    else val -= WIDGET_STATS[d.template][roster[name].widget];
                 }
-            }
-            const score = calcPowerScore(trio, joiners, s.c, s.w, s.b);
-            if (score > best.score) best = { leaders: trio, joiners, score };
-        }
-
-        const card = document.createElement('div');
-        card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center h-28";
-        card.innerHTML = `
-            <div class="flex items-center gap-4">
-                <div class="space-y-1">
-                    <div class="text-[9px] font-black text-blue-400 uppercase tracking-widest">${s.l}</div>
-                    <div class="flex -space-x-2">
-                        ${best.leaders.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 bg-slate-900 shadow-lg" title="${n}">`).join('')}
-                    </div>
-                </div>
-                ${s.j ? `
-                <div class="flex -space-x-1 opacity-50 scale-90 origin-left">
-                    ${best.joiners.map(n => `<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 bg-slate-950">`).join('')}
-                </div>` : ''}
-            </div>
-            <div class="text-right">
-                <div class="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-tighter">Multiplier</div>
-                <div class="text-3xl font-black text-white">${best.score.toFixed(3)}x</div>
-            </div>`;
-        resArea.appendChild(card);
+            });
+            results[`${t}_${s}`] = val;
+        });
     });
+
+    nakedStats = results;
+    localStorage.setItem('ks_naked_stats', JSON.stringify(nakedStats));
+    renderNakedStats();
 };
 
-// --- THE CORRECTED BRAIN: MULTIPLIER SCORING ---
-function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
-    let skillBuckets = {}; 
-    let widgetBuckets = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    const useStats = document.getElementById('use-account-stats').checked && nakedStats;
-    
-    const allHeroes = [...leaders.map(n => ({name: n, isL: true})), ...joiners.map(n => ({name: n, isL: false}))];
-    const heroSkillCounts = {}; 
-
-    // Solo Attack Rule
-    const widgetsDisabled = (ctx === 'off' && joiners.length === 0) || !allowWidgets;
-
-    // Stat multipliers for the account
-    let statMultiplier = 1.0;
-
-    allHeroes.forEach(hero => {
-        if (hero.name === "None" || !hero.name) return;
-        const d = HEROES[hero.name];
-        const r = roster[hero.name];
-        const type = d.type.toLowerCase().slice(0, 3); // 'inf', 'cav', or 'arc'
-
-        // 1. STAT SCALING (Diminishing Returns Math)
-        if (useStats && hero.isL) {
-            // Get Star bonus from template
-            const starBonus = GROWTH_TEMPLATES[d.template][r.starIndex];
-            // Get Widget flat stat from widgets.js
-            const flatWidgetStat = d.widget ? WIDGET_STATS[d.template][r.widget] : 0;
-
-            // Damage Area Growth: (Atk * Leth)
-            const curAtk = 100 + nakedStats[`${type}_att`];
-            const curLeth = 100 + nakedStats[`${type}_leth`];
-            
-            const attGain = (curAtk + starBonus) / curAtk;
-            const lethGain = (curLeth + flatWidgetStat) / curLeth;
-            
-            statMultiplier *= (attGain * lethGain);
-            
-            // Note: We skip Def/HP growth for simplicity as Atk/Leth is the primary driver 
-            // of the "Power Score" in the sim, but you can add them if preferred.
-        }
-
-        // 2. WIDGET MULTIPLIERS (Additive within types)
-        if (hero.isL && d.widget && d.widget.context === ctx && !widgetsDisabled) {
-            widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
-        }
-
-        // 3. SKILLS
-        const skillsToProcess = hero.isL ? d.skills : [d.skills[0]];
-        skillsToProcess.forEach((s, si) => {
-            const skillKey = `${hero.name}_s${si}`;
-            if (isBear && !s.ids.some(id => id === 101 || id === 102)) return;
-            if (!heroSkillCounts[skillKey]) {
-                const x = s.values[r[`s${si+1}`]-1];
-                heroSkillCounts[skillKey] = { p: s.getChance(x), m: s.getMagnitude(x), ids: s.ids, duration: s.duration, count: 0 };
-            }
-            heroSkillCounts[skillKey].count++;
-        });
-    });
-
-    // 4. Resolve Skills and Final Multiplier
-    for (const key in heroSkillCounts) {
-        const item = heroSkillCounts[key];
-        const pAny = 1 - Math.pow(1 - item.p, item.count);
-        const uptime = item.duration === 0 ? pAny : (1 - Math.pow(1 - pAny, item.duration));
-        item.ids.forEach((id, idx) => {
-            const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
-            skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag);
-        });
-    }
-
-    let total = statMultiplier;
-    Object.values(widgetBuckets).forEach(v => total *= (1 + v));
-    Object.values(skillBuckets).forEach(v => total *= (1 + v));
-
-    return total;
+function renderNakedStats() {
+    const div = document.getElementById('naked-stats-display');
+    div.classList.remove('hidden');
+    div.innerHTML = Object.entries(nakedStats).map(([key, val]) => `
+        <div class="text-center"><div class="text-[8px] text-slate-500 uppercase font-black">${key.replace('_',' ')}</div><div class="text-xs font-bold text-blue-400">${val.toFixed(1)}%</div></div>`).join('');
 }
 
+// --- 6. SIMULATION & OPTIMIZERS ---
 function gatherSetup() {
     const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
     const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
@@ -534,23 +252,142 @@ function gatherSetup() {
     };
 }
 
-function getCombinations(arr, size) {
-    let res = []; function h(start, c) { if(c.length===size){res.push([...c]);return;} for(let i=start;i<arr.length;i++){c.push(arr[i]);h(i+1,c);c.pop();} }
-    h(0, []); return res;
+window.handleSimulation = async () => {
+    const setup = gatherSetup(); const simMode = document.getElementById('sim-mode-select').value;
+    let rAvg, rBest, rWorst, modeLabel;
+    if (simMode === 'monte-carlo') {
+        modeLabel = "Deep Sim (100 Runs)";
+        const runs = 100; let batch = [];
+        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        batch.sort((a,b) => (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc));
+        const atkWins = batch.filter(r => (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) > (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)).length;
+        const winner = atkWins >= 50 ? 'atk' : 'def';
+        rAvg = {
+            m_cur: { inf: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs:0, cav: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs:0, arc: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs:0 },
+            e_cur: { inf: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs:0, cav: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs:0, arc: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs:0 },
+            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
+            atk_mults: batch[50].atk_mults, def_mults: batch[50].def_mults,
+            startAtk: batch[0].startAtk, startDef: batch[0].startDef
+        };
+        rWorst = batch[0]; rBest = batch[runs-1];
+    } else {
+        modeLabel = "Quick Sim (Estimate)";
+        rAvg = runCombatSim(setup, 'average', 'average');
+        rBest = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
+        rWorst = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+    }
+    const screen = document.getElementById('result-screen'); screen.classList.remove('hidden');
+    const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / (r.startDef||1) ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / (r.startAtk||1) );
+    const sMin = getScore(rBest), sMax = getScore(rWorst);
+    document.getElementById('luck-bar-inner').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
+    document.getElementById('luck-bar-inner').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
+    document.getElementById('res-atk-total').innerText = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString();
+    document.getElementById('res-def-total').innerText = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString();
+    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | length: ${rAvg.wave} waves`;
+    screen.scrollIntoView({ behavior: 'smooth' });
+};
+
+window.runOptimizer = (mode) => {
+    const isBear = mode === 'bear';
+    const setup = gatherSetup(); const atkTotal = 1000000;
+    if(isBear) {
+        setup.atk.stats = { inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) };
+    }
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
+    let score101080 = 0;
+    let defenders = [];
+    if(mode==='meta') { for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) defenders.push({inf:i/100, cav:j/100, arc:(100-i-j)/100}); }
+    else if(mode==='current') { const d=setup.def.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0}); const t=d.inf+d.cav+d.arc||1; defenders.push({inf:d.inf/t,cav:d.cav/t,arc:d.arc/t}); }
+    else defenders.push({inf:1,cav:0,arc:0});
+
+    for (let i = (isBear?0:20); i <= 100; i += 2) {
+        for (let j = 0; j <= 100 - i; j += 2) {
+            let k = 100-i-j; let totalNet = 0; let wins = 0;
+            defenders.forEach(d => {
+                let s = JSON.parse(JSON.stringify(setup));
+                s.atk.batches = [{ tier: isBear?parseInt(document.getElementById('bear-inf-tier').value):10, tg:isBear?parseInt(document.getElementById('bear-inf-tg').value):3, inf:i*10000, cav:j*10000, arc:k*10000 }];
+                if(!isBear) s.def.batches = [{ tier:10, tg:3, inf:d.inf*atkTotal, cav:d.cav*atkTotal, arc:d.arc*atkTotal }];
+                const r = runCombatSim(s, 'average', 'average', 100, isBear, true);
+                let out = isBear ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
+                if(out > 0) wins++; totalNet += out;
+                if(isBear && i===10 && j===10) score101080 = out;
+            });
+            const score = mode === 'meta' ? (wins/defenders.length) : totalNet;
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+            if (score > best.score) best = { score, form: [i,j,k] };
+        }
+    }
+    const plotId = isBear?'bear-plot':'ternary-plot';
+    const mainTrace = { type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:10, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' };
+    const markers = [
+        { type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', mode:'markers', marker:{size:12, symbol:'cross', color:'white', line:{width:2, color:'black'}} },
+        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', mode:'markers', marker:{size:15, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }
+    ];
+    Plotly.newPlot(plotId, [mainTrace, ...markers], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0}, showlegend:false });
+    if(isBear) { 
+        document.getElementById('bear-total-dmg').innerText = `Max Dealt: ${Math.round(best.score).toLocaleString()}`; 
+        document.getElementById('bear-best-form').innerText = `Best Split: ${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        const gain = ((best.score / (score101080 || 1)) - 1) * 100;
+        document.getElementById('bear-comparison').innerText = `This is ${gain.toFixed(1)}% more damage than 10/10/80.`;
+    } else {
+        document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        document.getElementById('opt-best-score').innerText = `Survival Margin: +${Math.round(best.score).toLocaleString()} survivors`;
+    }
+};
+
+window.calculateOptimalLineups = () => {
+    const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
+    if(unlocked.length < 3) return alert("Unlock heroes.");
+    const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden'); resArea.innerHTML = '';
+    const byType = { Inf: [], Cav: [], Arc: [] }; unlocked.forEach(n => byType[HEROES[n].type].push(n));
+    if(!byType.Inf.length || !byType.Cav.length || !byType.Arc.length) return alert("Unlock 1 of each type.");
+
+    [{l:"Solo Attack",c:"off",j:false,w:false,b:false},{l:"Solo Defense",c:"def",j:false,w:true,b:false},{l:"Rally w/ Joiners",c:"off",j:true,w:true,b:false},{l:"Garrison w/ Joiners",c:"def",j:true,w:true,b:false},{l:"Optimal Bear",c:"off",j:true,w:true,b:true}].forEach(s => {
+        let best = { leaders: [], joiners: [], score: 0 };
+        for (let i of byType.Inf) for (let c of byType.Cav) for (let a of byType.Arc) {
+            const trio = [i, c, a]; let joiners = [];
+            if (s.j) {
+                for (let slot = 0; slot < 4; slot++) {
+                    let bestJ = unlocked.map(n => ({ n, i: calcPowerScore(trio, [...joiners, n], s.c, s.w, s.b) })).sort((a,b)=>b.i-a.i)[0].n;
+                    joiners.push(bestJ);
+                }
+            }
+            const score = calcPowerScore(trio, joiners, s.c, s.w, s.b);
+            if (score > best.score) best = { leaders: trio, joiners, score };
+        }
+        const card = document.createElement('div'); card.className="glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center h-28";
+        card.innerHTML = `<div class="flex items-center gap-4"><div class="space-y-1"><div class="text-[9px] font-black text-blue-400 uppercase">${s.l}</div><div class="flex -space-x-2">${best.leaders.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-12 h-12 rounded-full border-2 border-blue-500 shadow-lg">`).join('')}</div></div>${s.j?`<div class="flex -space-x-1 opacity-50 scale-90 origin-left">${best.joiners.map(n=>`<img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700">`).join('')}</div>`:''}</div><div class="text-right"><div class="text-xl font-black">${best.score.toFixed(3)}x</div></div>`;
+        resArea.appendChild(card);
+    });
+};
+
+function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
+    let skillBuckets = {}; let widgetBuckets = { attack:0, defense:0, lethality:0, health:0 };
+    const allH = [...leaders.map(n=>({n,isL:true})), ...joiners.map(n=>({n,isL:false}))];
+    const skillCounts = {};
+    allH.forEach(h => {
+        if(h.n==="None") return; const d=HEROES[h.n], r=roster[h.n];
+        if(h.isL && d.widget && d.widget.context===ctx && allowWidgets) widgetBuckets[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        const skills = h.isL?d.skills:[d.skills[0]];
+        skills.forEach((s, si) => {
+            if(isBear && !s.ids.some(id => id === 101 || id === 102)) return;
+            const key = `${h.n}_s${si}`;
+            if(!skillCounts[key]) skillCounts[key] = { p:s.getChance(s.values[r['s'+(si+1)]-1]), m:s.getMagnitude(s.values[r['s'+(si+1)]-1]), ids:s.ids, dur:isBear?0:s.duration, count:0, widget:(h.isL && d.widget && d.widget.context===ctx && allowWidgets) ? WIDGET_GROWTH[r.widget] : 0 };
+            skillCounts[key].count++;
+        });
+    });
+    for(const k in skillCounts) {
+        const item = skillCounts[k];
+        const pWave = 1 - Math.pow(1 - item.p, item.count);
+        const uptime = item.dur === 0 ? pWave : (1 - Math.pow(1 - pWave, item.dur));
+        item.ids.forEach((id, idx) => {
+            const mag = Array.isArray(item.m) ? item.m[idx] : item.m;
+            skillBuckets[id] = (skillBuckets[id] || 0) + (uptime * mag * (1 + item.widget));
+        });
+    }
+    let t = 1.0; Object.values(widgetBuckets).forEach(v => t *= (1+v)); Object.values(skillBuckets).forEach(v => t *= (1+v)); return t;
 }
-
-window.updateStatColors = (el) => {
-    const row = el.closest('.stat-row'); if (!row) return;
-    const a = row.querySelector('[data-side="atk"]'), d = row.querySelector('[data-side="def"]');
-    const vA = parseFloat(a.value)||0, vD = parseFloat(d.value)||0;
-    a.style.color = vA > vD ? '#10b981' : (vA < vD ? '#ef4444' : '#64748b');
-    d.style.color = vD > vA ? '#10b981' : (vD < vA ? '#ef4444' : '#64748b');
-};
-
-window.handleBearSim = () => {
-    const r = runCombatSim(gatherSetup(), 'average', 'average', 10, true);
-    document.getElementById('bear-total-dmg').innerText = Math.round(r.totalDmg).toLocaleString();
-};
 
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
