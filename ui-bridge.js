@@ -7,6 +7,7 @@ let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
+let optRole = 'atk'; // Default
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -56,6 +57,15 @@ window.init = () => {
     window.updateGrids(); renderRosterUI(); 
     if(nakedStats) renderNakedStats();
     window.showTab('battle');
+};
+
+window.setOptRole = (role) => {
+    optRole = role;
+    const btnAtk = document.getElementById('opt-role-atk');
+    const btnDef = document.getElementById('opt-role-def');
+    
+    btnAtk.className = role === 'atk' ? "px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
+    btnDef.className = role === 'def' ? "px-3 py-1 text-[10px] font-bold rounded bg-red-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
 };
 
 // --- 2. GLOBAL UI HANDLERS ---
@@ -300,85 +310,90 @@ window.handleSimulation = async () => {
 };
 
 window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear';
-    const setup = gatherSetup(); 
-    const atkTotal = 1000000;
-
-    if(isBear) {
-        // 1. Pull user stats (which already include their heroes/widgets)
-        setup.atk.stats = { 
-            inf_att: parseFloat(document.getElementById('bear-inf-att').value), 
-            inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
-            cav_att: parseFloat(document.getElementById('bear-cav-att').value), 
-            cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
-            arc_att: parseFloat(document.getElementById('bear-arc-att').value), 
-            arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
-        };
-        // Ensure no hero multipliers are added (as they are already in the report stats)
-        setup.atk.heroes = []; 
+    const setup = gatherSetup(); // Pulls stats/heroes from the Battle Sim tab
+    const resArea = document.getElementById('opt-best-form');
+    const scoreArea = document.getElementById('opt-best-score');
+    
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
+    
+    // The "Opponent" set
+    let opponents = [];
+    if (mode === 'current') {
+        const d = (optRole === 'atk' ? setup.def : setup.atk).batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
+        const t = d.inf+d.cav+d.arc || 1;
+        opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
+    } else {
+        // Meta Set: 10% increments (66 combinations)
+        for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
-    let score101080 = 0;
-
-    // 2. Heatmap Scan
-    for (let i = 0; i <= 100; i += 2) { // Higher precision (step 2)
+    // Step 2% = 5151 iterations
+    for (let i = 0; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j;
-            
-            let s = JSON.parse(JSON.stringify(setup));
-            // IMPORTANT: Create three distinct batches so engine.js uses correct Tier/TG for each type
-            s.atk.batches = [
-                { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * 10000, cav: 0, arc: 0 },
-                { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 10000, arc: 0 },
-                { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 10000 }
-            ];
+            let k = 100 - i - j;
+            let wins = 0;
+            let netSurvivors = 0;
 
-            // Bear is 100% Inf defender
-            const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
+            opponents.forEach(opp => {
+                let simSetup = JSON.parse(JSON.stringify(setup));
+                
+                // Configure the Simulation based on Role
+                if (optRole === 'atk') {
+                    simSetup.atk.batches = [{tier:10, tg:3, inf:i*1000, cav:j*1000, arc:k*1000}];
+                    simSetup.def.batches = [{tier:10, tg:3, inf:opp.inf*100000, cav:opp.cav*100000, arc:opp.arc*100000}];
+                } else {
+                    simSetup.def.batches = [{tier:10, tg:3, inf:i*1000, cav:j*1000, arc:k*1000}];
+                    simSetup.atk.batches = [{tier:10, tg:3, inf:opp.inf*100000, cav:opp.cav*100000, arc:opp.arc*100000}];
+                }
+
+                const r = runCombatSim(simSetup, 'average', 'average', 100, false, true);
+                
+                const userSurv = optRole === 'atk' ? (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) : (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
+                const enemySurv = optRole === 'atk' ? (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc) : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc);
+                
+                if (userSurv > enemySurv) wins++;
+                netSurvivors += (userSurv - enemySurv);
+            });
+
+            // Scoring Logic
+            // If Unknown: Primary is WinRate, Secondary is Net Survivors
+            // If Current: Primary is Net Survivors
+            const score = (mode === 'meta') ? (wins * 100000000) + netSurvivors : netSurvivors;
             
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(r.totalDmg);
-            
-            if (r.totalDmg > best.score) best = { score: r.totalDmg, form: [i,j,k] };
-            if (i === 10 && j === 10) score101080 = r.totalDmg;
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+            if (score > best.score) best = { score, form: [i,j,k], winRate: (wins/opponents.length)*100 };
         }
     }
 
-    // 3. Rendering with two markers
-    const plotId = isBear ? 'bear-plot' : 'ternary-plot';
-    const traces = [
-    { 
-        type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, 
-        mode:'markers', 
-        marker:{ color:dataPoints.z, colorscale:'Viridis', size:6, opacity: 0.7 }
-    },
-    { 
-        // 10/10/80 Marker - NOW RED
-        type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', 
-        mode:'markers+text', 
-        text: ['10/10/80'], textposition: 'bottom center',
-        marker:{size:12, symbol:'circle-open', color:'#ff4444', line:{width:3}} 
-    },
-    { 
-        // Optimal Marker - GOLD STAR
-        type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', 
-        mode:'markers+text',
-        text: ['BEST'], textposition: 'top center',
-        marker:{size:18, symbol:'star', color:'#fbbf24', line:{width:2, color:'black'}} 
-    }
-];
-
-    Plotly.newPlot(plotId, traces, { 
-        ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, 
-        paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0}, showlegend: false 
-    });
-
-    if(isBear) { 
-        document.getElementById('bear-opt-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-        const gain = ((best.score / (score101080 || 1)) - 1) * 100;
-        document.getElementById('bear-comparison').innerText = `This formation deals ${gain.toFixed(1)}% more damage than 10/10/80.`;
-    }
+    renderTernaryPlot('ternary-plot', dataPoints, best, mode);
+    
+    resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+    scoreArea.innerText = mode === 'meta' ? `Avg Win Rate: ${best.winRate.toFixed(1)}%` : `Net Gain: ${Math.round(best.score).toLocaleString()} troops`;
 };
+
+function renderTernaryPlot(id, data, best, mode) {
+    const traces = [
+        {
+            type: 'scatterternary', a: data.a, b: data.b, c: data.c,
+            mode: 'markers',
+            marker: { color: data.z, colorscale: 'Portland', size: 5, opacity: 0.7 }
+        },
+        {
+            // PVP Standard Marker: 50/20/30
+            type: 'scatterternary', a: [50], b: [20], c: [30], name: '50/20/30',
+            mode: 'markers', marker: { size: 10, symbol: 'circle-open', color: 'white', line: { width: 2 } }
+        },
+        {
+            // Optimal Marker
+            type: 'scatterternary', a: [best.form[0]], b: [best.form[1]], c: [best.form[2]], name: 'Best',
+            mode: 'markers', marker: { size: 14, symbol: 'star', color: 'cyan', line: { width: 2, color: 'black' } }
+        }
+    ];
+    Plotly.newPlot(id, traces, { 
+        ternary: { sum: 100, aaxis: { title: 'Inf' }, baxis: { title: 'Cav' }, caxis: { title: 'Arc' } },
+        paper_bgcolor: 'rgba(0,0,0,0)', font: { color: '#64748b' }, margin: { l: 0, r: 0, t: 30, b: 0 }
+    });
+}
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
