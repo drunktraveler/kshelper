@@ -201,32 +201,43 @@ window.toggleAccountStats = () => {
 
 window.reverseEngineerAccount = () => {
     const ctx = document.getElementById('report-ctx').value;
-    const reportHeroes = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
+    const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
     const reportVal = {};
     ['inf','cav','arc'].forEach(t => ['att','def','leth','hp'].forEach(s => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    let widgetSum = 0;
-    reportHeroes.forEach(name => {
+    // 1. Find the global widget multiplier used in the report
+    let widgetPercSum = 0;
+    reportHeroNames.forEach(name => {
         if(name === "None") return;
-        if (HEROES[name].widget && HEROES[name].widget.context === ctx) widgetSum += WIDGET_GROWTH[roster[name].widget];
+        const d = HEROES[name];
+        const r = roster[name];
+        if (d.widget && d.widget.context === ctx) widgetPercSum += WIDGET_GROWTH[r.widget];
     });
 
     const results = {};
     ['inf','cav','arc'].forEach(t => {
         ['att','def','leth','hp'].forEach(s => {
-            let val = reportVal[`${t}_${s}`] / (1 + widgetSum);
-            reportHeroes.forEach(name => {
+            // 2. Remove the multiplier effect first
+            let val = reportVal[`${t}_${s}`] / (1 + widgetPercSum);
+            
+            // 3. Subtract flat bonuses from stars and widgets
+            reportHeroNames.forEach(name => {
                 if(name === "None") return;
                 const d = HEROES[name];
+                const r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') val -= GROWTH_TEMPLATES[d.template][roster[name].starIndex];
-                    else val -= WIDGET_STATS[d.template][roster[name].widget];
+                    if (s === 'att' || s === 'def') {
+                        val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    } else {
+                        // Lethality/HP use Widget Stats flats
+                        if (d.widget) val -= (WIDGET_STATS[d.template][r.widget] || 0);
+                    }
                 }
             });
-            results[`${t}_${s}`] = val;
+            results[`${t}_${s}`] = Math.max(0, val);
         });
     });
 
@@ -407,9 +418,8 @@ function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
     card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4";
     
-    const isStats = document.getElementById('use-account-stats').checked;
-    // Format the score: if it's raw power (stats), use shorthand, else use multiplier
-    const scoreDisplay = isStats ? (best.score / 1000000).toFixed(2) + "M" : best.score.toFixed(3) + "x";
+    // Everything is now a clean multiplier (e.g., 2.450x)
+    const scoreDisplay = best.score.toFixed(3) + "x";
 
     card.innerHTML = `
         <div class="flex flex-col md:flex-row items-center gap-6 w-full">
@@ -417,17 +427,13 @@ function renderOptimizerCard(scenario, best, container) {
                 <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">${scenario.l}</div>
                 <div class="text-2xl font-black text-white">${scoreDisplay}</div>
             </div>
-            
-            <div class="flex flex-col gap-2">
-                <div class="flex -space-x-3">
-                    ${best.leaders.map(n => `
-                        <div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-800 overflow-hidden shadow-lg z-10">
-                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
-                        </div>
-                    `).join('')}
-                </div>
+            <div class="flex -space-x-3">
+                ${best.leaders.map(n => `
+                    <div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-800 overflow-hidden shadow-lg z-10">
+                        <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
+                    </div>
+                `).join('')}
             </div>
-
             ${best.joiners.length > 0 ? `
                 <div class="flex flex-wrap gap-1 justify-center opacity-60">
                     ${best.joiners.map(n => `
@@ -446,44 +452,32 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
     let skillBuckets = {};
     let widgetMult = 1.0;
     
-    // 1. Global Widget Multiplier (Product of leader widgets)
+    // 1. Widget Percentage Multiplier
     if (allowWidgets) {
         leaders.forEach(n => {
             const d = HEROES[n];
             const r = roster[n];
-            if (d.widget && d.widget.context === ctx) {
-                widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
-            }
+            if (d.widget && d.widget.context === ctx) widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
         });
     }
 
-    // 2. Map counts: Leaders contribute to all 3 skill slots, Joiners only S1
+    // 2. Skill Multipliers
     const manifest = {}; 
-    leaders.forEach(n => {
-        if (!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
-        manifest[n].s1++; manifest[n].s2++; manifest[n].s3++;
-    });
-    joiners.forEach(n => {
-        if (!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
-        manifest[n].s1++;
-    });
+    leaders.forEach(n => { if(!manifest[n]) manifest[n]={s1:0,s2:0,s3:0}; manifest[n].s1++; manifest[n].s2++; manifest[n].s3++; });
+    joiners.forEach(n => { if(!manifest[n]) manifest[n]={s1:0,s2:0,s3:0}; manifest[n].s1++; });
 
-    // 3. Process Skills with Independence Rule
     for (const name in manifest) {
         const d = HEROES[name];
         const r = roster[name];
         d.skills.forEach((s, si) => {
             const count = manifest[name][`s${si+1}`];
-            if (!count || count <= 0) return;
-
-            // Bear filter: ID 1xx only
+            if (!count) return;
             if (isBear && !s.ids.some(id => id < 200)) return;
 
-            const lvl = r[`s${si+1}`] || 1;
+            const lvl = r[`s${si+1}`] || 5;
             const p = s.getChance(s.values[lvl-1]);
             const m = s.getMagnitude(s.values[lvl-1]);
             const dur = isBear ? 0 : (s.duration || 0);
-
             const pAny = 1 - Math.pow(1 - p, count);
             const uptime = (dur === 0) ? pAny : (1 - Math.pow(1 - pAny, dur));
 
@@ -494,36 +488,43 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
         });
     }
 
-    let skillTotalMult = 1.0;
-    Object.values(skillBuckets).forEach(v => skillTotalMult *= (1 + v));
+    let skillMult = 1.0;
+    Object.values(skillBuckets).forEach(v => skillMult *= (1 + v));
 
-    // 4. Score Calculation
+    // 3. Stat Effect Multiplier (The "Account Growth" factor)
+    let statEffect = 1.0;
     const isUsingStats = document.getElementById('use-account-stats').checked && nakedStats;
-    
-    if (isUsingStats) {
-        let totalPower = 0;
-        ['inf', 'cav', 'arc'].forEach(t => {
-            let baseAtt = nakedStats[`${t}_att`] || 0;
-            let baseLeth = nakedStats[`${t}_leth`] || 0;
 
-            // Add Flat Stars/Widgets from Leaders
+    if (isUsingStats) {
+        let totalGain = 0;
+        ['inf', 'cav', 'arc'].forEach(t => {
+            // We use Attack + Lethality as the primary power indicators for the multiplier
+            const nakedAtt = nakedStats[`${t}_att`] || 1; 
+            const nakedLeth = nakedStats[`${t}_leth`] || 1;
+            
+            let flatsAtt = 0;
+            let flatsLeth = 0;
+
             leaders.forEach(n => {
                 const d = HEROES[n];
                 const r = roster[n];
                 if (d.type.toLowerCase().slice(0,3) === t) {
-                    baseAtt += GROWTH_TEMPLATES[d.template][r.starIndex];
-                    if (d.widget) baseLeth += WIDGET_STATS[d.template][r.widget];
+                    flatsAtt += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    if (d.widget) flatsLeth += (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
 
-            // (Base + Flats) * WidgetGlobal * SkillTotal
-            // We use (Attack * Lethality) as a proxy for total damage potential
-            totalPower += (baseAtt * widgetMult * skillTotalMult) * (baseLeth * widgetMult * skillTotalMult);
+            // How much better are these stats than the naked base?
+            const attGain = (nakedAtt + flatsAtt) / nakedAtt;
+            const lethGain = (nakedLeth + flatsLeth) / nakedLeth;
+            
+            // Average the gain across types to get a "Lineup Stat Multiplier"
+            totalGain += (attGain * lethGain);
         });
-        return totalPower;
+        statEffect = totalGain / 3;
     }
 
-    return skillTotalMult * widgetMult;
+    return statEffect * widgetMult * skillMult;
 }
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
