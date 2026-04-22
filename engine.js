@@ -25,9 +25,10 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
     const shift = (p, mode) => {
-        if (mode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt((p * (1 - p)) / nWaves);
-        return mode === 'lucky' ? Math.min(1, p + 1.0 * sigma) : Math.max(0, p - 1.0 * sigma);
+    if (mode === 'average' || p <= 0 || p >= 1) return p;
+    // We use nWaves to determine the variance over the course of the whole fight
+    const sigma = Math.sqrt((p * (1 - p)) / nWaves); 
+    return mode === 'lucky' ? Math.min(1, p + 1.96 * sigma) : Math.max(0, p - 1.96 * sigma);
     };
 
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
@@ -103,7 +104,8 @@ function processBatches(batches) {
 }
 
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
-    let pools = {}, starBonus = 0, logs = ["Always Active: Type Advantage (+10% Dmg)"];
+    let pools = {}, starBonus = 0, logs = [];
+    const isStochastic = (luckMode === 'stochastic');
     
     // 1. Log Troop Abilities
     ['inf','cav','arc'].forEach(u => {
@@ -117,6 +119,32 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     // 2. Count ALL copies of every hero in the 7-man lineup
     const heroCounts = {};
     side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
+
+    const p = s.getChance(x);
+    const m = s.getMagnitude(x);
+    
+    let ev, triggerCount = 0;
+    if (p >= 1.0) {
+        ev = Array.isArray(m) ? m.map(v => n * v) : n * m;
+    } else if (isStochastic) {
+        // Roll for every wave and every hero/type independently
+        // We simulate the rolls for the duration of the fight to get a trigger count
+        for(let i=0; i < n * 100; i++) { // Sample over 100 "ticks"
+            if (Math.random() < p) triggerCount++;
+        }
+        const actualRate = triggerCount / (n * 100);
+        ev = Array.isArray(m) ? m.map(v => actualRate * v) : actualRate * m;
+    } else {
+        const prob = shiftFn(p, luckMode);
+        ev = Array.isArray(m) ? m.map(v => prob * v) : prob * m;
+    }
+
+    // Log with trigger counts for Monte Carlo
+    if (isStochastic) {
+        logs.push(`${name}: ${s.name} (Triggered ${triggerCount} times)`);
+    } else {
+        logs.push(`${name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+    }
 
     Object.keys(heroCounts).forEach(name => {
         const d = HEROES[name];
