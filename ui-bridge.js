@@ -271,38 +271,74 @@ function gatherSetup() {
 }
 
 window.handleSimulation = async () => {
-    const setup = gatherSetup(); const simMode = document.getElementById('sim-mode-select').value;
+    const setup = gatherSetup(); 
+    const simMode = document.getElementById('sim-mode-select').value;
     let rAvg, rBest, rWorst, modeLabel;
+
     if (simMode === 'monte-carlo') {
-        modeLabel = "Deep Sim (100 Runs)";
-        const runs = 100; let batch = [];
-        for (let i = 0; i < runs; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a,b) => (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc));
-        const atkWins = batch.filter(r => (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) > (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc)).length;
-        const winner = atkWins >= 50 ? 'atk' : 'def';
-        rAvg = {
-            m_cur: { inf: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.inf,0)/runs:0, cav: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.cav,0)/runs:0, arc: winner==='atk'?batch.reduce((s,r)=>s+r.m_cur.arc,0)/runs:0 },
-            e_cur: { inf: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.inf,0)/runs:0, cav: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.cav,0)/runs:0, arc: winner==='def'?batch.reduce((s,r)=>s+r.e_cur.arc,0)/runs:0 },
-            wave: Math.round(batch.reduce((s,r)=>s+r.wave,0)/runs),
-            atk_mults: batch[50].atk_mults, def_mults: batch[50].def_mults,
-            startAtk: batch[0].startAtk, startDef: batch[0].startDef
-        };
-        rWorst = batch[0]; rBest = batch[runs-1];
+        modeLabel = "Stochastic Sampling (100 Runs)";
+        let batch = [];
+        for (let i = 0; i < 100; i++) {
+            batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        }
+        // Sort by Attacker performance (Survivors - Enemy Survivors)
+        batch.sort((a,b) => {
+            const scoreA = (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (a.e_cur.inf+a.e_cur.cav+a.e_cur.arc);
+            const scoreB = (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc) - (b.e_cur.inf+b.e_cur.cav+b.e_cur.arc);
+            return scoreA - scoreB;
+        });
+
+        rAvg = batch[50]; // Median result
+        rWorst = batch[0]; // Luckiest Defender / Unluckiest Attacker
+        rBest = batch[99]; // Luckiest Attacker
     } else {
-        modeLabel = "Quick Sim (Estimate)";
+        modeLabel = "Deterministic Range (Average Luck)";
         rAvg = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky', rAvg.wave);
-        rWorst = runCombatSim(setup, 'unlucky', 'lucky', rAvg.wave);
+        rBest = runCombatSim(setup, 'lucky', 'unlucky');
+        rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
-    const screen = document.getElementById('result-screen'); screen.classList.remove('hidden');
-    const getScore = (r) => ( (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc) / (r.startDef||1) ) - ( (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc) / (r.startAtk||1) );
-    const sMin = getScore(rBest), sMax = getScore(rWorst);
-    document.getElementById('luck-bar-inner').style.left = ((Math.min(sMin, sMax) + 1) * 50) + "%";
-    document.getElementById('luck-bar-inner').style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    document.getElementById('res-atk-total').innerText = Math.round(rAvg.m_cur.inf+rAvg.m_cur.cav+rAvg.m_cur.arc).toLocaleString();
-    document.getElementById('res-def-total').innerText = Math.round(rAvg.e_cur.inf+rAvg.e_cur.cav+rAvg.e_cur.arc).toLocaleString();
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2">[BUFFS]</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
-    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | length: ${rAvg.wave} waves`;
+
+    // --- 1. Basic UI Display ---
+    const screen = document.getElementById('result-screen');
+    screen.classList.remove('hidden');
+    
+    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
+    document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
+    document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
+    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | Combat Duration: ${rAvg.wave} Waves`;
+
+    // --- 2. Range Display (The xx - 0 logic) ---
+    // Attacker Range
+    const atkMin = sum(rWorst.m_cur), atkMax = sum(rBest.m_cur);
+    document.getElementById('res-atk-range').innerText = `Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}`;
+    
+    // Defender Range
+    const defMin = sum(rBest.e_cur), defMax = sum(rWorst.e_cur);
+    document.getElementById('res-def-range').innerText = `Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}`;
+
+    // --- 3. Luck Bar Scaling ---
+    // Normalized Score: -1 (Total Def win) to +1 (Total Atk win)
+    const getScore = (r) => {
+        const aS = sum(r.m_cur), dS = sum(r.e_cur);
+        const aT = r.startAtk || 1, dT = r.startDef || 1;
+        return (aS / aT) - (dS / dT);
+    };
+    const sMin = getScore(rWorst), sMax = getScore(rBest);
+    const bar = document.getElementById('luck-bar-inner');
+    const leftPos = ((Math.min(sMin, sMax) + 1) * 50);
+    const widthVal = Math.abs(sMax - sMin) * 50;
+    bar.style.left = leftPos + "%";
+    bar.style.width = Math.max(1, widthVal) + "%";
+
+    // --- 4. Combat Buffs (Fixing the visibility) ---
+    const details = document.getElementById('battle-details');
+    details.innerHTML = `
+        <div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker Multipliers</div>
+        ${rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('')}
+        <div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender Multipliers</div>
+        ${rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('')}
+    `;
+
     screen.scrollIntoView({ behavior: 'smooth' });
 };
 
