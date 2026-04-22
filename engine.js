@@ -18,11 +18,15 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
+    // NEW LUCK LOGIC: Use 12 "Impact Waves" for variance calculation instead of 100
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt((p * (1 - p)) / nWaves);
+        const sigma = Math.sqrt((p * (1 - p)) / 12); 
         return mode === 'lucky' ? Math.min(1, p + 1.96 * sigma) : Math.max(0, p - 1.96 * sigma);
     };
+
+    // Track procs for logs
+    let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
 
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
     const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
@@ -47,15 +51,34 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100), hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
                 let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
+                
+                // --- TROOP ABILITY LOGIC ---
                 let abil = 1.0; const w = sP.weights[u];
-                const tSht = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : shift(p, sL);
+                const tSht = (p, id) => {
+                    const res = isStochastic ? (Math.random() < p ? 1 : 0) : (shift(p, sL) > p ? 1 : (shift(p, sL) < p ? 0 : (Math.random() < p ? 1 : 0)));
+                    if (isStochastic && res === 1) troopProcs[side][id]++;
+                    return res;
+                };
 
-                if (u==='arc') { if (w.t7 > 0) abil *= (1 + (tSht(0.1) * w.t7)); const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); if (windP > 0) abil *= (1 + (tSht(windP) * 0.5)); }
-                if (u==='cav') { const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0); if (lanceP > 0) abil *= (1 + tSht(lanceP)); }
-                if (tf==='inf') { const tw = tP.weights.inf; if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0); if (shieldP > 0) abil *= (1 - (tSht(shieldP) * 0.36)); }
+                if (u==='arc') { 
+                    if (w.t7 > 0 && tSht(0.1, 'ds')) abil *= (1 + w.t7); 
+                    const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); 
+                    if (windP > 0 && tSht(windP, 'ds')) abil *= 1.5; 
+                }
+                if (u==='cav') { 
+                    const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0); 
+                    if (lanceP > 0 && tSht(lanceP, 'ln')) abil *= 2.0; 
+                }
+                if (tf==='inf') { 
+                    const tw = tP.weights.inf; 
+                    if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); 
+                    const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0); 
+                    if (shieldP > 0 && tSht(shieldP, 'sh')) abil *= 0.64; 
+                }
 
                 let kills;
                 if (isBear) {
+                    // Critical: Bear math uses sqrt(count), rewarding troop diversity
                     kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * 1.25;
                     totalDmg += kills;
                 } else {
@@ -67,6 +90,18 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (!isBear) pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
         if (isBear) break; 
     }
+
+    // Add Troop Procs to logs if stochastic
+    if (isStochastic) {
+        ['atk', 'def'].forEach(s => {
+            const p = troopProcs[s];
+            const logArr = s === 'atk' ? m_skill.logs : e_skill.logs;
+            if (p.ds > 0) logArr.push(`[Troop] Archers Double Strike: ${p.ds} times`);
+            if (p.ln > 0) logArr.push(`[Troop] Cavalry Lances: ${p.ln} times`);
+            if (p.sh > 0) logArr.push(`[Troop] Infantry Shields: ${p.sh} times`);
+        });
+    }
+
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
 
