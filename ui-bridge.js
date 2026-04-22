@@ -8,7 +8,7 @@ let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let optRole = 'atk'; 
-const sum = (c) => Math.round(c.inf + c.cav + c.arc);
+const sumTroops = (c) => Math.round((c.inf||0) + (c.cav||0) + (c.arc||0));
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -267,10 +267,10 @@ window.handleSimulation = async () => {
     let rAvg, rBest, rWorst, modeLabel;
 
     if (simMode === 'monte-carlo') {
-        modeLabel = "Stochastic Sampling (100 Runs)";
+        modeLabel = "Stochastic Sampling (Monte Carlo)";
         let batch = [];
         for (let i = 0; i < 100; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a,b) => (sum(a.m_cur) - sum(a.e_cur)) - (sum(b.m_cur) - sum(b.e_cur)));
+        batch.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
         rAvg = batch[50]; rWorst = batch[0]; rBest = batch[99];
     } else {
         modeLabel = "Deterministic Range (95% CI)";
@@ -281,14 +281,12 @@ window.handleSimulation = async () => {
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
-
-    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     
-    document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
-    document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
+    document.getElementById('res-atk-total').innerText = sumTroops(rAvg.m_cur).toLocaleString();
+    document.getElementById('res-def-total').innerText = sumTroops(rAvg.e_cur).toLocaleString();
 
-    const score = (r) => (sum(r.m_cur) / (r.startAtk||1)) - (sum(r.e_cur) / (r.startDef||1));
-    const sAvg = score(rAvg), sMin = score(rWorst), sMax = score(rBest);
+    const getResScore = (r) => (sumTroops(r.m_cur) / (r.startAtk||1)) - (sumTroops(r.e_cur) / (r.startDef||1));
+    const sAvg = getResScore(rAvg), sMin = getResScore(rWorst), sMax = getResScore(rBest);
     const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
 
     document.getElementById('result-waves').innerHTML = `
@@ -297,21 +295,21 @@ window.handleSimulation = async () => {
         ${simMode === 'monte-carlo' ? `<br>Visualized Battle Luck: <span class="text-amber-500">${luckPct.toFixed(0)}th Percentile</span>` : ''}
     `;
 
-    document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
+    document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
+    document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
 
     const bar = document.getElementById('luck-bar-inner');
     const rightSidePos = ((1 - Math.min(sMin, sMax)) * 50); 
     bar.style.right = (100 - rightSidePos) + "%"; 
-    bar.style.width = Math.max(1, Math.abs(sMax - sMin) * 50) + "%";
+    bar.style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
     bar.style.left = "auto";
 
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1">ATTACKER BUFFS</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1">DEFENDER BUFFS</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
+    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker Multipliers</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender Multipliers</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     screen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear', setup = gatherSetup(), sum = (c) => c.inf+c.cav+c.arc;
+    const isBear = mode === 'bear', setup = gatherSetup();
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     if(!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
@@ -319,11 +317,8 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    // VOLUME FIX: Correctly sum ALL batches for army total
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
-    const oppSide = optRole === 'atk' ? setup.def : setup.atk;
-    const userTotal = userSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
-    const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : oppSide.batches.reduce((s,b)=> s + sum(b), 0);
+    const userTotal = userSide.batches.reduce((s,b)=> s + sumTroops(b), 0) || 1;
     const leadTier = userSide.batches[0].tier, leadTG = userSide.batches[0].tg;
 
     if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
@@ -339,14 +334,12 @@ window.runOptimizer = (mode) => {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-     for (let i = 0; i <= 100; i += 2) {
-        for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j, totalNet = 0;
+    for (let i=0; i<=100; i+=2) {
+        for (let j=0; j<=100-i; j+=2) {
+            let k=100-i-j, wins=0, totalNet=0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                
                 if (isBear) {
-                    // PURE PERCENTAGE SIMULATION FOR BEAR (Fixed 1M total)
                     s.atk.stats = { 
                         inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
                         cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
@@ -357,19 +350,26 @@ window.runOptimizer = (mode) => {
                         { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 10000, arc: 0 },
                         { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 10000 }
                     ];
-                } else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                } else {
+                    const userBatches = userSide.batches.map(b => ({ tier: b.tier, tg: b.tg, inf: (i/100)*sumTroops(b), cav: (j/100)*sumTroops(b), arc: (k/100)*sumTroops(b) }));
+                    const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf*userTotal, cav: opp.cav*userTotal, arc: opp.arc*userTotal };
+                    if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
+                    else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                totalNet += isBear ? r.totalDmg : (sum(r.m_cur) - sum(r.e_cur));
+                const val = isBear ? r.totalDmg : (sumTroops(r.m_cur) - sumTroops(r.e_cur));
+                if (!isBear && val > 0) wins++; 
+                totalNet += val;
             });
             const finalScore = isBear ? totalNet : (wins * 1e12) + totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear?totalNet:wins);
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
             if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? "Split for Max Damage." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
+    scoreArea.innerHTML = isBear ? "Optimized Damage Split." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
 };
 
 function renderTernary(id, data, best, isBear) {
