@@ -87,6 +87,14 @@ function processBatches(batches) {
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, starBonus = 0, logs = [];
     const isStochastic = (luckMode === 'stochastic');
+
+    // 1. Log Troop Abilities (These were missing from UI)
+    ['inf','cav','arc'].forEach(u => {
+        const w = proc.weights[u];
+        if (w.t7 > 0) logs.push(`[Troop] Tier 7+ (${u}): ${(w.t7*100).toFixed(0)}% contribution`);
+        if (w.tg3 > 0) logs.push(`[Troop] TG3/5 (${u}): ${(w.tg3*100).toFixed(0)}% contribution`);
+    });
+
     const heroCounts = {};
     side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
 
@@ -108,7 +116,7 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             if (p >= 1.0) {
                 ev = Array.isArray(m) ? m.map(v => n * v) : n * m;
             } else if (isStochastic) {
-                // Multi-roll trigger sim
+                // Monte Carlo trigger simulator
                 for(let i=0; i < n * 100; i++) { if (Math.random() < p) triggerCount++; }
                 const rate = triggerCount / (n * 100);
                 ev = Array.isArray(m) ? m.map(v => rate * v) : rate * m;
@@ -119,8 +127,10 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             }
 
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget));
+            
+            const logVal = (Array.isArray(ev) ? ev[0] : ev);
             if (isStochastic && p < 1.0) logs.push(`${name}: ${s.name} (Triggered ${triggerCount} times)`);
-            else logs.push(`${name} (x${n}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            else logs.push(`${name}: ${s.name} (+${(logVal * 100).toFixed(1)}%)`);
         });
     });
 
