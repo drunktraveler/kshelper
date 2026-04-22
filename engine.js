@@ -18,7 +18,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    // Fix: Using 1.96 Sigma for 95% Confidence Interval
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
         const sigma = Math.sqrt((p * (1 - p)) / nWaves);
@@ -47,9 +46,9 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 let atk = b.atk * (1 + (sS.stats[u+'_att'] + sMod.star)/100), leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + (tS.stats[tf+'_def'] + tMod.star)/100), hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
+                let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
                 let abil = 1.0; const w = sP.weights[u];
                 const tSht = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : shift(p, sL);
-                let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
 
                 if (u==='arc') { if (w.t7 > 0) abil *= (1 + (tSht(0.1) * w.t7)); const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); if (windP > 0) abil *= (1 + (tSht(windP) * 0.5)); }
                 if (u==='cav') { const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0); if (lanceP > 0) abil *= (1 + tSht(lanceP)); }
@@ -67,13 +66,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
         if (!isBear) pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
         if (isBear) break; 
-    }
-    return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
-}
-
-    if (!isOptimizing && !isBear) {
-        const mS = Object.values(m_cur).reduce((a,b)=>a+b, 0), eS = Object.values(e_cur).reduce((a,b)=>a+b, 0);
-        if (mS > eS) { for(let k in e_cur) e_cur[k] = 0; } else if (eS > mS) { for(let k in m_cur) m_cur[k] = 0; }
     }
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
@@ -116,7 +108,7 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             if (p >= 1.0) {
                 ev = Array.isArray(m) ? m.map(v => n * v) : n * m;
             } else if (isStochastic) {
-                // Monte Carlo trigger simulator
+                // Multi-roll trigger sim
                 for(let i=0; i < n * 100; i++) { if (Math.random() < p) triggerCount++; }
                 const rate = triggerCount / (n * 100);
                 ev = Array.isArray(m) ? m.map(v => rate * v) : rate * m;
@@ -127,12 +119,11 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             }
 
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + ((Array.isArray(ev) ? ev[idx] : ev) * hWidget));
-            if (isStochastic && p < 1.0) logs.push(`${name}: ${s.name} (Triggered ~${triggerCount} times)`);
-            else logs.push(`${name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            if (isStochastic && p < 1.0) logs.push(`${name}: ${s.name} (Triggered ${triggerCount} times)`);
+            else logs.push(`${name} (x${n}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
         });
     });
 
     let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
     return { units: {all:mult}, star: starBonus, logs };
 }
-
