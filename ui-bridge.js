@@ -309,43 +309,69 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
-    else if (mode === 'current') {
-        const side = optRole === 'atk' ? setup.def : setup.atk;
-        const d = side.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
+    // Volume Logic: Preserve the actual power gap (e.g. 2m vs 1m)
+    const userSide = optRole === 'atk' ? setup.atk : setup.def;
+    const oppSide = optRole === 'atk' ? setup.def : setup.atk;
+    const userTotal = userSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
+    const oppTotal = oppSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
+
+    if (isBear) { 
+        opponents.push({inf: 1, cav: 0, arc: 0}); 
+    } else if (mode === 'current') {
+        const d = oppSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else if (mode === 'custom') {
         const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
-        const total = i+c+a || 1; opponents.push({inf:i/total, cav:c/total, arc:a/total});
+        const total = i+c+a || 1; 
+        opponents.push({inf:i/total, cav:c/total, arc:a/total});
     } else {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
-
-    const userSide = optRole === 'atk' ? setup.atk : setup.def;
-    const userTotal = userSide.batches.reduce((s,b)=> s+sum(b), 0) || 1;
 
     for (let i=0; i<=100; i+=2) {
         for (let j=0; j<=100-i; j+=2) {
             let k=100-i-j, wins=0, totalNet=0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                const userBatches = userSide.batches.map(b => ({ tier: b.tier, tg: b.tg, inf: (i/100)*sum(b), cav: (j/100)*sum(b), arc: (k/100)*sum(b) }));
-                const oppBatch = { tier: userBatches[0].tier, tg: userBatches[0].tg, inf: opp.inf*userTotal, cav: opp.cav*userTotal, arc: opp.arc*userTotal };
-                if (optRole==='atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
-                else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                
+                if (isBear) {
+                    // Fix: Apply Bear Tab Stats correctly
+                    s.atk.stats = { 
+                        inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
+                        cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
+                        arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
+                    };
+                    s.atk.batches = [
+                        { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * (userTotal/100), cav: 0, arc: 0 },
+                        { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * (userTotal/100), arc: 0 },
+                        { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * (userTotal/100) }
+                    ];
+                } else {
+                    // Respect army sizes: User total vs Opponent total
+                    const userBatches = userSide.batches.map(b => ({
+                        tier: b.tier, tg: b.tg,
+                        inf: (i/100) * (b.inf+b.cav+b.arc), cav: (j/100) * (b.inf+b.cav+b.arc), arc: (k/100) * (b.inf+b.cav+b.arc)
+                    }));
+                    const oppBatch = { tier: oppSide.batches[0].tier, tg: oppSide.batches[0].tg, inf: opp.inf * oppTotal, cav: opp.cav * oppTotal, arc: opp.arc * oppTotal };
+                    
+                    if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
+                    else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                }
+
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
                 const mySurv = optRole==='atk'?sum(r.m_cur):sum(r.e_cur), opSurv = optRole==='atk'?sum(r.e_cur):sum(r.m_cur);
                 if (mySurv > opSurv) wins++; totalNet += (mySurv - opSurv);
             });
+            
             const finalScore = isBear ? totalNet : (wins * 1e12) + totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear?totalNet:wins);
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
             if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? "Max Damage Split." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
+    scoreArea.innerHTML = isBear ? "Optimized for Max Damage." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
 };
 
 function renderTernary(id, data, best, isBear) {
