@@ -8,6 +8,7 @@ let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let optRole = 'atk'; 
+const sum = (c) => Math.round(c.inf + c.cav + c.arc);
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -263,10 +264,7 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const simMode = document.getElementById('sim-mode-select').value;
-    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     let rAvg, rBest, rWorst, modeLabel;
-    const sAvg = score(rAvg), sMin = score(rWorst), sMax = score(rBest);
-    const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
 
     if (simMode === 'monte-carlo') {
         modeLabel = "Stochastic Sampling (100 Runs)";
@@ -283,8 +281,14 @@ window.handleSimulation = async () => {
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
+    
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
+
+    const score = (r) => (sum(r.m_cur) / (r.startAtk||1)) - (sum(r.e_cur) / (r.startDef||1));
+    const sAvg = score(rAvg), sMin = score(rWorst), sMax = score(rBest);
+    const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
+
     document.getElementById('result-waves').innerHTML = `
         <span class="text-blue-400 font-black">${modeLabel}</span><br>
         Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>
@@ -294,8 +298,6 @@ window.handleSimulation = async () => {
     document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
 
-    const getScore = (r) => (sum(r.m_cur) / (r.startAtk||1)) - (sum(r.e_cur) / (r.startDef||1));
-    const sMin = getScore(rWorst), sMax = getScore(rBest);
     const bar = document.getElementById('luck-bar-inner');
     const rightSidePos = ((1 - Math.min(sMin, sMax)) * 50); 
     bar.style.right = (100 - rightSidePos) + "%"; 
@@ -307,7 +309,7 @@ window.handleSimulation = async () => {
 };
 
 window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear', setup = gatherSetup(), sum = (c) => c.inf+c.cav+c.arc;
+    const isBear = mode === 'bear', setup = gatherSetup();
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     if(!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
@@ -315,42 +317,34 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    // Volume Logic: Preserve the actual power gap (e.g. 2m vs 1m)
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
+    const userTotal = userSide.batches.reduce((s,b)=> s + sum(b), 0) || 1;
+    const leadTier = userSide.batches[0].tier, leadTG = userSide.batches[0].tg;
+
     const oppSide = optRole === 'atk' ? setup.def : setup.atk;
-    const userTotal = userSide.batches.reduce((s,b)=> s + (b.inf+b.cav+b.arc), 0) || 1;
     const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : (optRole === 'atk' ? setup.def : setup.atk).batches.reduce((s,b)=> s + (b.inf+b.cav+b.arc), 0);
-    const leadTier = userSide.batches[0].tier; // Sync tiers to prevent "Mirror Loss"
     const leadTG = userSide.batches[0].tg;
 
-    if (isBear) { 
-        opponents.push({inf: 1, cav: 0, arc: 0}); 
-    } else if (mode === 'current') {
-        const d = oppSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
+     if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
+    else if (mode === 'current') {
+        const side = optRole === 'atk' ? setup.def : setup.atk;
+        const d = side.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else if (mode === 'custom') {
         const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
-        const total = i+c+a || 1; 
-        opponents.push({inf:i/total, cav:c/total, arc:a/total});
+        const total = i+c+a || 1; opponents.push({inf:i/total, cav:c/total, arc:a/total});
     } else {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    for (let i = 0; i <= 100; i += 2) {
-        for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j, wins = 0, totalNet = 0;
+    for (let i=0; i<=100; i+=2) {
+        for (let j=0; j<=100-i; j+=2) {
+            let k=100-i-j, wins=0, totalNet=0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                
-                // USER FORMATION
-                const userBatches = userSide.batches.map(b => ({
-                    tier: b.tier, tg: b.tg,
-                    inf: (i/100) * sum(b), cav: (j/100) * sum(b), arc: (k/100) * sum(b)
-                }));
-
-                // OPPONENT FORMATION (Sync Tier/TG with User)
-                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf * userTotal, cav: opp.cav * userTotal, arc: opp.arc * userTotal };
+                const userBatches = userSide.batches.map(b => ({ tier: b.tier, tg: b.tg, inf: (i/100)*sum(b), cav: (j/100)*sum(b), arc: (k/100)*sum(b) }));
+                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf*userTotal, cav: opp.cav*userTotal, arc: opp.arc*userTotal };
 
                 if (isBear) {
                     s.atk.batches = [
@@ -358,25 +352,21 @@ window.runOptimizer = (mode) => {
                         { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * (userTotal/100), arc: 0 },
                         { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * (userTotal/100) }
                     ];
-                } else if (optRole === 'atk') {
-                    s.atk.batches = userBatches; s.def.batches = [oppBatch];
-                } else {
-                    s.atk.batches = [oppBatch]; s.def.batches = userBatches;
-                }
+                } else if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
+                else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
                 const mySurv = optRole==='atk'?sum(r.m_cur):sum(r.e_cur), opSurv = optRole==='atk'?sum(r.e_cur):sum(r.m_cur);
                 if (mySurv > opSurv) wins++; totalNet += (mySurv - opSurv);
             });
-            
             const finalScore = isBear ? totalNet : (wins * 1e12) + totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear?totalNet:wins);
             if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? "Optimized for Max Damage." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
+    scoreArea.innerHTML = isBear ? "Split for Max Damage." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
 };
 
 function renderTernary(id, data, best, isBear) {
