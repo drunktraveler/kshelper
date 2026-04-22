@@ -320,8 +320,9 @@ window.runOptimizer = (mode) => {
     if (isBear) {
         opponents.push({inf: 1, cav: 0, arc: 0});
     } else if (mode === 'current') {
-        const oppSide = optRole === 'atk' ? setup.def : setup.atk;
-        const d = oppSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
+        // Target is the EXISTING formation in the Battle Sim
+        const targetSide = optRole === 'atk' ? setup.def : setup.atk;
+        const d = targetSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else if (mode === 'custom') {
@@ -335,8 +336,8 @@ window.runOptimizer = (mode) => {
     }
 
     // 2. Simulation Loop
-    const userBatchCount = 100000;
-    const step = isBear ? 2 : 4; // Formation tab uses step 4 (800ish sims) for speed vs meta
+    const batchSize = 100000;
+    const step = 2; // High precision for all modes
 
     for (let i = 0; i <= 100; i += step) {
         for (let j = 0; j <= 100 - i; j += step) {
@@ -345,6 +346,7 @@ window.runOptimizer = (mode) => {
 
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
+                
                 if (isBear) {
                     s.atk.stats = { inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) };
                     s.atk.batches = [
@@ -353,20 +355,28 @@ window.runOptimizer = (mode) => {
                         { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 1000 }
                     ];
                 } else {
-                    const userBatch = {tier:10, tg:3, inf: (optRole==='atk'?i:opp.inf*100) * (userBatchCount/100), cav:(optRole==='atk'?j:opp.cav*100) * (userBatchCount/100), arc:(optRole==='atk'?k:opp.arc*100) * (userBatchCount/100)};
-                    const oppBatch = {tier:10, tg:3, inf: (optRole==='def'?i:opp.inf*100) * (userBatchCount/100), cav:(optRole==='def'?j:opp.cav*100) * (userBatchCount/100), arc:(optRole==='def'?k:opp.arc*100) * (userBatchCount/100)};
-                    s.atk.batches = [optRole === 'atk' ? userBatch : oppBatch];
-                    s.def.batches = [optRole === 'def' ? userBatch : oppBatch];
+                    // Correct Role Assignment
+                    const varFormation = { tier:10, tg:3, inf: i * (batchSize/100), cav: j * (batchSize/100), arc: k * (batchSize/100) };
+                    const fixFormation = { tier:10, tg:3, inf: opp.inf * batchSize, cav: opp.cav * batchSize, arc: opp.arc * batchSize };
+
+                    if (optRole === 'atk') {
+                        s.atk.batches = [varFormation];
+                        s.def.batches = [fixFormation];
+                    } else {
+                        // FIX: When I am defender, varFormation is DEF, fixFormation is ATK
+                        s.atk.batches = [fixFormation];
+                        s.def.batches = [varFormation];
+                    }
                 }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
                 if (isBear) {
                     totalNet += r.totalDmg;
                 } else {
-                    const uS = optRole==='atk' ? (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) : (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-                    const eS = optRole==='atk' ? (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc) : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc);
-                    if (uS > eS) wins++;
-                    totalNet += (uS - eS);
+                    const mySurv = optRole === 'atk' ? (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) : (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
+                    const opSurv = optRole === 'atk' ? (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc) : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc);
+                    if (mySurv > opSurv) wins++;
+                    totalNet += (mySurv - opSurv);
                 }
             });
 
@@ -380,24 +390,44 @@ window.runOptimizer = (mode) => {
     }
 
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
-    resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerText = isBear ? `Optimized for maximum damage output.` : `Win Rate: ${best.winRate.toFixed(1)}% | Avg Margin: ${Math.round(best.net).toLocaleString()}`;
+    
+    // UI Label Logic
+    if (isBear) {
+        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+    } else {
+        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+        const outcome = best.net > 0 ? "WIN" : "LOSS";
+        if (mode === 'meta') {
+            scoreArea.innerHTML = `<span class="text-purple-400 font-bold">META COVERAGE: ${best.winRate.toFixed(1)}%</span> | Avg Margin: ${Math.round(best.net).toLocaleString()}`;
+        } else {
+            const color = best.net > 0 ? "text-emerald-400" : "text-red-400";
+            scoreArea.innerHTML = `RESULT: <span class="${color} font-bold">${outcome}</span> | Margin: ${Math.round(best.net).toLocaleString()} troops`;
+        }
+    }
 };
 
 function renderTernary(id, data, best, isBear) {
+    // Standardize look to match Bear (Viridis + specific marker style)
     const traces = [
-        { type:'scatterternary', a:data.a, b:data.b, c:data.c, mode:'markers', marker:{ color:data.z, colorscale: isBear ? 'Viridis' : 'Portland', size:6 } },
         { 
-            // Marker for Standard (10/10/80 for bear, 50/20/30 for PvP)
-            // Color: Bright Orange (#f97316) for high contrast
-            type:'scatterternary', a:[isBear?10:50], b:[isBear?10:20], c:[isBear?80:30], 
-            name:'Standard', mode:'markers', marker:{size:10, symbol:'circle-open', color:'#f97316', line:{width:3}} 
+            type:'scatterternary', a:data.a, b:data.b, c:data.c, mode:'markers', 
+            marker:{ color:data.z, colorscale: 'Viridis', size:6, opacity: 0.8 } 
         },
         { 
+            // Standard Reference (10/10/80 or 50/20/30)
+            // Using White with a black stroke for maximum contrast on all heatmaps
+            type:'scatterternary', a:[isBear?10:50], b:[isBear?10:20], c:[isBear?80:30], 
+            name:'Standard', mode:'markers', 
+            marker:{size:12, symbol:'circle', color:'white', line:{width:2, color:'black'}} 
+        },
+        { 
+            // Optimal Marker
             type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], 
-            name:'Optimal', mode:'markers', marker:{size:14, symbol:'star', color:'cyan', line:{width:2, color:'black'}} 
+            name:'Optimal', mode:'markers', 
+            marker:{size:16, symbol:'star', color:'cyan', line:{width:2, color:'black'}} 
         }
     ];
+    
     Plotly.newPlot(id, traces, { 
         ternary: { sum:100, aaxis:{title:'Inf'}, baxis:{title:'Cav'}, caxis:{title:'Arc'} }, 
         paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:30,b:0}, showlegend: false 
