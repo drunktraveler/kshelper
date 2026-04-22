@@ -7,7 +7,7 @@ let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
-let optRole = 'atk'; // Default
+let optRole = 'atk'; 
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -16,53 +16,38 @@ let state = {
 
 // --- 1. INITIALIZATION ---
 window.init = () => {
-    console.log("Kingshot Hub: Initializing logic...");
-    
-    // Sync roster with DB
-    Object.keys(HEROES).forEach(n => { 
-        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
-    });
-
-    // Populate all hero selects
+    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
     const mainSel = document.getElementById('hero-select');
     const calibSels = document.querySelectorAll('.rep-hero');
-    const allDropdowns = [mainSel, ...calibSels];
-
-    allDropdowns.forEach(sel => {
+    [mainSel, ...calibSels].forEach(sel => {
         if(!sel) return;
         sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => {
-            sel.innerHTML += `<option value="${n}">${n}</option>`;
-        });
+        Object.keys(HEROES).sort().forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
     });
-
     if(mainSel) mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
-
-    // Build Stat Table (Battle Tab)
-    const table = document.getElementById('stat-table');
-    if(table) {
-        const units = ["Infantry", "Cavalry", "Archer"];
-        const cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
-        table.innerHTML = '';
-        units.forEach(u => cats.forEach(c => {
-            const row = document.createElement('div'); row.className = "stat-row";
-            row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
-            const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-            row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#10b981; font-size:14px; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; text-transform:uppercase; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; outline:none; color:#ef4444; font-size:14px; font-weight:800; width:70px; text-align:right;" value="1000">`;
-            table.appendChild(row);
-        }));
-    }
-
+    buildStatTable();
     window.addBatch('atk', true); window.addBatch('def', true);
     window.updateGrids(); renderRosterUI(); 
     if(nakedStats) renderNakedStats();
     window.showTab('battle');
 };
 
+function buildStatTable() {
+    const table = document.getElementById('stat-table');
+    if(!table) return;
+    const units = ["Infantry", "Cavalry", "Archer"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+    table.innerHTML = '';
+    units.forEach(u => cats.forEach(c => {
+        const row = document.createElement('div'); row.className = "stat-row";
+        const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
+        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#10b981; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#ef4444; font-weight:800; width:70px; text-align:right;" value="1000">`;
+        table.appendChild(row);
+    }));
+}
+
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
     const btn = document.getElementById('toggle-details-btn');
-    if (!box) return;
     const isHidden = box.classList.toggle('hidden');
     btn.innerText = isHidden ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
 };
@@ -272,15 +257,13 @@ function renderNakedStats() {
 function gatherSetup() {
     const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
     const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
-    return {
-        atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes },
-        def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes }
-    };
+    return { atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes }, def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes } };
 }
 
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const simMode = document.getElementById('sim-mode-select').value;
+    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     let rAvg, rBest, rWorst, modeLabel;
 
     if (simMode === 'monte-carlo') {
@@ -290,7 +273,7 @@ window.handleSimulation = async () => {
         batch.sort((a,b) => (sum(a.m_cur) - sum(a.e_cur)) - (sum(b.m_cur) - sum(b.e_cur)));
         rAvg = batch[50]; rWorst = batch[0]; rBest = batch[99];
     } else {
-        modeLabel = "Deterministic Range (Average Luck)";
+        modeLabel = "Deterministic Range (95% CI)";
         rAvg = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky');
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
@@ -298,11 +281,9 @@ window.handleSimulation = async () => {
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
-    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
-    
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
-    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400">${modeLabel}</span> | Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>`;
+    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black">${modeLabel}</span><br>Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>`;
 
     document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
@@ -315,94 +296,63 @@ window.handleSimulation = async () => {
     bar.style.width = Math.max(1, Math.abs(sMax - sMin) * 50) + "%";
     bar.style.left = "auto";
 
-    document.getElementById('battle-details').innerHTML = `
-        <div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker Multipliers</div>
-        ${rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('')}
-        <div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender Multipliers</div>
-        ${rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('')}
-    `;
+    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1">ATTACKER BUFFS</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1">DEFENDER BUFFS</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     screen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear';
-    const setup = gatherSetup();
+    const isBear = mode === 'bear', setup = gatherSetup(), sum = (c) => c.inf+c.cav+c.arc;
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
-    
+    if(!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
+
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    if (isBear) { opponents.push({inf: 1, cav: 0, arc: 0}); }
+    if (isBear) { opponents.push({inf:1, cav:0, arc:0}); }
     else if (mode === 'current') {
         const side = optRole === 'atk' ? setup.def : setup.atk;
         const d = side.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
-    } else if (mode === 'meta') {
+    } else if (mode === 'custom') {
+        const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
+        const total = i+c+a || 1; opponents.push({inf:i/total, cav:c/total, arc:a/total});
+    } else {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
-    const userTotal = userSide.batches.reduce((s,b)=> s + b.inf + b.cav + b.arc, 0) || 1;
+    const userTotal = userSide.batches.reduce((s,b)=> s+sum(b), 0) || 1;
 
-    for (let i = 0; i <= 100; i += 2) {
-        for (let j = 0; j <= 100 - i; j += 2) {
-            let k = 100-i-j, wins = 0, totalNet = 0;
+    for (let i=0; i<=100; i+=2) {
+        for (let j=0; j<=100-i; j+=2) {
+            let k=100-i-j, wins=0, totalNet=0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                const userBatches = userSide.batches.map(b => ({
-                    tier: b.tier, tg: b.tg,
-                    inf: (i/100) * (b.inf+b.cav+b.arc), 
-                    cav: (j/100) * (b.inf+b.cav+b.arc), 
-                    arc: (k/100) * (b.inf+b.cav+b.arc)
-                }));
-                const oppBatch = { tier: userBatches[0].tier, tg: userBatches[0].tg, inf: opp.inf * userTotal, cav: opp.cav * userTotal, arc: opp.arc * userTotal };
-
-                if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
+                const userBatches = userSide.batches.map(b => ({ tier: b.tier, tg: b.tg, inf: (i/100)*sum(b), cav: (j/100)*sum(b), arc: (k/100)*sum(b) }));
+                const oppBatch = { tier: userBatches[0].tier, tg: userBatches[0].tg, inf: opp.inf*userTotal, cav: opp.cav*userTotal, arc: opp.arc*userTotal };
+                if (optRole==='atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
                 else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
-
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                const uS = optRole==='atk' ? (sum(r.m_cur)) : (sum(r.e_cur));
-                const oS = optRole==='atk' ? (sum(r.e_cur)) : (sum(r.m_cur));
-                if (uS > oS) wins++; totalNet += (uS - oS);
+                const mySurv = optRole==='atk'?sum(r.m_cur):sum(r.e_cur), opSurv = optRole==='atk'?sum(r.e_cur):sum(r.m_cur);
+                if (mySurv > opSurv) wins++; totalNet += (mySurv - opSurv);
             });
             const finalScore = isBear ? totalNet : (wins * 1e12) + totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear?totalNet:wins);
             if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? "Optimized for Max Damage." : `Win Rate: ${best.winRate.toFixed(1)}% | Avg Margin: ${Math.round(best.net).toLocaleString()}`;
+    scoreArea.innerHTML = isBear ? "Max Damage Split." : (mode === 'meta' ? `Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
 };
 
 function renderTernary(id, data, best, isBear) {
-    // Standardize look to match Bear (Viridis + specific marker style)
-    const traces = [
-        { 
-            type:'scatterternary', a:data.a, b:data.b, c:data.c, mode:'markers', 
-            marker:{ color:data.z, colorscale: 'Viridis', size:6, opacity: 0.8 } 
-        },
-        { 
-            // Standard Reference (10/10/80 or 50/20/30)
-            // Using White with a black stroke for maximum contrast on all heatmaps
-            type:'scatterternary', a:[isBear?10:50], b:[isBear?10:20], c:[isBear?80:30], 
-            name:'Standard', mode:'markers', 
-            marker:{size:12, symbol:'circle', color:'white', line:{width:2, color:'black'}} 
-        },
-        { 
-            // Optimal Marker
-            type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], 
-            name:'Optimal', mode:'markers', 
-            marker:{size:16, symbol:'star', color:'cyan', line:{width:2, color:'black'}} 
-        }
-    ];
-    
-    Plotly.newPlot(id, traces, { 
-        ternary: { sum:100, aaxis:{title:'Inf'}, baxis:{title:'Cav'}, caxis:{title:'Arc'} }, 
-        paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:30,b:0}, showlegend: false 
-    });
+    const traces = [{ type:'scatterternary', a:data.a, b:data.b, c:data.c, mode:'markers', marker:{ color:data.z, colorscale: 'Viridis', size:6 } },
+        { type:'scatterternary', a:[isBear?10:50], b:[isBear?10:20], c:[isBear?80:30], name:'Ref', mode:'markers', marker:{size:10, symbol:'circle', color:'white', line:{width:2, color:'black'}} },
+        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Best', mode:'markers', marker:{size:14, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }];
+    Plotly.newPlot(id, traces, { ternary: { sum:100, aaxis:{title:'Inf'}, baxis:{title:'Cav'}, caxis:{title:'Arc'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:30,b:0}, showlegend: false });
 }
 
 window.calculateOptimalLineups = () => {
