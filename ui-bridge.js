@@ -15,46 +15,22 @@ let state = {
 
 // --- INITIALIZATION ---
 window.init = () => {
-    Object.keys(HEROES).forEach(n => { 
-    if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
-});
-    const sel = document.getElementById('hero-select');
-     // 1. Target all hero selects: the main one and the three in calibration
-    const mainSelect = document.getElementById('hero-select');
-    const calibrationSelects = document.querySelectorAll('.rep-hero');
+    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
     
-    // Combine them into one array to populate all at once
-    const allHeroDropdowns = [mainSelect, ...calibrationSelects];
-
-    allHeroDropdowns.forEach(sel => {
-        if (!sel) return;
-        
-        // Clear existing and add "None"
-        sel.innerHTML = '<option value="None">None</option>';
-        
-        // Populate with Hero names from HEROES DB
-        Object.keys(HEROES).sort().forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.innerText = name; // Title Case names from heroes.js
-            sel.appendChild(opt);
-        });
+    // Populate all hero selects (Battle + Calibration)
+    const selects = [document.getElementById('hero-select'), ...document.querySelectorAll('.rep-hero')];
+    selects.forEach(s => {
+        if(!s) return;
+        s.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => s.innerHTML += `<option value="${n}">${n}</option>`);
     });
-    
-    if(sel) {
-        sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => {
-            const name = n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
-            sel.innerHTML += `<option value="${n}">${name}</option>`;
-        });
-        sel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
-    }
+
     const table = document.getElementById('stat-table');
+    const categories = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+    const units = ["Infantry", "Cavalry", "Archer"];
     if(table) {
-        const units = ["Infantry", "Cavalry", "Archer"];
-        const cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
         table.innerHTML = '';
-        units.forEach(u => cats.forEach(c => {
+        units.forEach(u => categories.forEach(c => {
             const row = document.createElement('div'); row.className = "stat-row";
             row.style.display = "flex"; row.style.alignItems = "center"; row.style.height = "32px"; row.style.padding = "0 30px";
             const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
@@ -71,29 +47,14 @@ window.toggleAccountStats = () => {
     document.getElementById('account-stats-ui').classList.toggle('hidden', !isEnabled);
 };
 
-// 2. Add the Star/Substage Dropdown Renderer
+// --- Roster Logic with Fixed StopPropagation ---
 function renderStarSelector(name, currentIndex) {
-    // We add onclick="event.stopPropagation()" to ensure clicking the menu 
-    // doesn't toggle the hero's unlocked status.
-    let html = `<select 
-                onclick="event.stopPropagation()" 
-                onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
+    let html = `<select onclick="event.stopPropagation()" onchange="event.stopPropagation(); window.updateRoster('${name}', 'starIndex', this.value)" 
                 class="bg-slate-800 text-[10px] text-slate-300 rounded px-2 py-1 outline-none border border-slate-700 w-full mt-1 cursor-pointer hover:border-blue-500 transition-colors">`;
-    
     for (let i = 0; i <= 30; i++) {
-        const star = Math.floor(i / 6);
-        const sub = i % 6;
-        let label = "";
-        
-        if (i === 30) {
-            label = "5-0 (Max Star)";
-        } else {
-            label = `Star: ${star}-${sub}`;
-        }
-        
-        html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${label}</option>`;
-        
-        if (i === 30) break; 
+        const star = Math.floor(i / 6), sub = i % 6;
+        html += `<option value="${i}" ${currentIndex == i ? 'selected' : ''}>${star === 5 ? '5.0 (Max)' : 'Star: '+star+'.'+sub}</option>`;
+        if (star === 5) break; 
     }
     return html + `</select>`;
 }
@@ -282,20 +243,9 @@ function renderRosterUI() {
         const card = document.createElement('div');
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
         card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-lg shadow-blue-900/20' : 'opacity-40 border-transparent bg-slate-950/20'}`;
-        let skillsHtml = h.skills.map((s, i) => `<div class="mt-2"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2">
-        <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>
-        <div class="font-bold text-xs uppercase">${n}</div>
-    </div>
-    ${r.unlocked ? `
-        <div class="space-y-3">
-            <div>
-                <span class="text-[8px] text-slate-500 font-black uppercase">Development Level</span>
-                ${renderStarSelector(n, r.starIndex)}
-            </div>
-            ${skillsHtml}
-            ${h.widget ? `<div class="pt-2 border-t border-slate-800"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}
-        </div>` : ''}`;grid.appendChild(card);
+        let skillsHtml = h.skills.map((s, i) => `<div class="mt-2" onclick="event.stopPropagation()"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
+        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shadow-inner"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase tracking-tighter">${n}</div></div>${r.unlocked ? `<div class="space-y-3"><div><span class="text-[8px] text-slate-500 font-black uppercase">Star Level</span>${renderStarSelector(n, r.starIndex)}</div>${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800" onclick="event.stopPropagation()"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
+        grid.appendChild(card);
     });
 }
 
@@ -383,12 +333,14 @@ window.handleSimulation = async () => {
     document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
+// --- OPTIMIZER (Updated for Bear Stats & Highlights) ---
 window.runOptimizer = (mode) => {
     const isBear = mode === 'bear';
-    const setup = gatherSetup(); 
+    const setup = gatherSetup();
     const atkTotal = 1000000;
-    
-    // Override setup if in Bear Tab specifically
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
+    let score101080 = 0;
+
     if(isBear) {
         setup.atk.stats = {
             inf_att: parseFloat(document.getElementById('bear-inf-att').value),
@@ -400,56 +352,40 @@ window.runOptimizer = (mode) => {
         };
     }
 
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity };
-    let score101080 = 0;
-
-    // Start at 0% Inf for Bear, 20% for PVP
     const minInf = isBear ? 0 : 20;
-
     for (let i = minInf; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
             let k = 100-i-j;
-            let curSetup = JSON.parse(JSON.stringify(setup));
-            curSetup.atk.batches = [{ 
-                tier: isBear ? parseInt(document.getElementById('bear-inf-tier').value) : 10, 
-                tg: 3, inf: i*10000, cav: j*10000, arc: k*10000 
+            let curS = JSON.parse(JSON.stringify(setup));
+            curS.atk.batches = [{ 
+                tier: isBear ? parseInt(document.getElementById('bear-inf-tier').value) : 10, // Simplified for loop
+                tg: isBear ? parseInt(document.getElementById('bear-inf-tg').value) : 3, 
+                inf: i*10000, cav: j*10000, arc: k*10000 
             }];
-            
-            const r = runCombatSim(curSetup, 'average', 'average', 100, isBear, true);
+            const r = runCombatSim(curS, 'average', 'average', 100, isBear, true);
             let score = isBear ? r.totalDmg : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) - (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-            
             if (isBear && i === 10 && j === 10) score101080 = score;
-
             dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
             if (score > best.score) best = { score, form: [i,j,k] };
         }
     }
 
-    // TERNARY PLOT WITH HIGHLIGHTS
-    const mainTrace = { 
-        type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', 
-        marker:{ color:dataPoints.z, colorscale:'Hot', size:8, symbol:'square' },
-        hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' 
-    };
-
+    const mainTrace = { type:'scatterternary', a:dataPoints.a, b:dataPoints.b, c:dataPoints.c, mode:'markers', marker:{ color:dataPoints.z, colorscale:'Hot', size:10, symbol:'square' }, hovertemplate: 'Inf: %{a}<br>Cav: %{b}<br>Arc: %{c}<extra></extra>' };
     const markers = [
         { type:'scatterternary', a:[10], b:[10], c:[80], name:'10/10/80', mode:'markers', marker:{size:12, symbol:'cross', color:'white', line:{width:2, color:'black'}} },
         { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Optimal', mode:'markers', marker:{size:15, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }
     ];
 
-    const plotId = isBear ? 'bear-plot' : 'ternary-plot';
-    Plotly.newPlot(plotId, [mainTrace, ...markers], { 
-        ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, 
-        paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, showlegend: false, margin:{l:0,r:0,t:40,b:0} 
-    });
+    Plotly.newPlot(isBear?'bear-plot':'ternary-plot', [mainTrace, ...markers], { ternary: { sum:100, aaxis:{title:'Infantry'}, baxis:{title:'Cavalry'}, caxis:{title:'Archer'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:40,b:0}, showlegend: false });
     
     if(isBear) {
-        document.getElementById('bear-opt-form').innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-        const gain = ((best.score / score101080) - 1) * 100;
-        document.getElementById('bear-comparison').innerText = `This formation deals ${gain.toFixed(1)}% more damage than 10/10/80.`;
+        document.getElementById('bear-total-dmg').innerText = `Max Dealt: ${Math.round(best.score).toLocaleString()}`;
+        document.getElementById('bear-best-form').innerText = `Best Split: ${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
+        const gain = ((best.score / (score101080 || 1)) - 1) * 100;
+        document.getElementById('bear-comparison').innerText = `This is ${gain.toFixed(1)}% more damage than the 10/10/80 standard.`;
     } else {
         document.getElementById('opt-best-form').innerText = `${best.form[0]}% / ${best.form[1]}% / ${best.form[2]}%`;
-        document.getElementById('opt-best-score').innerText = `Best Result: +${Math.round(best.score).toLocaleString()} survivors`;
+        document.getElementById('opt-best-score').innerText = `Best margin: +${Math.round(best.score).toLocaleString()} survivors`;
     }
 };
 
