@@ -89,28 +89,43 @@
 
         <!-- Formation Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
-            <div class="glass-card p-8">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
-                    <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
-                        <button id="opt-role-atk" onclick="window.setOptRole('atk')" class="px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white">I AM ATTACKER</button>
-                        <button id="opt-role-def" onclick="window.setOptRole('def')" class="px-3 py-1 text-[10px] font-bold text-slate-500">I AM DEFENDER</button>
-                    </div>
+        <div class="glass-card p-8">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
+        <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <button id="opt-role-atk" onclick="window.setOptRole('atk')" class="px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white">I AM ATTACKER</button>
+            <button id="opt-role-def" onclick="window.setOptRole('def')" class="px-3 py-1 text-[10px] font-bold text-slate-500">I AM DEFENDER</button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
+        <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
+        <div class="space-y-4">
+            <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
+                <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
+                <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
+                <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
+                <p id="opt-transparency" class="text-[9px] text-slate-500 mt-3 hidden italic">Note: 'Unknown' mode tests against 66 meta compositions (10% increments) for performance.</p>
+            </div>
+            
+            <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Battle Sim Enemy</button>
+            <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Meta (Unknown)</button>
+            
+            <!-- Custom Opponent Block -->
+            <div class="p-4 bg-slate-900/50 border border-slate-800 rounded-xl space-y-3">
+                <span class="text-[9px] font-black uppercase text-slate-500">Custom Target Formation (%)</span>
+                <div class="grid grid-cols-3 gap-2">
+                    <input type="number" id="custom-inf" class="input-dark !py-1 text-[10px]" placeholder="Inf" value="33">
+                    <input type="number" id="custom-cav" class="input-dark !py-1 text-[10px]" placeholder="Cav" value="33">
+                    <input type="number" id="custom-arc" class="input-dark !py-1 text-[10px]" placeholder="Arc" value="34">
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-                    <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
-                    <div class="space-y-6">
-                        <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
-                            <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
-                            <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
-                            <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
-                        </div>
-                        <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-4 rounded-xl text-xs uppercase font-black">Optimize vs Current</button>
-                        <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600 py-4 rounded-xl text-xs uppercase font-black">Optimize vs Unknown</button>
-                    </div>
-                </div>
+                <button onclick="window.runOptimizer('custom')" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-[9px] uppercase font-black transition-all">Optimize vs Custom</button>
             </div>
         </div>
+    </div>
+</div>
+        </div>
+            
 
         <!-- Bear Tab -->
         <div id="bear-tab" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
