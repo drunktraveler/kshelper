@@ -59,6 +59,15 @@ window.init = () => {
     window.showTab('battle');
 };
 
+window.toggleDetails = () => {
+    const box = document.getElementById('battle-details');
+    const btn = document.getElementById('toggle-details-btn');
+    if (!box) return;
+    
+    const isHidden = box.classList.toggle('hidden');
+    btn.innerText = isHidden ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
+};
+
 window.setOptRole = (role) => {
     optRole = role;
     document.getElementById('opt-role-atk').className = role === 'atk' ? "px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
@@ -278,19 +287,17 @@ window.handleSimulation = async () => {
     if (simMode === 'monte-carlo') {
         modeLabel = "Stochastic Sampling (100 Runs)";
         let batch = [];
-        for (let i = 0; i < 100; i++) {
-            batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        }
-        // Sort by Attacker performance (Survivors - Enemy Survivors)
+        for (let i = 0; i < 100; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        
         batch.sort((a,b) => {
             const scoreA = (a.m_cur.inf+a.m_cur.cav+a.m_cur.arc) - (a.e_cur.inf+a.e_cur.cav+a.e_cur.arc);
             const scoreB = (b.m_cur.inf+b.m_cur.cav+b.m_cur.arc) - (b.e_cur.inf+b.e_cur.cav+b.e_cur.arc);
             return scoreA - scoreB;
         });
 
-        rAvg = batch[50]; // Median result
-        rWorst = batch[0]; // Luckiest Defender / Unluckiest Attacker
-        rBest = batch[99]; // Luckiest Attacker
+        rAvg = batch[50]; 
+        rWorst = batch[0]; // Absolute worst case for attacker
+        rBest = batch[99];  // Absolute best case for attacker
     } else {
         modeLabel = "Deterministic Range (Average Luck)";
         rAvg = runCombatSim(setup, 'average', 'average');
@@ -298,41 +305,32 @@ window.handleSimulation = async () => {
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    // --- 1. Basic UI Display ---
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
     
     const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
-    document.getElementById('result-waves').innerText = `Mode: ${modeLabel} | Combat Duration: ${rAvg.wave} Waves`;
-
-    // --- 2. Range Display (The xx - 0 logic) ---
-    // Attacker Range
-    const atkMin = sum(rWorst.m_cur), atkMax = sum(rBest.m_cur);
-    document.getElementById('res-atk-range').innerText = `Range: ${atkMin.toLocaleString()} - ${atkMax.toLocaleString()}`;
     
-    // Defender Range
-    const defMin = sum(rBest.e_cur), defMax = sum(rWorst.e_cur);
-    document.getElementById('res-def-range').innerText = `Range: ${defMin.toLocaleString()} - ${defMax.toLocaleString()}`;
+    // Ranges: Show absolute min and absolute max
+    document.getElementById('res-atk-range').innerText = `Range: ${sum(rWorst.m_cur).toLocaleString()} - ${sum(rBest.m_cur).toLocaleString()}`;
+    document.getElementById('res-def-range').innerText = `Range: ${sum(rBest.e_cur).toLocaleString()} - ${sum(rWorst.e_cur).toLocaleString()}`;
 
-    // --- 3. Luck Bar Scaling ---
-    // Normalized Score: -1 (Total Def win) to +1 (Total Atk win)
-    const getScore = (r) => {
-        const aS = sum(r.m_cur), dS = sum(r.e_cur);
-        const aT = r.startAtk || 1, dT = r.startDef || 1;
-        return (aS / aT) - (dS / dT);
-    };
+    // Luck Bar: Flipped logic for flipped labels
+    // We want a high score (Atk win) to push the bar to the LEFT (Atk Domination side)
+    const getScore = (r) => (sum(r.m_cur) / (r.startAtk||1)) - (sum(r.e_cur) / (r.startDef||1));
     const sMin = getScore(rWorst), sMax = getScore(rBest);
     const bar = document.getElementById('luck-bar-inner');
-    const leftPos = ((Math.min(sMin, sMax) + 1) * 50);
+    
+    // Logic to flip: (1 - score) instead of (1 + score)
+    const rightSidePos = ((1 - Math.min(sMin, sMax)) * 50); // Start from right
     const widthVal = Math.abs(sMax - sMin) * 50;
-    bar.style.left = leftPos + "%";
+    
+    bar.style.right = (100 - rightSidePos) + "%"; 
     bar.style.width = Math.max(1, widthVal) + "%";
+    bar.style.left = "auto"; // Ensure right-based positioning works
 
-    // --- 4. Combat Buffs (Fixing the visibility) ---
-    const details = document.getElementById('battle-details');
-    details.innerHTML = `
+    document.getElementById('battle-details').innerHTML = `
         <div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker Multipliers</div>
         ${rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('')}
         <div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender Multipliers</div>
