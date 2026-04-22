@@ -344,7 +344,7 @@ window.handleSimulation = async () => {
 
 window.runOptimizer = (mode) => {
     const isBear = mode === 'bear';
-    const setup = gatherSetup();
+    const setup = gatherSetup(); 
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     if (!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
@@ -352,28 +352,29 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    // 1. Define Opponent Set
+    // 1. Logic for Opponents
     if (isBear) {
         opponents.push({inf: 1, cav: 0, arc: 0});
     } else if (mode === 'current') {
-        // Target is the EXISTING formation in the Battle Sim
         const targetSide = optRole === 'atk' ? setup.def : setup.atk;
         const d = targetSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else if (mode === 'custom') {
-        const i = parseFloat(document.getElementById('custom-inf').value) || 0;
-        const c = parseFloat(document.getElementById('custom-cav').value) || 0;
-        const a = parseFloat(document.getElementById('custom-arc').value) || 0;
+        const i = parseFloat(document.getElementById('custom-inf').value) || 0, c = parseFloat(document.getElementById('custom-cav').value) || 0, a = parseFloat(document.getElementById('custom-arc').value) || 0;
         const total = i + c + a || 1;
         opponents.push({inf: i/total, cav: c/total, arc: a/total});
     } else if (mode === 'meta') {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    // 2. Simulation Loop
-    const batchSize = 100000;
-    const step = 2; // High precision for all modes
+    // 2. Interaction Bias Fix: Scale User Batches
+    const targetTotal = 100000;
+    const userSide = optRole === 'atk' ? setup.atk : setup.def;
+    const userOriginalSum = userSide.batches.reduce((s,b)=> s + b.inf + b.cav + b.arc, 0) || 1;
+    const scaleFactor = targetTotal / userOriginalSum;
+
+    const step = 2; 
 
     for (let i = 0; i <= 100; i += step) {
         for (let j = 0; j <= 100 - i; j += step) {
@@ -383,63 +384,37 @@ window.runOptimizer = (mode) => {
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
                 
-                if (isBear) {
-                    s.atk.stats = { inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) };
-                    s.atk.batches = [
-                        { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * 1000, cav: 0, arc: 0 },
-                        { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 1000, arc: 0 },
-                        { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 1000 }
-                    ];
-                } else {
-                    // Correct Role Assignment
-                    const varFormation = { tier:10, tg:3, inf: i * (batchSize/100), cav: j * (batchSize/100), arc: k * (batchSize/100) };
-                    const fixFormation = { tier:10, tg:3, inf: opp.inf * batchSize, cav: opp.cav * batchSize, arc: opp.arc * batchSize };
+                // Create Opponent Batch (Matches User's lead tier for fairness)
+                const leadTier = userSide.batches[0].tier;
+                const leadTG = userSide.batches[0].tg;
+                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf * targetTotal, cav: opp.cav * targetTotal, arc: opp.arc * targetTotal };
 
-                    if (optRole === 'atk') {
-                        s.atk.batches = [varFormation];
-                        s.def.batches = [fixFormation];
-                    } else {
-                        // FIX: When I am defender, varFormation is DEF, fixFormation is ATK
-                        s.atk.batches = [fixFormation];
-                        s.def.batches = [varFormation];
-                    }
-                }
+                // Scale User Batches to maintain interaction bias while applying current i/j/k formation
+                const userBatches = userSide.batches.map(b => {
+                    const bTotal = (b.inf + b.cav + b.arc) || 1;
+                    const bRatio = bTotal / userOriginalSum;
+                    // Apply the test formation (i,j,k) to the scaled batch
+                    return { tier: b.tier, tg: b.tg, inf: i * (targetTotal/100) * bRatio, cav: j * (targetTotal/100) * bRatio, arc: k * (targetTotal/100) * bRatio };
+                });
+
+                if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
+                else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                if (isBear) {
-                    totalNet += r.totalDmg;
-                } else {
-                    const mySurv = optRole === 'atk' ? (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) : (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
-                    const opSurv = optRole === 'atk' ? (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc) : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc);
-                    if (mySurv > opSurv) wins++;
-                    totalNet += (mySurv - opSurv);
-                }
+                const mySurv = optRole === 'atk' ? (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc) : (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc);
+                const opSurv = optRole === 'atk' ? (r.e_cur.inf+r.e_cur.cav+r.e_cur.arc) : (r.m_cur.inf+r.m_cur.cav+r.m_cur.arc);
+                if (mySurv > opSurv) wins++;
+                totalNet += (mySurv - opSurv);
             });
 
-            const finalScore = isBear ? totalNet : (wins * 1e9) + totalNet;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
-            
-            if (finalScore > best.score) {
-                best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
-            }
+            const finalScore = (wins * 1e12) + totalNet;
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(wins);
+            if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
-
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
-    
-    // UI Label Logic
-    if (isBear) {
-        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    } else {
-        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-        const outcome = best.net > 0 ? "WIN" : "LOSS";
-        if (mode === 'meta') {
-            scoreArea.innerHTML = `<span class="text-purple-400 font-bold">META COVERAGE: ${best.winRate.toFixed(1)}%</span> | Avg Margin: ${Math.round(best.net).toLocaleString()}`;
-        } else {
-            const color = best.net > 0 ? "text-emerald-400" : "text-red-400";
-            scoreArea.innerHTML = `RESULT: <span class="${color} font-bold">${outcome}</span> | Margin: ${Math.round(best.net).toLocaleString()} troops`;
-        }
-    }
+    resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+    scoreArea.innerHTML = mode === 'meta' ? `META COVERAGE: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`;
 };
 
 function renderTernary(id, data, best, isBear) {
