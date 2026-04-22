@@ -281,6 +281,8 @@ window.handleSimulation = async () => {
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
+
+    const sum = (c) => Math.round(c.inf + c.cav + c.arc);
     
     document.getElementById('res-atk-total').innerText = sum(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sum(rAvg.e_cur).toLocaleString();
@@ -309,7 +311,7 @@ window.handleSimulation = async () => {
 };
 
 window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear', setup = gatherSetup();
+    const isBear = mode === 'bear', setup = gatherSetup(), sum = (c) => c.inf+c.cav+c.arc;
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     if(!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
@@ -337,34 +339,28 @@ window.runOptimizer = (mode) => {
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    for (let i=0; i<=100; i+=2) {
-        for (let j=0; j<=100-i; j+=2) {
-            let k=100-i-j, wins=0, totalNet=0;
+     for (let i = 0; i <= 100; i += 2) {
+        for (let j = 0; j <= 100 - i; j += 2) {
+            let k = 100-i-j, totalNet = 0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
                 
-                // DISTRIBUTE % over TOTAL user army
-                const userBatches = userSide.batches.map(b => ({
-                    tier: b.tier, tg: b.tg,
-                    inf: (i/100) * (b.inf+b.cav+b.arc),
-                    cav: (j/100) * (b.inf+b.cav+b.arc),
-                    arc: (k/100) * (b.inf+b.cav+b.arc)
-                }));
-                const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf*oppTotal, cav: opp.cav*oppTotal, arc: opp.arc*oppTotal };
-
                 if (isBear) {
-                    // FORCE 3 Batches for Bear to trigger diversity bonus sqrt(x)
+                    // PURE PERCENTAGE SIMULATION FOR BEAR (Fixed 1M total)
+                    s.atk.stats = { 
+                        inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
+                        cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
+                        arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
+                    };
                     s.atk.batches = [
-                        { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * (userTotal/100), cav: 0, arc: 0 },
-                        { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * (userTotal/100), arc: 0 },
-                        { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * (userTotal/100) }
+                        { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * 10000, cav: 0, arc: 0 },
+                        { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 10000, arc: 0 },
+                        { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 10000 }
                     ];
-                } else if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
-                else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                } else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                const mySurv = optRole==='atk'?sum(r.m_cur):sum(r.e_cur), opSurv = optRole==='atk'?sum(r.e_cur):sum(r.m_cur);
-                if (mySurv > opSurv) wins++; totalNet += (mySurv - opSurv);
+                totalNet += isBear ? r.totalDmg : (sum(r.m_cur) - sum(r.e_cur));
             });
             const finalScore = isBear ? totalNet : (wins * 1e12) + totalNet;
             dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear?totalNet:wins);
