@@ -21,8 +21,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
         const sigma = Math.sqrt((p * (1 - p)) / 12); 
-        const shifted = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
-        return Math.max(0, Math.min(1, shifted));
+        const res = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
+        return Math.max(0, Math.min(1, res));
     };
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
@@ -46,11 +46,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] <= 0) return;
                 const b = sP.avgBase[u], tb = tP.avgBase[tf];
-                
-                let atk = b.atk * (1 + sS.stats[u+'_att']/100);
-                let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                let df = tb.def * (1 + tS.stats[tf+'_def']/100);
-                let hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
+                let atk = b.atk * (1 + sS.stats[u+'_att']/100), leth = b.leth * (1 + sS.stats[u+'_leth']/100);
+                let df = tb.def * (1 + tS.stats[tf+'_def']/100), hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
 
                 let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
                 
@@ -94,16 +91,29 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break; 
     }
 
-    // Community belief: Survivors are rounded UP (Ceil)
-    const ceilResults = (cur) => ({
-        inf: Math.ceil(cur.inf),
-        cav: Math.ceil(cur.cav),
-        arc: Math.ceil(cur.arc)
+    // --- REINTEGRATED TROOP LOGGING ---
+    [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
+        const sideP = (side === 'atk' ? atkP : defP);
+        const logArr = (side === 'atk' ? m_skill.logs : e_skill.logs);
+        const procs = troopProcs[side];
+
+        ['inf','cav','arc'].forEach(u => {
+            if (sideP.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} Tier 7+ active`);
+            if (sideP.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} TG3/5 active`);
+        });
+
+        if (isStochastic) {
+            if (procs.ds > 0) logArr.push(`[Proc] Archer Multi-Hit: ${procs.ds} hits`);
+            if (procs.ln > 0) logArr.push(`[Proc] Cavalry Lances: ${procs.ln} hits`);
+            if (procs.sh > 0) logArr.push(`[Proc] Infantry Shields: ${procs.sh} hits`);
+        }
     });
 
+    const ceilRes = (cur) => ({ inf: Math.ceil(cur.inf), cav: Math.ceil(cur.cav), arc: Math.ceil(cur.arc) });
+
     return { 
-        m_cur: ceilResults(m_cur), 
-        e_cur: ceilResults(e_cur), 
+        m_cur: ceilRes(m_cur), 
+        e_cur: ceilRes(e_cur), 
         wave, 
         totalDmg: totalDmg * 10, 
         atk_mults: m_skill.logs, 
@@ -131,53 +141,35 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
 
-    // Process every individual hero instance to account for differing skill levels
     side.heroes.forEach((h, index) => {
         if(h.name === "None") return;
         const d = HEROES[h.name];
-        
         d.skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
-            
-            // Skill 2/3 only active for first 3 slots (Leaders)
             if (index >= 3 && si > 0) return;
 
             const x = s.values[h[`s${si+1}`]-1];
-            const p = s.getChance(x);
-            const m = s.getMagnitude(x);
-            const dur = isBear ? 0 : s.duration;
+            const p = s.getChance(x), m = s.getMagnitude(x), dur = isBear ? 0 : s.duration;
             
-            let ev, triggerHit = false;
+            let ev, triggered = false;
             if (p >= 1.0) {
                 ev = m;
             } else if (isStochastic) {
-                // Individual roll for every copy of the hero
-                if (Math.random() < p) {
-                    ev = m;
-                    triggerHit = true;
-                } else {
-                    ev = 0;
-                }
+                if (Math.random() < p) { ev = m; triggered = true; } else { ev = 0; }
             } else {
-                // Expected Value: probability shifted by luck scaling the magnitude
                 const prob = shiftFn(p, luckMode);
                 ev = (dur === 0 ? prob : (1 - Math.pow(1 - prob, dur))) * m;
             }
 
-            s.ids.forEach((id, idx) => {
-                const mag = Array.isArray(ev) ? ev[idx] : ev;
-                pools[id] = (pools[id] || 0) + mag;
-            });
-
-            if (ev > 0 || !isStochastic) {
-                const displayMag = (Array.isArray(m) ? m[0] : m);
-                const status = isStochastic ? (triggerHit ? "Triggered" : "Failed") : `+${(ev*100).toFixed(1)}% EV`;
+            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
+            
+            if (!isOptimizing) {
+                const status = isStochastic ? (triggered ? "Triggered" : "Failed") : `+${(ev*100).toFixed(1)}% EV`;
                 logs.push(`Slot ${index+1} ${h.name}: ${s.name} (${status})`);
             }
         });
     });
 
-    let mult = 1.0; 
-    Object.values(pools).forEach(v => mult *= (1+v));
+    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
     return { units: {all:mult}, logs };
 }
