@@ -209,33 +209,31 @@ window.reverseEngineerAccount = () => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    // 1. Find the global widget multiplier used in the report
-    let widgetPercSum = 0;
+    // CATEGORIZED WIDGET SUMS
+    let widgetSums = { attack: 0, defense: 0, lethality: 0, health: 0 };
     reportHeroNames.forEach(name => {
         if(name === "None") return;
-        const d = HEROES[name];
-        const r = roster[name];
-        if (d.widget && d.widget.context === ctx) widgetPercSum += WIDGET_GROWTH[r.widget];
+        const d = HEROES[name], r = roster[name];
+        if (d.widget && d.widget.context === ctx) {
+            widgetSums[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        }
     });
 
     const results = {};
     ['inf','cav','arc'].forEach(t => {
         ['att','def','leth','hp'].forEach(s => {
-            // 2. Remove the multiplier effect first
-            let val = reportVal[`${t}_${s}`] / (1 + widgetPercSum);
+            // MAP STAT TO WIDGET TYPE
+            let type = s === 'att' ? 'attack' : (s === 'def' ? 'defense' : (s === 'leth' ? 'lethality' : 'health'));
             
-            // 3. Subtract flat bonuses from stars and widgets
+            // DIVIDE BY SPECIFIC CATEGORY ONLY
+            let val = reportVal[`${t}_${s}`] / (1 + widgetSums[type]);
+            
             reportHeroNames.forEach(name => {
                 if(name === "None") return;
-                const d = HEROES[name];
-                const r = roster[name];
+                const d = HEROES[name], r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') {
-                        val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    } else {
-                        // Lethality/HP use Widget Stats flats
-                        if (d.widget) val -= (WIDGET_STATS[d.template][r.widget] || 0);
-                    }
+                    if (s === 'att' || s === 'def') val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    else if (d.widget && d.widget.stat === type) val -= (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
             results[`${t}_${s}`] = Math.max(0, val);
