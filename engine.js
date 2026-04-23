@@ -27,9 +27,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
     
-    // Skills only provide multiplicative buffs (sMod.units.all), not flat stat increases
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
-    const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
+    const e_skill = isBear ? { units: {all:1}, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
 
     let wave = 0, totalDmg = 0;
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < 2000) {
@@ -48,8 +47,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 if (sC[u] <= 0) return;
                 const b = sP.avgBase[u], tb = tP.avgBase[tf];
                 
-                // Final stats from user input (Final report stats)
-                // Stars and Widgets are NOT added here to prevent double-dipping
                 let atk = b.atk * (1 + sS.stats[u+'_att']/100);
                 let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
                 let df = tb.def * (1 + tS.stats[tf+'_def']/100);
@@ -88,7 +85,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * 1.25;
                     totalDmg += kills;
                 } else {
-                    // Formula cleaned of widget constant
                     kills = (Math.sqrt(sC[u])*sq_min*atk*leth*interaction*abil*sMod.units.all)/(df*hp*100);
                 }
                 pending.push({dict: tC, unit: tf, amt: kills});
@@ -98,16 +94,23 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break; 
     }
 
-    // Always Log Troop Buff Status
-    ['atk', 'def'].forEach(side => {
-        const p = side==='atk'?atkP:defP, logArr = side === 'atk' ? m_skill.logs : e_skill.logs;
-        ['inf','cav','arc'].forEach(u => {
-            if (p.weights[u].t7 > 0) logArr.push(`[Troop] ${u} Tier 7+ active`);
-            if (p.weights[u].tg3 > 0) logArr.push(`[Troop] ${u} TG3/5 active`);
-        });
+    // Community belief: Survivors are rounded UP (Ceil)
+    const ceilResults = (cur) => ({
+        inf: Math.ceil(cur.inf),
+        cav: Math.ceil(cur.cav),
+        arc: Math.ceil(cur.arc)
     });
 
-    return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
+    return { 
+        m_cur: ceilResults(m_cur), 
+        e_cur: ceilResults(e_cur), 
+        wave, 
+        totalDmg: totalDmg * 10, 
+        atk_mults: m_skill.logs, 
+        def_mults: e_skill.logs, 
+        startAtk: totalStartAtk, 
+        startDef: totalStartDef 
+    };
 }
 
 function processBatches(batches) {
@@ -127,35 +130,54 @@ function processBatches(batches) {
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
-    const heroCounts = {};
-    side.heroes.forEach(h => { if(h.name !== "None") heroCounts[h.name] = (heroCounts[h.name]||0)+1; });
 
-    Object.keys(heroCounts).forEach(name => {
-        const d = HEROES[name], h = side.heroes.find(x => x.name === name);
-
+    // Process every individual hero instance to account for differing skill levels
+    side.heroes.forEach((h, index) => {
+        if(h.name === "None") return;
+        const d = HEROES[h.name];
+        
         d.skills.forEach((s, si) => {
             if (s.group !== type && s.group !== 'den') return;
-            const isLeader = side.heroes.slice(0,3).some(lh => lh.name === name);
-            if (!isLeader && si > 0) return; 
-
-            const n = (si === 0) ? heroCounts[name] : 1;
-            const x = s.values[h[`s${si+1}`]-1];
-            const p = s.getChance(x), m = s.getMagnitude(x), dur = isBear ? 0 : s.duration;
             
-            let ev;
+            // Skill 2/3 only active for first 3 slots (Leaders)
+            if (index >= 3 && si > 0) return;
+
+            const x = s.values[h[`s${si+1}`]-1];
+            const p = s.getChance(x);
+            const m = s.getMagnitude(x);
+            const dur = isBear ? 0 : s.duration;
+            
+            let ev, triggerHit = false;
             if (p >= 1.0) {
-                ev = Array.isArray(m) ? m.map(v => n * v) : n * m;
+                ev = m;
+            } else if (isStochastic) {
+                // Individual roll for every copy of the hero
+                if (Math.random() < p) {
+                    ev = m;
+                    triggerHit = true;
+                } else {
+                    ev = 0;
+                }
             } else {
+                // Expected Value: probability shifted by luck scaling the magnitude
                 const prob = shiftFn(p, luckMode);
-                const pAny = 1 - Math.pow(1 - prob, n);
-                ev = Array.isArray(m) ? m.map(v => dur === 0 ? pAny * v : (1 - Math.pow(1 - pAny, dur)) * v) : (dur === 0 ? pAny * m : (1 - Math.pow(1 - pAny, dur)) * m);
+                ev = (dur === 0 ? prob : (1 - Math.pow(1 - prob, dur))) * m;
             }
 
-            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            logs.push(`${name} (x${n}): ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            s.ids.forEach((id, idx) => {
+                const mag = Array.isArray(ev) ? ev[idx] : ev;
+                pools[id] = (pools[id] || 0) + mag;
+            });
+
+            if (ev > 0 || !isStochastic) {
+                const displayMag = (Array.isArray(m) ? m[0] : m);
+                const status = isStochastic ? (triggerHit ? "Triggered" : "Failed") : `+${(ev*100).toFixed(1)}% EV`;
+                logs.push(`Slot ${index+1} ${h.name}: ${s.name} (${status})`);
+            }
         });
     });
 
-    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
+    let mult = 1.0; 
+    Object.values(pools).forEach(v => mult *= (1+v));
     return { units: {all:mult}, logs };
 }
