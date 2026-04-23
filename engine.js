@@ -6,6 +6,10 @@ export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0))
 
 export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false, isOptimizing = false) {
     const isStochastic = (atkLuck === 'stochastic');
+    
+    // Impact factor for deterministic ranges (12 waves)
+    const impactWaves = isOptimizing ? 100 : 12;
+    
     const atkP = processBatches(setup.atk.batches);
     const defP = isBear ? {
         counts: { inf: 1000000, cav: 0, arc: 0 },
@@ -20,14 +24,14 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     const shift = (p, mode) => {
         if (mode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt((p * (1 - p)) / 12); 
-        const shifted = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
-        return Math.max(0, Math.min(1, shifted));
+        const sigma = Math.sqrt((p * (1 - p)) / impactWaves);
+        const res = mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma;
+        return Math.max(0, Math.min(1, res));
     };
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
-    const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
-    const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
+    const m_skill = getMultipliers(setup.atk, processBatches(setup.atk.batches), 'num', atkLuck, shift, 'atk', isBear);
+    const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, processBatches(setup.def.batches), 'den', defLuck, shift, 'def', false);
 
     let wave = 0, totalDmg = 0;
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < 2000) {
@@ -91,17 +95,13 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     }
 
     // Always log troop status
-    ['atk', 'def'].forEach(s => {
-        const p = s==='atk'?atkP:defP, logArr = s === 'atk' ? m_skill.logs : e_skill.logs;
+    ['atk', 'def'].forEach(side => {
+        const sideP = side === 'atk' ? processBatches(setup.atk.batches) : processBatches(setup.def.batches);
+        const logArr = side === 'atk' ? m_skill.logs : e_skill.logs;
         ['inf','cav','arc'].forEach(u => {
-            if (p.weights[u].t7 > 0) logArr.push(`[Troop] ${u} Tier 7+ Enabled`);
-            if (p.weights[u].tg3 > 0) logArr.push(`[Troop] ${u} TG3/5 Enabled`);
+            if (sideP.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u} T7 ability active`);
+            if (sideP.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u} TG3/5 ability active`);
         });
-        if (isStochastic) {
-            if (troopProcs[s].ds > 0) logArr.push(`[Proc] Archer Double Strike: ${troopProcs[s].ds} hits`);
-            if (troopProcs[s].ln > 0) logArr.push(`[Proc] Cavalry Lances: ${troopProcs[s].ln} hits`);
-            if (troopProcs[s].sh > 0) logArr.push(`[Proc] Infantry Shields: ${troopProcs[s].sh} hits`);
-        }
     });
 
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
