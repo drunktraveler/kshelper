@@ -98,23 +98,29 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 // --- CAVALRY BYPASS LOGIC (T7+) ---
                 const hasEnemyArc = tC['arc'] > 1;
-                if (u === 'cav' && w.t7 > 0 && hasEnemyArc && !isBear) {
-                    if (isStochastic) {
-                        if (Math.random() < 0.2) {
-                            troopProcs[side].bp++;
-                            // If triggers, deal damage to Archers. If frontline is already Archers, deal 0.
-                            if (tf !== 'arc') {
-                                pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)});
-                            }
-                            return; // 0 damage to current frontline
-                        }
-                    } else {
-                        // Deterministic Split: 80% Frontline, 20% Archers
-                        pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * 0.8});
-                        if (tf !== 'arc') {
-                            pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * 0.2});
-                        }
-                        return; // Logic handled, skip standard push
+if (u === 'cav' && w.t7 > 0 && hasEnemyArc && !isBear) {
+    if (isStochastic) {
+        if (Math.random() < 0.2) {
+            troopProcs[side].bp++;
+            // The "Over-reach" Rule: 
+            // If the current target (tf) is already the backline (arc), 
+            // the bypass triggers but deals 0 damage.
+            if (tf !== 'arc') {
+                pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)});
+            }
+            return; // 0 damage to current frontline
+        }
+    } else {
+        // Deterministic Split: 
+        // 80% damage to current target
+        pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * 0.8});
+        
+        // 20% damage to Archers, BUT ONLY if we aren't already targeting them.
+        // This simulates the 20% "lost damage" when targeting Archers as frontline.
+        if (tf !== 'arc') {
+            pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * 0.2});
+        }
+        return; 
                     }
                 }
 
