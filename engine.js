@@ -82,21 +82,23 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     if (shieldP > 0) abil *= (1 - (getVal(shieldP, 'sh') * 0.36)); 
                 }
 
-                // BYPASS RULE (Option B)
-                if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && !isBear) {
-                    const bpProb = isStochastic ? 0.2 : shift(0.2, sL);
-                    if (isStochastic) {
-                        if (Math.random() < bpProb) {
-                            troopProcs[side].bp++;
-                            if (tf !== 'arc') pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)});
-                            return; 
-                        }
-                    } else {
-                        pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * (1 - bpProb)});
-                        if (tf !== 'arc') pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * bpProb});
-                        return;
-                    }
-                }
+               // BYPASS RULE (Option A: No damage is lost if target is already Archers)
+if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
+    const bpProb = isStochastic ? 0.2 : shift(0.2, sL);
+    if (isStochastic) {
+        if (Math.random() < bpProb) {
+            troopProcs[side].bp++;
+            // Target the backline archers since tf is currently Infantry or Cavalry
+            pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)});
+            return; 
+        }
+    } else {
+        // Deterministic: Split damage between frontline and backline archers
+        pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * (1 - bpProb)});
+        pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * bpProb});
+        return;
+    }
+}
                 pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil)});
             });
         });
