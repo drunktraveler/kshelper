@@ -25,8 +25,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         return Math.max(0, Math.min(1, res));
     };
 
-    let troopProcs = { atk: { ds:0, ln:0, sh:0 }, def: { ds:0, ln:0, sh:0 } };
-    
+    let troopProcs = { atk: { ds:0, ln:0, sh:0, bp:0 }, def: { ds:0, ln:0, sh:0, bp:0 } };
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
     const e_skill = isBear ? { units: {all:1}, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
 
@@ -40,19 +39,37 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return; 
             const sP = (side==='atk'?atkP:defP), tP = (side==='atk'?defP:atkP), sC = (side==='atk'?m_cur:e_cur), tC = (side==='atk'?e_cur:m_cur);
-            const sS = setup[side], tS = setup[target], tf = (side==='atk'?ef:mf), sMod = (side==='atk'?m_skill:e_skill);
+            const sS = setup[side], tS = setup[target], tf = (side==='atk'?ef:mf), sMod = (side==='atk'?m_skill:e_skill), tMod = (side==='atk'?e_skill:m_skill);
             const sL = (side==='atk'?atkLuck:defLuck);
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] <= 0) return;
-                const b = sP.avgBase[u], tb = tP.avgBase[tf];
-                let atk = b.atk * (1 + sS.stats[u+'_att']/100), leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                let df = tb.def * (1 + tS.stats[tf+'_def']/100), hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
+                const b = sP.avgBase[u];
+                const sLvl = (side==='atk' ? m_skill : e_skill);
+                const tLvl = (side==='atk' ? e_skill : m_skill);
 
-                let interaction = (u==='inf'&&tf==='cav') || (u==='cav'&&tf==='arc') || (u==='arc'&&tf==='inf') ? 1.1 : 1.0;
-                
+                // Helper to calculate damage against a specific unit type
+                const calcKills = (targetUnit, abilMod = 1.0) => {
+                    const tb = tP.avgBase[targetUnit];
+                    let atk = b.atk * (1 + sS.stats[u+'_att']/100);
+                    let leth = b.leth * (1 + sS.stats[u+'_leth']/100);
+                    let df = tb.def * (1 + tS.stats[targetUnit+'_def']/100);
+                    let hp = tb.hp * (1 + tS.stats[targetUnit+'_hp']/100);
+
+                    // Master Brawler: Inf Defense bonus against Cav
+                    if (targetUnit === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) df *= 1.1;
+                    
+                    // Type Advantage
+                    let interaction = (u==='inf'&&targetUnit==='cav') || (u==='cav'&&targetUnit==='arc') || (u==='arc'&&targetUnit==='inf') ? 1.1 : 1.0;
+
+                    if (isBear) {
+                        return sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abilMod * 1.25;
+                    }
+                    return (Math.sqrt(sC[u])*sq_min*atk*leth*interaction*abilMod*sLvl.units.all)/(df*hp*100);
+                };
+
                 let abil = 1.0; const w = sP.weights[u];
-                const getAbilVal = (p, id) => {
+                const getVal = (p, id) => {
                     if (isStochastic) {
                         const hit = Math.random() < p ? 1 : 0;
                         if (hit) troopProcs[side][id]++;
@@ -61,66 +78,83 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return shift(p, sL); 
                 };
 
+                // ARCHER: Volley (T7) & Howling Wind (TG)
                 if (u==='arc') { 
-                    if (w.t7 > 0) abil *= (1 + getAbilVal(0.1, 'ds') * w.t7); 
+                    if (w.t7 > 0) abil *= (1 + getVal(0.1, 'ds') * w.t7); 
                     const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0); 
-                    if (windP > 0) abil *= (1 + getAbilVal(windP, 'ds') * 0.5); 
+                    if (windP > 0) abil *= (1 + getVal(windP, 'ds') * 0.5); 
                 }
+                // CAVALRY: Assault Lance (TG)
                 if (u==='cav') { 
                     const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0); 
-                    if (lanceP > 0) abil *= (1 + getAbilVal(lanceP, 'ln') * 1.0); 
+                    if (lanceP > 0) abil *= (1 + getVal(lanceP, 'ln') * 1.0); 
                 }
+                // INFANTRY: Unyielding Shield (TG)
                 if (tf==='inf') { 
                     const tw = tP.weights.inf; 
-                    if (u==='cav' && tw.t7 > 0) df *= (1 + (0.1 * tw.t7)); 
                     const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0); 
-                    if (shieldP > 0) abil *= (1 - (getAbilVal(shieldP, 'sh') * 0.36)); 
+                    if (shieldP > 0) abil *= (1 - (getVal(shieldP, 'sh') * 0.36)); 
                 }
 
-                let kills;
-                if (isBear) {
-                    kills = sq_min * Math.sqrt(sC[u]) * (atk/100) * (leth/100) * interaction * abil * 1.25;
-                    totalDmg += kills;
-                } else {
-                    kills = (Math.sqrt(sC[u])*sq_min*atk*leth*interaction*abil*sMod.units.all)/(df*hp*100);
+                // --- CAVALRY BYPASS LOGIC (T7+) ---
+                const hasEnemyArc = tC['arc'] > 1;
+                if (u === 'cav' && w.t7 > 0 && hasEnemyArc && !isBear) {
+                    if (isStochastic) {
+                        if (Math.random() < 0.2) {
+                            troopProcs[side].bp++;
+                            // If triggers, deal damage to Archers. If frontline is already Archers, deal 0.
+                            if (tf !== 'arc') {
+                                pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)});
+                            }
+                            return; // 0 damage to current frontline
+                        }
+                    } else {
+                        // Deterministic Split: 80% Frontline, 20% Archers
+                        pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * 0.8});
+                        if (tf !== 'arc') {
+                            pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * 0.2});
+                        }
+                        return; // Logic handled, skip standard push
+                    }
                 }
-                pending.push({dict: tC, unit: tf, amt: kills});
+
+                // Standard Attack
+                const finalKills = calcKills(tf, abil);
+                if (isBear) totalDmg += finalKills;
+                else pending.push({dict: tC, unit: tf, amt: finalKills});
             });
         });
         if (!isBear) pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
         if (isBear) break; 
     }
 
-    // --- REINTEGRATED TROOP LOGGING ---
+    // Final Log Names Update
     [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
         const sideP = (side === 'atk' ? atkP : defP);
         const logArr = (side === 'atk' ? m_skill.logs : e_skill.logs);
-        const procs = troopProcs[side];
+        const p = troopProcs[side];
 
         ['inf','cav','arc'].forEach(u => {
-            if (sideP.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} Tier 7+ active`);
-            if (sideP.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} TG3/5 active`);
+            if (sideP.weights[u].t7 > 0) {
+                const name = u === 'inf' ? 'Bands of Steel' : (u === 'cav' ? 'Bypass' : 'Volley');
+                logArr.unshift(`[Troop] ${name} (${u.toUpperCase()}) active`);
+            }
+            if (sideP.weights[u].tg3 > 0) {
+                const name = u === 'inf' ? 'Unyielding Shield' : (u === 'cav' ? 'Assault Lance' : 'Howling Wind');
+                logArr.unshift(`[Troop] ${name} (${u.toUpperCase()}) active`);
+            }
         });
 
         if (isStochastic) {
-            if (procs.ds > 0) logArr.push(`[Proc] Archer Multi-Hit: ${procs.ds} hits`);
-            if (procs.ln > 0) logArr.push(`[Proc] Cavalry Lances: ${procs.ln} hits`);
-            if (procs.sh > 0) logArr.push(`[Proc] Infantry Shields: ${procs.sh} hits`);
+            if (p.ds > 0) logArr.push(`[Proc] Volley/Wind: ${p.ds} waves`);
+            if (p.ln > 0) logArr.push(`[Proc] Assault Lance: ${p.ln} waves`);
+            if (p.sh > 0) logArr.push(`[Proc] Infantry Shields: ${p.sh} waves`);
+            if (p.bp > 0) logArr.push(`[Proc] Cavalry Bypass: ${p.bp} targets switched`);
         }
     });
 
     const ceilRes = (cur) => ({ inf: Math.ceil(cur.inf), cav: Math.ceil(cur.cav), arc: Math.ceil(cur.arc) });
-
-    return { 
-        m_cur: ceilRes(m_cur), 
-        e_cur: ceilRes(e_cur), 
-        wave, 
-        totalDmg: totalDmg * 10, 
-        atk_mults: m_skill.logs, 
-        def_mults: e_skill.logs, 
-        startAtk: totalStartAtk, 
-        startDef: totalStartDef 
-    };
+    return { m_cur: ceilRes(m_cur), e_cur: ceilRes(e_cur), wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
 }
 
 function processBatches(batches) {
