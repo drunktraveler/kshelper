@@ -96,12 +96,20 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     // Always log troop status
     ['atk', 'def'].forEach(side => {
-        const sideP = side === 'atk' ? processBatches(setup.atk.batches) : processBatches(setup.def.batches);
+        const sideP = side === 'atk' ? atkP : defP;
         const logArr = side === 'atk' ? m_skill.logs : e_skill.logs;
+         // 1. Static Troop Buffs (Tier 7, TG3)
         ['inf','cav','arc'].forEach(u => {
-            if (sideP.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u} T7 ability active`);
-            if (sideP.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u} TG3/5 ability active`);
+            if (sideP.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u} T7+ bonus active`);
+            if (sideP.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u} TG3/5 bonus active`);
         });
+        // 2. Stochastic Proc Counts
+        if (isStochastic) {
+            const p = troopProcs[side];
+            if (p.ds > 0) logArr.push(`[Proc] Archer Multi-Hit: ${p.ds} times`);
+            if (p.ln > 0) logArr.push(`[Proc] Cav Lances: ${p.ln} times`);
+            if (p.sh > 0) logArr.push(`[Proc] Inf Shields: ${p.sh} times`);
+        }
     });
 
     return { m_cur, e_cur, wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
