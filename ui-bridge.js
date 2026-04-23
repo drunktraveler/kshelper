@@ -496,7 +496,7 @@ function renderOptimizerCard(scenario, best, container) {
 
 function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
     let skillBuckets = {};
-    let widgetMult = 1.0;
+    let widgetBuckets = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
     
     // 1. Global Widget Multiplier (Leaders only)
     if (allowWidgets) {
@@ -504,7 +504,8 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
             const d = HEROES[n];
             const r = roster[n];
             if (d && d.widget && d.widget.context === ctx) {
-                widgetMult *= (1 + WIDGET_GROWTH[r.widget]);
+                // Widget multiplier ONLY increases its specific bucket
+                widgetBuckets[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
             }
         });
     }
@@ -564,28 +565,43 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
     let statEffect = 1.0;
     const isUsingStats = document.getElementById('use-account-stats').checked && nakedStats;
 
-    if (isUsingStats) {
+     if (isUsingStats) {
         let totalGain = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
-            const nakedAtt = nakedStats[`${t}_att`] || 1;
-            const nakedLeth = nakedStats[`${t}_leth`] || 1;
-            let flatsAtt = 0, flatsLeth = 0;
-
+            const naked = {
+                att: nakedStats[`${t}_att`] || 1,
+                leth: nakedStats[`${t}_leth`] || 1,
+                def: nakedStats[`${t}_def`] || 1,
+                hp: nakedStats[`${t}_hp`] || 1
+            };
+            
+            let flats = { att: 0, leth: 0, def: 0, hp: 0 };
             leaders.forEach(n => {
-                const d = HEROES[n];
-                const r = roster[n];
+                const d = HEROES[n], r = roster[n];
                 if (d && d.type.toLowerCase().slice(0,3) === t) {
-                    flatsAtt += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    if (d.widget) flatsLeth += (WIDGET_STATS[d.template][r.widget] || 0);
+                    flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    if (d.widget) {
+                        if (d.widget.stat === 'lethality') flats.leth += (WIDGET_STATS[d.template][r.widget] || 0);
+                        if (d.widget.stat === 'health') flats.hp += (WIDGET_STATS[d.template][r.widget] || 0);
+                    }
                 }
             });
 
-            totalGain += ((nakedAtt + flatsAtt) / nakedAtt) * ((nakedLeth + flatsLeth) / nakedLeth);
+            // APPLY WIDGETS STAT-SPECIFICALLY
+            const finalAtt = (naked.att + flats.att) * widgetBuckets.attack;
+            const finalLeth = (naked.leth + flats.leth) * widgetBuckets.lethality;
+            const finalDef = (naked.def + flats.def) * widgetBuckets.defense;
+            const finalHp = (naked.hp + flats.hp) * widgetBuckets.health;
+
+            // Simple Power Score Factor: (Att * Leth) / (Def * HP)
+            totalGain += ( (finalAtt * finalLeth) / (finalDef * finalHp) ) / ( (naked.att * naked.leth) / (naked.def * naked.hp) );
         });
         statEffect = totalGain / 3;
     }
 
-    return statEffect * widgetMult * skillMult;
+    // Skill multiplier remains global, while widgets are already baked into statEffect
+    return statEffect * skillMult * (!isUsingStats ? (widgetBuckets.attack * widgetBuckets.lethality) : 1.0);
 }
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
