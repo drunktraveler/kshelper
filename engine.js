@@ -27,7 +27,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0, bp:0 }, def: { ds:0, ln:0, sh:0, bp:0 } };
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear);
-    const e_skill = isBear ? { units: {all:1}, star: 0, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
+    const e_skill = isBear ? { units: {all:1}, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false);
 
     let wave = 0, totalDmg = 0;
     
@@ -96,8 +96,16 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     }
 
     const ceilRes = (cur) => ({ inf: Math.ceil(cur.inf), cav: Math.ceil(cur.cav), arc: Math.ceil(cur.arc) });
-    return { m_cur: ceilRes(m_cur), e_cur: ceilRes(e_cur), wave, totalDmg: totalDmg * 10, atk_mults: m_skill.logs, def_mults: e_skill.logs, startAtk: totalStartAtk, startDef: totalStartDef };
-}
+    return { 
+        m_cur: ceilRes(m_cur), 
+        e_cur: ceilRes(e_cur), 
+        wave, 
+        totalDmg: totalDmg * 10, 
+        atk_mults: m_skill.logs, // Pass logs here
+        def_mults: e_skill.logs, // Pass logs here
+        startAtk: totalStartAtk, 
+        startDef: totalStartDef 
+    };
 
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
@@ -115,7 +123,12 @@ function processBatches(batches) {
 
 function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
     let pools = {}, logs = [];
-    const isStochastic = (luckMode === 'stochastic');
+    
+    // 1. ADD TROOP ABILITY STATUS TO LOGS IMMEDIATELY
+    ['inf','cav','arc'].forEach(u => {
+        if (proc.weights[u].t7 > 0) logs.push(`[Troop] ${u.toUpperCase()} T7 active`);
+        if (proc.weights[u].tg3 > 0) logs.push(`[Troop] ${u.toUpperCase()} TG active`);
+    });
 
     side.heroes.forEach((h, index) => {
         if(h.name === "None") return;
@@ -125,27 +138,22 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear) {
             if (index >= 3 && si > 0) return;
 
             const x = s.values[h[`s${si+1}`]-1];
-            const p = s.getChance(x), m = s.getMagnitude(x), dur = isBear ? 0 : s.duration;
+            const p = s.getChance(x), m = s.getMagnitude(x);
             
-            let ev, triggered = false;
+            let ev;
             if (p >= 1.0) {
                 ev = m;
-            } else if (isStochastic) {
-                if (Math.random() < p) { ev = m; triggered = true; } else { ev = 0; }
             } else {
                 const prob = shiftFn(p, luckMode);
-                ev = (dur === 0 ? prob : (1 - Math.pow(1 - prob, dur))) * m;
+                ev = (s.duration === 0 ? prob : (1 - Math.pow(1 - prob, s.duration))) * m;
             }
 
             s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            
-            if (!isOptimizing) {
-                const status = isStochastic ? (triggered ? "Triggered" : "Failed") : `+${(ev*100).toFixed(1)}% EV`;
-                logs.push(`Slot ${index+1} ${h.name}: ${s.name} (${status})`);
-            }
+            logs.push(`${h.name} (S${si+1}): +${(ev*100).toFixed(1)}% Multiplier`);
         });
     });
 
-    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
-    return { units: {all:mult}, logs };
+    let mult = 1.0; 
+    Object.values(pools).forEach(v => mult *= (1+v));
+    return { units: {all:mult}, logs: logs }; // Return logs inside this object
 }
