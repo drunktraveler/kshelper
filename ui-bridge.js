@@ -310,6 +310,7 @@ window.handleSimulation = async () => {
 
 window.runOptimizer = (mode) => {
     const isBear = mode === 'bear', setup = gatherSetup();
+    const sum = (c) => Math.round((c.inf || 0) + (c.cav || 0) + (c.arc || 0));
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     if(!isBear) document.getElementById('opt-transparency').classList.toggle('hidden', mode !== 'meta');
@@ -317,18 +318,17 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    const userSide = optRole === 'atk' ? setup.atk : setup.def;
-    const enemySide = optRole === 'atk' ? setup.def : setup.atk;
-    
-    // Total volume of user army
-    const userTotal = userSide.batches.reduce((s,b)=> s + sumTroops(b), 0) || 1;
-    const leadTier = userSide.batches[0].tier, leadTG = userSide.batches[0].tg;
+    // Determine Army Volume & Tiers
+    const userSideData = optRole === 'atk' ? setup.atk : setup.def;
+    const userTotal = userSideData.batches.reduce((s,b)=> s + sum(b), 0) || 1;
+    const leadTier = userSideData.batches[0].tier;
+    const leadTG = userSideData.batches[0].tg;
 
     if (isBear) { 
         opponents.push({inf:1, cav:0, arc:0}); 
     } else if (mode === 'current') {
-        // For 'current', we only need one 'opponent' iteration because the enemy formation is fixed
-        const d = enemySide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
+        const targetSide = optRole === 'atk' ? setup.def : setup.atk;
+        const d = targetSide.batches.reduce((s,b)=>({inf:s.inf+b.inf,cav:s.cav+b.cav,arc:s.arc+b.arc}),{inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else if (mode === 'custom') {
@@ -344,33 +344,44 @@ window.runOptimizer = (mode) => {
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
                 
-                // 1. Scale OUR army while keeping total volume (2m vs 1m etc)
-                const userBatches = userSide.batches.map(b => ({
+                // Varied Formation (The heatmap test)
+                const varBatches = userSideData.batches.map(b => ({
                     tier: b.tier, tg: b.tg,
-                    inf: (i/100) * sumTroops(b),
-                    cav: (j/100) * sumTroops(b),
-                    arc: (k/100) * sumTroops(b)
+                    inf: (i/100) * sum(b), cav: (j/100) * sum(b), arc: (k/100) * sum(b)
                 }));
 
                 if (isBear) {
+                    s.atk.stats = { 
+                        inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
+                        cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
+                        arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
+                    };
                     s.atk.batches = [
                         { tier: parseInt(document.getElementById('bear-inf-tier').value), tg: parseInt(document.getElementById('bear-inf-tg').value), inf: i * 10000, cav: 0, arc: 0 },
                         { tier: parseInt(document.getElementById('bear-cav-tier').value), tg: parseInt(document.getElementById('bear-cav-tg').value), inf: 0, cav: j * 10000, arc: 0 },
                         { tier: parseInt(document.getElementById('bear-arc-tier').value), tg: parseInt(document.getElementById('bear-arc-tg').value), inf: 0, cav: 0, arc: k * 10000 }
                     ];
-                } else if (mode === 'current') {
-                    // FIX: Use actual enemy batches for volume-accurate results
-                    if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = enemySide.batches; }
-                    else { s.atk.batches = enemySide.batches; s.def.batches = userBatches; }
                 } else {
-                    // For Meta/Custom, simulate 1:1 scale (Mirror Army Total)
-                    const oppBatch = { tier: leadTier, tg: leadTG, inf: opp.inf * userTotal, cav: opp.cav * userTotal, arc: opp.arc * userTotal };
-                    if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = [oppBatch]; }
-                    else { s.atk.batches = [oppBatch]; s.def.batches = userBatches; }
+                    const oppSideData = optRole === 'atk' ? setup.def : setup.atk;
+                    const oppTotal = (mode === 'meta' || mode === 'custom') ? userTotal : oppSideData.batches.reduce((s,b)=> s + sum(b), 0);
+                    
+                    const fixBatches = (mode === 'current') ? oppSideData.batches : [{ tier: leadTier, tg: leadTG, inf: opp.inf * oppTotal, cav: opp.cav * oppTotal, arc: opp.arc * oppTotal }];
+
+                    // Correct Role Assignment (The critical fix)
+                    if (optRole === 'atk') {
+                        s.atk.batches = varBatches; s.atk.heroes = setup.atk.heroes; s.atk.stats = setup.atk.stats;
+                        s.def.batches = fixBatches; s.def.heroes = setup.def.heroes; s.def.stats = setup.def.stats;
+                    } else {
+                        s.atk.batches = fixBatches; s.atk.heroes = setup.atk.heroes; s.atk.stats = setup.atk.stats;
+                        s.def.batches = varBatches; s.def.heroes = setup.def.heroes; s.def.stats = setup.def.stats;
+                    }
                 }
 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                const val = isBear ? r.totalDmg : (sumTroops(r.m_cur) - sumTroops(r.e_cur));
+                const userSurv = optRole === 'atk' ? sum(r.m_cur) : sum(r.e_cur);
+                const enemySurv = optRole === 'atk' ? sum(r.e_cur) : sum(r.m_cur);
+                const val = isBear ? r.totalDmg : (userSurv - enemySurv);
+                
                 if (!isBear && val > 0) wins++; 
                 totalNet += val;
             });
@@ -381,7 +392,7 @@ window.runOptimizer = (mode) => {
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? "Optimized split for Max Damage." : (mode === 'meta' ? `Meta Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
+    scoreArea.innerHTML = isBear ? "Optimized Damage Split." : (mode === 'meta' ? `Meta Coverage: ${best.winRate.toFixed(1)}%` : `RESULT: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${best.net > 0 ? 'WIN' : 'LOSS'}</span> | Margin: ${Math.round(best.net).toLocaleString()}`);
 };
 
 function renderTernary(id, data, best, isBear) {
