@@ -222,46 +222,53 @@ window.toggleAccountStats = () => {
 };
 
 window.reverseEngineerAccount = () => {
+    const mode = document.getElementById('report-mode').value; // 'solo' or 'rally'
     const ctx = document.getElementById('report-ctx').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
+    // Get Temporary Buff Multipliers (0, 0.1, or 0.2)
+    const tempBuffs = {
+        att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) || 0) / 100,
+        def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) || 0) / 100,
+        leth: 1 + (parseFloat(document.getElementById('temp-buff-leth').value) || 0) / 100,
+        hp: 1 + (parseFloat(document.getElementById('temp-buff-hp').value) || 0) / 100
+    };
+
     const reportVal = {};
     ['inf','cav','arc'].forEach(t => ['att','def','leth','hp'].forEach(s => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    // 1. Calculate the Global Multiplier Sums per Category
-    let widgetMultiplierSums = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    reportHeroNames.forEach(name => {
-        const d = HEROES[name], r = roster[name];
-        if (d && d.widget && d.widget.context === ctx) {
-            widgetMultiplierSums[d.widget.stat] += WIDGET_GROWTH[r.widget];
-        }
-    });
+    // 1. Calculate Widget Multipliers (ONLY if Mode is Rally/Defense)
+    let widgetMults = { attack: 0, defense: 0, lethality: 0, health: 0 };
+    if (mode === 'rally') {
+        reportHeroNames.forEach(name => {
+            const d = HEROES[name], r = roster[name];
+            if (d && d.widget && d.widget.context === ctx) {
+                widgetMults[d.widget.stat] += WIDGET_GROWTH[r.widget];
+            }
+        });
+    }
 
     const results = {};
     ['inf','cav','arc'].forEach(t => {
         ['att','def','leth','hp'].forEach(s => {
-            // Map the stat to the widget category
-            const category = s === 'att' ? 'attack' : (s === 'def' ? 'defense' : (s === 'leth' ? 'lethality' : 'health'));
+            const cat = s === 'att' ? 'attack' : (s === 'def' ? 'defense' : (s === 'leth' ? 'lethality' : 'health'));
             
-            // Step A: Remove the global multiplier
-            let val = reportVal[`${t}_${s}`] / (1 + widgetMultiplierSums[category]);
+            // Apply both Widget and Temp multipliers
+            const totalMult = (1 + widgetMults[cat]) * tempBuffs[s];
+            let val = reportVal[`${t}_${s}`] / totalMult;
             
-            // Step B: Subtract unit-specific flats
+            // Subtract flat growth
             reportHeroNames.forEach(name => {
                 const d = HEROES[name], r = roster[name];
                 if (!d || d.type.toLowerCase().slice(0,3) !== t) return;
-
                 if (s === 'att' || s === 'def') {
-                    // Attack and Defense flats come from Star Index
                     val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                } else if (d.widget && d.widget.stat === category) {
-                    // Lethality and Health flats come from Widget Level
+                } else if (d.widget && d.widget.stat === cat) {
                     val -= (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
-
             results[`${t}_${s}`] = Math.max(0, val);
         });
     });
@@ -274,8 +281,29 @@ window.reverseEngineerAccount = () => {
 function renderNakedStats() {
     const div = document.getElementById('naked-stats-display');
     div.classList.remove('hidden');
-    div.innerHTML = Object.entries(nakedStats).map(([key, val]) => `
-        <div class="text-center"><div class="text-[8px] text-slate-500 uppercase font-black">${key.replace('_',' ')}</div><div class="text-xs font-bold text-blue-400">${val.toFixed(1)}%</div></div>`).join('');
+    div.innerHTML = '';
+    div.className = "space-y-2 p-4 bg-slate-950/50 rounded-xl border border-slate-800";
+
+    const types = [
+        { l: 'Infantry', k: 'inf', c: 'text-blue-400' },
+        { l: 'Cavalry', k: 'cav', c: 'text-amber-400' },
+        { l: 'Archers', k: 'arc', c: 'text-emerald-400' }
+    ];
+
+    types.forEach(t => {
+        const row = document.createElement('div');
+        row.className = "grid grid-cols-5 gap-2 items-center border-b border-slate-900/50 pb-1";
+        let html = `<div class="text-[10px] font-black ${t.c} uppercase">${t.l}</div>`;
+        ['att', 'def', 'leth', 'hp'].forEach(s => {
+            const val = nakedStats[`${t.k}_${s}`] || 0;
+            html += `<div class="text-center">
+                <div class="text-[7px] text-slate-500 uppercase font-black">${s}</div>
+                <div class="text-[10px] font-bold text-white">${val.toFixed(1)}%</div>
+            </div>`;
+        });
+        row.innerHTML = html;
+        div.appendChild(row);
+    });
 }
 
 // --- 6. SIMULATION & OPTIMIZERS ---
@@ -539,19 +567,22 @@ function calcPowerScore(leaders, joiners, ctx, isBear) {
     let skillBuckets = {};
     let widgetMults = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
     
-    // 1. Identify Global Widget Multipliers
-    leaders.forEach(n => {
-        const d = HEROES[n], r = roster[n];
-        if (d && d.widget && d.widget.context === ctx) {
-            widgetMults[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
-        }
-    });
+    // Solo vs Rally Logic
+    const isSolo = ctx === 'off' && !document.getElementById('is-rally-mode').checked;
 
-    // 2. Tally Skill IDs (1XX = Self, 2XX = Enemy)
+    if (!isSolo) {
+        leaders.forEach(n => {
+            const d = HEROES[n], r = roster[n];
+            if (d && d.widget && d.widget.context === ctx) {
+                widgetMults[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
+            }
+        });
+    }
+
+    // Tally Skills... (Logic remains the same as previous)
     const manifest = {};
     leaders.forEach(n => { manifest[n] = { s1: 1, s2: 1, s3: 1 }; });
     joiners.forEach(n => { manifest[n] = { s1: 1, s2: 0, s3: 0 }; });
-
     for (const name in manifest) {
         const d = HEROES[name], r = roster[name];
         if (!d) continue;
@@ -567,30 +598,28 @@ function calcPowerScore(leaders, joiners, ctx, isBear) {
             });
         });
     }
-
     let sMult = 1.0;
     Object.values(skillBuckets).forEach(v => sMult *= (1 + v));
 
-    // 3. Apply Account Stats (Naked + Flats) * Multiplier
     let statEffect = 1.0;
     if (document.getElementById('use-account-stats').checked && nakedStats) {
+        // Fetch Temporary Buffs from the UI
+        const tBuffs = {
+            att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) || 0) / 100,
+            def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) || 0) / 100,
+            leth: 1 + (parseFloat(document.getElementById('temp-buff-leth').value) || 0) / 100,
+            hp: 1 + (parseFloat(document.getElementById('temp-buff-hp').value) || 0) / 100
+        };
+
         let totalGain = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
-            const naked = { 
-                att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], 
-                def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] 
-            };
-            
+            const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
             let flats = { att: 0, def: 0, leth: 0, hp: 0 };
             leaders.forEach(name => {
                 const d = HEROES[name], r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) !== t) return;
-                
-                // Star Flats
-                flats.att += GROWTH_TEMPLATES[d.template][r.starIndex];
-                flats.def += GROWTH_TEMPLATES[d.template][r.starIndex];
-                
-                // Widget Flats
+                flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                 if (d.widget) {
                     if (d.widget.stat === 'lethality') flats.leth += WIDGET_STATS[d.template][r.widget];
                     if (d.widget.stat === 'health') flats.hp += WIDGET_STATS[d.template][r.widget];
@@ -598,18 +627,18 @@ function calcPowerScore(leaders, joiners, ctx, isBear) {
             });
 
             const final = {
-                att: (naked.att + flats.att) * widgetMults.attack,
-                leth: (naked.leth + flats.leth) * widgetMults.lethality,
-                def: (naked.def + flats.def) * widgetMults.defense,
-                hp: (naked.hp + flats.hp) * widgetMults.health
+                att: (naked.att + flats.att) * widgetMults.attack * tBuffs.att,
+                leth: (naked.leth + flats.leth) * widgetMults.lethality * tBuffs.leth,
+                def: (naked.def + flats.def) * widgetMults.defense * tBuffs.def,
+                hp: (naked.hp + flats.hp) * widgetMults.health * tBuffs.hp
             };
 
-            // Gain = (Final Power / Naked Power)
-            totalGain += ( (final.att * final.leth) / (final.def * final.hp) ) / ( (naked.att * naked.leth) / (naked.def * naked.hp) );
+            const nakedPwr = (naked.att * naked.leth) / (naked.def * naked.hp);
+            const finalPwr = (final.att * final.leth) / (final.def * final.hp);
+            totalGain += (finalPwr / (nakedPwr || 1));
         });
         statEffect = totalGain / 3;
     } else {
-        // Fallback if naked stats are off: use Widget Multipliers as raw power factors
         statEffect = widgetMults.attack * widgetMults.lethality;
     }
 
