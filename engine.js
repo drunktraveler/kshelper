@@ -24,7 +24,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         return Math.max(0, Math.min(1, mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma));
     };
 
-    // Tracking for Stochastic Logs
     let triggers = { atk: {}, def: {} };
     let troopProcs = { atk: { wind:0, lance:0, shield:0, bypass:0 }, def: { wind:0, lance:0, shield:0, bypass:0 } };
 
@@ -44,7 +43,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const sC = (side==='atk' ? m_cur : e_cur), tC = (side==='atk' ? e_cur : m_cur);
             const sS = setup[side], tS = setup[target], tf = (side==='atk' ? ef : mf);
             const sL = (side==='atk'?atkLuck:defLuck);
-            
             const effectiveMult = (side === 'atk') ? (m_data.selfMult * e_data.enemyMult) : (e_data.selfMult * m_data.enemyMult);
 
             ['inf', 'cav', 'arc'].forEach(u => {
@@ -86,9 +84,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const bp = roll(0.2, 'bypass');
-                    if (isStochastic) {
-                        if (bp) { pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)}); return; }
-                    } else {
+                    if (isStochastic && bp) { pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil)}); return; }
+                    else if (!isStochastic) {
                         pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * (1 - bp)});
                         pending.push({dict: tC, unit: 'arc', amt: calcKills('arc', abil) * bp});
                         return;
@@ -101,31 +98,25 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break;
     }
 
-    const finalizeLogs = (side, skillLogs) => {
+    const finalizeLogs = (side) => {
         const p = side === 'atk' ? atkP : defP;
         const tp = troopProcs[side];
         let interactions = [];
         ['inf', 'cav', 'arc'].forEach(u => {
-            const w = p.weights[u];
-            if (w.t7 > 0) interactions.push(`${u.toUpperCase()} T7+ (${(w.t7 * 100).toFixed(0)}%)`);
-            if (w.tg3 > 0 || w.tg5 > 0) interactions.push(`${u.toUpperCase()} TG3/5 (${(Math.max(w.tg3,w.tg5)*100).toFixed(0)}%)`);
+            if (p.weights[u].t7 > 0) interactions.push(`${u.toUpperCase()} T7+ (${(p.weights[u].t7 * 100).toFixed(0)}%)`);
+            if (p.weights[u].tg3 > 0 || p.weights[u].tg5 > 0) interactions.push(`${u.toUpperCase()} TG3/5 (${(Math.max(p.weights[u].tg3, p.weights[u].tg5)*100).toFixed(0)}%)`);
         });
-        
-        const troopLog = interactions.length > 0 ? `<div class="text-slate-300 mb-1 font-bold">[Troop Efficiency] ${interactions.join(' | ')}</div>` : '';
-        const procLog = isStochastic ? `<div class="text-amber-500/80 text-[9px] mt-1 border-t border-slate-800/50 pt-1">Triggers: Wind(${tp.wind}) Lance(${tp.lance}) Shield(${tp.shield}) Bypass(${tp.bypass})</div>` : '';
-        
-        return [
-            `<div class="text-slate-500 font-bold mb-1">[Passive] Standard 10% RPS Counters Active</div>`,
-            troopLog,
-            ...skillLogs,
-            procLog
-        ];
+        return {
+            skills: side === 'atk' ? m_data.logs : e_data.logs,
+            troopEff: interactions.join(' | '),
+            triggers: isStochastic ? `Wind(${tp.wind}) Lance(${tp.lance}) Shield(${tp.shield}) Bypass(${tp.bypass})` : null
+        };
     };
 
     return { 
         m_cur, e_cur, wave, 
-        atk_mults: finalizeLogs('atk', m_data.logs), 
-        def_mults: finalizeLogs('def', e_data.logs), 
+        atk_logs: finalizeLogs('atk'), 
+        def_logs: finalizeLogs('def'), 
         totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
     };
 }
@@ -136,7 +127,6 @@ function processBatches(batches) {
     batches.forEach(b => {
         ['inf','cav','arc'].forEach(u => {
             const longU = u==='arc'?'archers':(u==='inf'?'infantry':'cavalry');
-            // Use unit-specific tiers gathered in ui-bridge
             const tier = b[u+'_tier'], tg = b[u+'_tg'], count = b[u];
             if (!count) return;
             const stats = UNITS[longU][tier][tg];
@@ -154,18 +144,15 @@ function processBatches(batches) {
 function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, triggerTracker) {
     let selfPool = {}, enemyPool = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
-
     sideSetup.heroes.forEach((h, index) => {
         if(h.name === "None") return;
         const d = HEROES[h.name];
         d.skills.forEach((s, si) => {
             if (index >= 3 && si > 0) return;
             const x = s.values[h[`s${si+1}`]-1], p = s.getChance(x), m = s.getMagnitude(x);
-            
             let ev;
-            if (p >= 1.0) {
-                ev = m;
-            } else if (isStochastic) {
+            if (p >= 1.0) ev = m;
+            else if (isStochastic) {
                 const hits = Math.random() < p ? 1 : 0;
                 if (!triggerTracker[h.name]) triggerTracker[h.name] = {};
                 triggerTracker[h.name][s.name] = (triggerTracker[h.name][s.name] || 0) + hits;
@@ -173,18 +160,16 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
             } else {
                 ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
             }
-
             s.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
                 const val = (Array.isArray(ev) ? ev[idx] : ev);
                 if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
                 else enemyPool[id] = (enemyPool[id] || 0) + val;
             });
-
             if(!isOptimizing) {
                 const isPassive = p >= 1.0;
-                const label = isStochastic && !isPassive ? `Triggers: ${triggerTracker[h.name][s.name]}` : `Eff: +${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%`;
-                logs.push(`<div class="flex justify-between border-b border-slate-900/40 py-0.5"><span>${h.name} ${s.name}</span> <span class="${isPassive?'text-blue-400':'text-amber-500'} font-bold">${label}</span></div>`);
+                const valStr = isStochastic && !isPassive ? `Triggers: ${triggerTracker[h.name][s.name]}` : `+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%`;
+                logs.push({ name: `${h.name} ${s.name}`, val: valStr, isPassive });
             }
         });
     });
