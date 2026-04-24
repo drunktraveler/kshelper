@@ -222,11 +222,11 @@ window.toggleAccountStats = () => {
 };
 
 window.reverseEngineerAccount = () => {
-    const mode = document.getElementById('report-mode').value; // solo or rally
-    const ctx = document.getElementById('report-ctx').value; // off or def
+    const mode = document.getElementById('report-mode').value;
+    const ctx = document.getElementById('report-ctx').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
-    // Multiplicative Temporary Buffs
+    // 1. Temporary Multiplicative Buffs
     const tBuffs = {
         att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) / 100),
         def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) / 100),
@@ -239,7 +239,7 @@ window.reverseEngineerAccount = () => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    // Calculate Global Widget Multipliers (Rally/Garrison only)
+    // 2. Widget Multipliers (Only applies if context is Rally/Defense)
     let wMults = { attack: 0, defense: 0, lethality: 0, health: 0 };
     if (mode === 'rally') {
         reportHeroNames.forEach(name => {
@@ -257,22 +257,26 @@ window.reverseEngineerAccount = () => {
             const statMap = { att: "attack", def: "defense", leth: "lethality", hp: "health" };
             const category = statMap[s];
             
-            // 1. Divide by Multipliers (Widget and Temp)
+            // Step A: Division (Remove Global Multipliers)
             let val = reportVal[`${t}_${s}`] / ((1 + wMults[category]) * tBuffs[s]);
             
-            // 2. Subtract Flats (Star Growth and Widget Flats)
+            // Step B: Subtraction (Remove Hero-Specific Flats)
             reportHeroNames.forEach(name => {
                 if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
                 
-                // Only subtract if the hero type matches the column (Inf/Cav/Arc)
+                // Only subtract if hero type (e.g. Inf) matches column type (e.g. inf)
                 if (d.type.toLowerCase().slice(0,3) === t) {
                     if (s === 'att' || s === 'def') {
+                        // Subtract Star Growth
                         val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    } else if (d.widget && d.widget.stat === category) {
-                        // Subtracting the flat leth/hp bonus from widgets.js
+                    } else if (s === 'leth' || s === 'hp') {
+                        // FIXED: Decoupled check. All widgets grant flat Leth/HP.
+                        // If template is "AMADEUS", pull from WIDGET_STATS["AMADEUS"][level]
                         const templateStats = WIDGET_STATS[d.template];
-                        if (templateStats) val -= (templateStats[r.widget] || 0);
+                        if (templateStats) {
+                            val -= (templateStats[r.widget] || 0);
+                        }
                     }
                 }
             });
@@ -287,18 +291,30 @@ window.reverseEngineerAccount = () => {
 
 function renderNakedStats() {
     const div = document.getElementById('naked-stats-display');
+    if (!div) return;
     div.classList.remove('hidden');
     div.innerHTML = '';
-    const types = [{ l: 'Infantry', k: 'inf', c: 'text-blue-400' }, { l: 'Cavalry', k: 'cav', c: 'text-amber-400' }, { l: 'Archers', k: 'arc', c: 'text-emerald-400' }];
-    
+    div.className = "space-y-2 p-4 bg-slate-950/50 rounded-xl border border-slate-800 mt-4";
+
+    const types = [
+        { l: 'Infantry', k: 'inf', c: 'text-blue-400' },
+        { l: 'Cavalry', k: 'cav', c: 'text-amber-400' },
+        { l: 'Archers', k: 'arc', c: 'text-emerald-400' }
+    ];
+
     types.forEach(t => {
         const row = document.createElement('div');
-        row.className = "grid grid-cols-5 gap-2 items-center border-b border-slate-900/40 pb-1 mb-1";
+        row.className = "grid grid-cols-5 gap-2 items-center border-b border-slate-900/40 pb-1";
         let h = `<div class="text-[10px] font-black ${t.c} uppercase">${t.l}</div>`;
         ['att', 'def', 'leth', 'hp'].forEach(s => {
-            h += `<div class="text-center"><div class="text-[7px] text-slate-500 uppercase font-black">${s}</div><div class="text-[10px] font-bold text-white">${(nakedStats[`${t.k}_${s}`]||0).toFixed(1)}%</div></div>`;
+            const val = nakedStats[`${t.k}_${s}`] || 0;
+            h += `<div class="text-center">
+                <div class="text-[7px] text-slate-500 uppercase font-black">${s}</div>
+                <div class="text-[10px] font-bold text-white">${val.toFixed(1)}%</div>
+            </div>`;
         });
-        row.innerHTML = h; div.appendChild(row);
+        row.innerHTML = h;
+        div.appendChild(row);
     });
 }
 
