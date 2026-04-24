@@ -15,7 +15,6 @@ let state = {
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
 
-// --- 1. INITIALIZATION ---
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
     const mainSel = document.getElementById('hero-select');
@@ -46,6 +45,32 @@ function buildStatTable() {
     }));
 }
 
+window.addBatch = (side, initial = false) => {
+    const container = document.getElementById(`${side}-batch-container`);
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
+    
+    const types = [
+        { label: 'Infantry', key: 'inf', color: 'text-blue-400', val: 500000 },
+        { label: 'Cavalry', key: 'cav', color: 'text-amber-400', val: 200000 },
+        { label: 'Archers', key: 'arc', color: 'text-emerald-400', val: 300000 }
+    ];
+
+    let html = `<div class="flex justify-between items-center"><span class="text-[9px] font-bold text-slate-500 uppercase">Troop Configuration</span>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}</div>`;
+
+    types.forEach(t => {
+        html += `<div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/50 pb-2">
+            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
+            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}</select>
+            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}</select>
+            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? t.val : 0}" oninput="window.updateFormation('${side}')">
+        </div>`;
+    });
+    div.innerHTML = html;
+    container.appendChild(div); window.updateFormation(side);
+};
+
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
     const btn = document.getElementById('toggle-details-btn');
@@ -69,42 +94,6 @@ window.showTab = (tab) => {
         const b = document.getElementById(btns[k]);
         if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
-};
-
-window.addBatch = (side, initial = false) => {
-    const container = document.getElementById(`${side}-batch-container`);
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
-    
-    const types = [
-        { label: 'Infantry', key: 'inf', color: 'text-blue-400' },
-        { label: 'Cavalry', key: 'cav', color: 'text-amber-400' },
-        { label: 'Archers', key: 'arc', color: 'text-emerald-400' }
-    ];
-
-    let html = `<div class="flex justify-between items-center">
-        <span class="text-[9px] font-bold text-slate-500 uppercase">Troop Configuration</span>
-        ${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}
-    </div>`;
-
-    types.forEach(t => {
-        html += `
-        <div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/50 pb-2">
-            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
-            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}
-            </select>
-            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}
-            </select>
-            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? (t.key === 'inf' ? 500000 : (t.key === 'cav' ? 200000 : 300000)) : 0}" oninput="window.updateFormation('${side}')">
-        </div>`;
-    });
-
-    div.innerHTML = html;
-    container.appendChild(div); 
-    window.updateFormation(side);
 };
 
 window.updateFormation = (side) => {
@@ -276,7 +265,11 @@ function renderNakedStats() {
 // --- 6. SIMULATION & OPTIMIZERS ---
 function gatherSetup() {
     const getStats = (s) => { const obj = {}; document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); return obj; };
-    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({ tier: parseInt(el.querySelector('.batch-tier').value), tg: parseInt(el.querySelector('.batch-tg').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0, cav: parseFloat(el.querySelector('.batch-cav').value)||0, arc: parseFloat(el.querySelector('.batch-arc').value)||0 }));
+    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
+        inf_tier: parseInt(el.querySelector('.batch-tier-inf').value), inf_tg: parseInt(el.querySelector('.batch-tg-inf').value), inf: parseFloat(el.querySelector('.batch-inf').value)||0,
+        cav_tier: parseInt(el.querySelector('.batch-tier-cav').value), cav_tg: parseInt(el.querySelector('.batch-tg-cav').value), cav: parseFloat(el.querySelector('.batch-cav').value)||0,
+        arc_tier: parseInt(el.querySelector('.batch-tier-arc').value), arc_tg: parseInt(el.querySelector('.batch-tg-arc').value), arc: parseFloat(el.querySelector('.batch-arc').value)||0
+    }));
     return { atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes }, def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes } };
 }
 
@@ -300,28 +293,12 @@ window.handleSimulation = async () => {
 
     const screen = document.getElementById('result-screen');
     screen.classList.remove('hidden');
-    
     document.getElementById('res-atk-total').innerText = sumTroops(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sumTroops(rAvg.e_cur).toLocaleString();
-
-    const getResScore = (r) => (sumTroops(r.m_cur) / (r.startAtk||1)) - (sumTroops(r.e_cur) / (r.startDef||1));
-    const sAvg = getResScore(rAvg), sMin = getResScore(rWorst), sMax = getResScore(rBest);
-    const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
-
-    document.getElementById('result-waves').innerHTML = `
-        <span class="text-blue-400 font-black">${modeLabel}</span><br>
-        Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>
-        ${simMode === 'monte-carlo' ? `<br>Visualized Battle Luck: <span class="text-amber-500">${luckPct.toFixed(0)}th Percentile</span>` : ''}
-    `;
-
+    
+    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black">${modeLabel}</span><br>Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>`;
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-
-    const bar = document.getElementById('luck-bar-inner');
-    const rightSidePos = ((1 - Math.min(sMin, sMax)) * 50); 
-    bar.style.right = (100 - rightSidePos) + "%"; 
-    bar.style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    bar.style.left = "auto";
 
     document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker Multipliers</div>` + rAvg.atk_mults.map(l => `<div>• ${l}</div>`).join('') + `<div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender Multipliers</div>` + rAvg.def_mults.map(l => `<div>• ${l}</div>`).join('');
     screen.scrollIntoView({ behavior: 'smooth' });
