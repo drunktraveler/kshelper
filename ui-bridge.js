@@ -489,7 +489,7 @@ window.calculateOptimalLineups = () => {
     
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-1 md:col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
+    resArea.innerHTML = '<div class="col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
 
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
@@ -505,34 +505,47 @@ window.calculateOptimalLineups = () => {
     setTimeout(() => {
         resArea.innerHTML = '';
         scenarios.forEach(s => {
-            let best = { leads: [], joiner: "None", score: -1 };
+            let best = { leads: [], joiners: [], score: -1 };
 
+            // 1. Loop through all 1-1-1 Leader Combos
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
                         const leads = [i, c, a];
-                        let bestJoinerForThisTrio = "None";
-                        let maxJScore = -1;
+                        let currentJoiners = [];
 
-                        // Identify best hero to fill the 4 joiner slots
+                        // 2. Iterative Joiner Selection (Fixes the duplicate hero issue)
                         if (s.rally || s.bear) {
-                            unlocked.forEach(n => {
-                                const score = calcPowerScore(leads, [n, n, n, n], s.ctx, s.rally, s.bear);
-                                if (score > maxJScore) { 
-                                    maxJScore = score; 
-                                    bestJoinerForThisTrio = n; 
-                                }
-                            });
+                            for (let slot = 0; slot < 4; slot++) {
+                                let bestJForSlot = null;
+                                let maxJScore = -1;
+
+                                // Test every unlocked hero for this specific slot
+                                unlocked.forEach(candidate => {
+                                    const testJoiners = [...currentJoiners, candidate];
+                                    const score = calcPowerScore(leads, testJoiners, s.ctx, s.rally, s.bear);
+                                    if (score > maxJScore) {
+                                        maxJScore = score;
+                                        bestJForSlot = candidate;
+                                    }
+                                });
+                                currentJoiners.push(bestJForSlot);
+                            }
                         }
 
-                        const finalScore = calcPowerScore(leads, (s.rally || s.bear) ? [bestJoinerForThisTrio, bestJoinerForThisTrio, bestJoinerForThisTrio, bestJoinerForThisTrio] : [], s.ctx, s.rally, s.bear);
+                        const finalScore = calcPowerScore(leads, currentJoiners, s.ctx, s.rally, s.bear);
                         if (finalScore > best.score) {
-                            best = { leads, joiner: bestJoinerForThisTrio, score: finalScore };
+                            best = { leads, joiners: currentJoiners, score: finalScore };
                         }
                     }
                 }
             }
             
+            // Format joiner names for clean display (e.g. Saul x3, Fahd x1)
+            const joinerCounts = {};
+            best.joiners.forEach(j => joinerCounts[j] = (joinerCounts[j] || 0) + 1);
+            const joinerStr = Object.entries(joinerCounts).map(([name, count]) => `${name} x${count}`).join(', ');
+
             const card = document.createElement('div');
             card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center gap-4";
             card.innerHTML = `
@@ -541,7 +554,7 @@ window.calculateOptimalLineups = () => {
                     <div class="flex -space-x-3">
                         ${best.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden bg-slate-900 shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
                     </div>
-                    ${(s.rally || s.bear) ? `<div class="mt-2 text-[9px] text-slate-500 font-bold uppercase">Joiner: ${best.joiner} (x4)</div>` : ''}
+                    ${(s.rally || s.bear) ? `<div class="mt-2 text-[9px] text-slate-500 font-bold uppercase">Joiners: ${joinerStr}</div>` : ''}
                 </div>
                 <div class="text-right">
                     <div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div>
