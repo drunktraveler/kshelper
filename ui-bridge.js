@@ -602,16 +602,14 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
         });
     }
 
-    // 3. STAT GAIN & COMBINE
-    let skillMult = 1.0;
-    Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
-
+    // 3. STAT GAIN CALCULATION
     let statEffect = 1.0;
     if (document.getElementById('use-account-stats').checked && nakedStats) {
         let totalGain = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
             const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
             let flats = { att: 0, def: 0, leth: 0, hp: 0 };
+            
             leaders.forEach(name => {
                 const d = HEROES[name], r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) !== t) return;
@@ -622,15 +620,26 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
                     if (d.widget.stat === 'health') flats.hp += (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
-            const nPwr = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth) / (naked.def * naked.hp);
+
             const final = { att: naked.att + flats.att, leth: naked.leth + flats.leth, def: naked.def + flats.def, hp: naked.hp + flats.hp };
-            const fPwr = isBear ? (final.att * final.leth) : (final.att * final.leth) / (final.def * final.hp);
+            
+            // Baseline Power
+            const nPwr = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
+            // Hero-Modified Power
+            const fPwr = isBear ? (final.att * final.leth) : (final.att * final.leth * final.def * final.hp);
+            
             totalGain += (fPwr / (nPwr || 1));
         });
         statEffect = totalGain / 3;
     }
 
-    const widgetEffect = (widgetMults.attack * widgetMults.lethality) / (isBear ? 1 : (widgetMults.defense * widgetMults.health));
+    // 4. COMBINE ALL LAYERS MULTIPLICATIVELY
+    // For Bear: Only Attack and Lethality widgets matter.
+    // For All Else: Every widget contributes to the "Capability" score.
+    const widgetEffect = isBear 
+        ? (widgetMults.attack * widgetMults.lethality) 
+        : (widgetMults.attack * widgetMults.lethality * widgetMults.defense * widgetMults.health);
+
     return statEffect * skillMult * widgetEffect;
 }
 
