@@ -86,25 +86,25 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break;
     }
 
-    const finalizeLogs = (side, skillLogs) => {
+    const finalizeLogs = (side, skillLogs, triggerTracker) => {
         const p = side === 'atk' ? atkP : defP;
-        let t7List = [], tgList = [];
+        let interactions = [];
         ['inf', 'cav', 'arc'].forEach(u => {
-            if (p.weights[u].t7 > 0) t7List.push(`${u.toUpperCase()} (${(p.weights[u].t7 * 100).toFixed(0)}%)`);
-            if (p.weights[u].tg3 > 0 || p.weights[u].tg5 > 0) tgList.push(`${u.toUpperCase()} (${(Math.max(p.weights[u].tg3, p.weights[u].tg5)*100).toFixed(0)}%)`);
+            const w = p.weights[u];
+            if (w.t7 > 0) interactions.push(`${u.toUpperCase()} T7+ (${(w.t7 * 100).toFixed(0)}%)`);
+            if (w.tg3 > 0 || w.tg5 > 0) interactions.push(`${u.toUpperCase()} TG3/5 (${(Math.max(w.tg3, w.tg5)*100).toFixed(0)}%)`);
         });
-        return [
-            `[Passive] Standard 10% Rock-Paper-Scissors active`,
-            t7List.length ? `[T7+ Efficiency] ${t7List.join(' | ')}` : '',
-            tgList.length ? `[TG3/5 Efficiency] ${tgList.join(' | ')}` : '',
-            ...skillLogs
-        ].filter(l => l !== '');
+        return {
+            skills: skillLogs,
+            troopEff: interactions.join(' | '),
+            triggers: triggerTracker
+        };
     };
 
     return { 
         m_cur, e_cur, wave, 
-        atk_logs: { skills: m_data.logs, triggers: triggers, troopEff: t7List.join(' | ') },
-        def_logs: { skills: e_data.logs, troopEff: defT7.join(' | ') }, 
+        atk_logs: finalizeLogs('atk', m_data.logs, triggers), 
+        def_logs: finalizeLogs('def', e_data.logs, {}), // Defender triggers not tracked in this context
         totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
     };
 }
@@ -153,11 +153,9 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
             if (p >= 1.0) {
                 ev = m;
             } else if (isStochastic) {
-                // Actual Trigger Count Logic
                 const hits = Math.random() < p ? 1 : 0;
                 const skillKey = `${h.name} ${s.name}`;
-                if (!triggerTracker[skillKey]) triggerTracker[skillKey] = 0;
-                triggerTracker[skillKey] += hits;
+                if (hits) triggerTracker[skillKey] = (triggerTracker[skillKey] || 0) + 1;
                 ev = hits * m;
             } else {
                 ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
@@ -174,7 +172,7 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
                 const isPassive = p >= 1.0;
                 logs.push({ 
                     name: `${h.name} ${s.name}`, 
-                    val: isPassive ? `+${(m * 100).toFixed(1)}%` : ev, 
+                    val: ev, 
                     isPassive,
                     rawMag: m 
                 });
