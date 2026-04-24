@@ -11,10 +11,9 @@ let optRole = 'atk';
 const sumTroops = (c) => Math.round((c.inf || 0) + (c.cav || 0) + (c.arc || 0));
 
 let state = {
-    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
+    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: roster["None"]?.widget || 0 })) },
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: roster["None"]?.widget || 0 })) }
 };
-
 // --- 1. INITIALIZATION ---
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
@@ -29,19 +28,19 @@ window.init = () => {
     buildStatTable();
     window.addBatch('atk', true); window.addBatch('def', true);
     window.updateGrids(); renderRosterUI(); 
-    if(nakedStats) renderNakedStats();
     window.showTab('battle');
 };
 
 function buildStatTable() {
-    const table = document.getElementById('stat-table');
-    if(!table) return;
-    const units = ["Infantry", "Cavalry", "Archer"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+    const table = document.getElementById('stat-table'); if(!table) return;
+    const units = ["inf", "cav", "arc"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
     table.innerHTML = '';
     units.forEach(u => cats.forEach(c => {
         const row = document.createElement('div'); row.className = "stat-row";
-        const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#10b981; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#ef4444; font-weight:800; width:70px; text-align:right;" value="1000">`;
+        const key = `${u}_${c.k}`;
+        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" value="1000" class="input-dark !w-20 !bg-transparent !border-none text-emerald-500 font-bold" oninput="window.updateStatColors(this)">
+            <div class="text-[9px] font-black uppercase text-slate-500">${u} ${c.l}</div>
+            <input type="number" data-side="def" data-stat="${key}" value="1000" class="input-dark !w-20 !bg-transparent !border-none text-red-500 font-bold text-right" oninput="window.updateStatColors(this)">`;
         table.appendChild(row);
     }));
 }
@@ -75,23 +74,16 @@ window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
     if (!container) return;
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
-    const types = [
-        { label: 'Infantry', key: 'inf', color: 'text-blue-400', val: 500000 },
-        { label: 'Cavalry', key: 'cav', color: 'text-amber-400', val: 200000 },
-        { label: 'Archers', key: 'arc', color: 'text-emerald-400', val: 300000 }
-    ];
-    let html = `<div class="flex justify-between items-center"><span class="text-[9px] font-bold text-slate-500 uppercase">Troop Configuration</span>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}</div>`;
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 mb-2";
+    const types = [{ l: 'Infantry', k: 'inf', c: 'text-blue-400', v: 500000 }, { l: 'Cavalry', k: 'cav', c: 'text-amber-400', v: 200000 }, { l: 'Archers', k: 'arc', c: 'text-emerald-400', v: 300000 }];
+    let h = `<div class="flex justify-between items-center"><span class="text-[9px] font-bold text-slate-500 uppercase">Batch</span>${!initial?`<button onclick="this.parentElement.parentElement.remove();window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>`:''}</div>`;
     types.forEach(t => {
-        html += `<div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/50 pb-2">
-            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
-            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}</select>
-            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}</select>
-            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? t.val : 0}" oninput="window.updateFormation('${side}')">
-        </div>`;
+        h += `<div class="grid grid-cols-12 gap-2 items-center"><div class="col-span-3 text-[10px] font-bold ${t.c}">${t.l}</div>
+            <select class="batch-tier-${t.k} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
+            <select class="batch-tg-${t.k} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="5">TG5</option><option value="3" selected>TG3</option><option value="0">TG0</option></select>
+            <input type="number" class="batch-${t.k} col-span-5 input-dark !text-right" value="${initial?t.v:0}" oninput="window.updateFormation('${side}')"></div>`;
     });
-    div.innerHTML = html;
-    container.appendChild(div); window.updateFormation(side);
+    div.innerHTML = h; container.appendChild(div); window.updateFormation(side);
 };
 
 window.updateFormation = (side) => {
@@ -101,12 +93,12 @@ window.updateFormation = (side) => {
         c += parseFloat(row.querySelector('.batch-cav').value) || 0;
         a += parseFloat(row.querySelector('.batch-arc').value) || 0;
     });
-    const total = i+c+a; const bar = document.getElementById(`${side}-f-bar`);
-    if (total > 0 && bar) {
-        bar.children[0].style.width = (i/total*100)+'%'; bar.children[1].style.width = (c/total*100)+'%'; bar.children[2].style.width = (a/total*100)+'%';
-        document.getElementById(`${side}-inf-pct`).innerText = Math.round(i/total*100)+'%';
-        document.getElementById(`${side}-cav-pct`).innerText = Math.round(c/total*100)+'%';
-        document.getElementById(`${side}-arc-pct`).innerText = Math.round(a/total*100)+'%';
+    const t = i+c+a; const bar = document.getElementById(`${side}-f-bar`);
+    if (t > 0 && bar) {
+        bar.children[0].style.width = (i/t*100)+'%'; bar.children[1].style.width = (c/t*100)+'%'; bar.children[2].style.width = (a/t*100)+'%';
+        document.getElementById(`${side}-inf-pct`).innerText = Math.round(i/t*100)+'%';
+        document.getElementById(`${side}-cav-pct`).innerText = Math.round(c/t*100)+'%';
+        document.getElementById(`${side}-arc-pct`).innerText = Math.round(a/t*100)+'%';
     }
 };
 
@@ -204,31 +196,28 @@ function gatherSetup() {
 
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
-    const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rBest, rWorst, modeLabel;
+    const mode = document.getElementById('sim-mode-select').value;
+    let rAvg, rBest, rWorst;
 
-    if (simMode === 'monte-carlo') {
-        modeLabel = "Monte Carlo (100x)";
+    if (mode === 'monte-carlo') {
         let batch = [];
         for (let i = 0; i < 100; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
         batch.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
         rAvg = batch[50]; rWorst = batch[0]; rBest = batch[99];
     } else {
-        modeLabel = "Range Analysis (95% CI)";
         rAvg = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky');
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    const screen = document.getElementById('result-screen');
-    screen.classList.remove('hidden');
+    const s = document.getElementById('result-screen'); s.classList.remove('hidden');
     document.getElementById('res-atk-total').innerText = sumTroops(rAvg.m_cur).toLocaleString();
     document.getElementById('res-def-total').innerText = sumTroops(rAvg.e_cur).toLocaleString();
-    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black">${modeLabel}</span><br>Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>`;
+    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>Avg Duration: ${rAvg.wave} Waves`;
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-    document.getElementById('battle-details').innerHTML = `<div class="text-emerald-500 font-black mb-2 border-b border-emerald-900/30 pb-1 uppercase">Attacker</div>` + rAvg.atk_mults.map(l => `<div>${l}</div>`).join('') + `<div class="text-red-500 font-black mt-4 mb-2 border-b border-red-900/30 pb-1 uppercase">Defender</div>` + rAvg.def_mults.map(l => `<div>${l}</div>`).join('');
-    screen.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('battle-details').innerHTML = rAvg.atk_mults.join('') + rAvg.def_mults.join('');
+    s.scrollIntoView({ behavior: 'smooth' });
 };
 
 // --- 5. ACCOUNT CALIBRATION ---
@@ -273,47 +262,119 @@ window.runOptimizer = (mode) => {
     const isBear = mode === 'bear', setup = gatherSetup();
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, wins: 0, net: 0 };
+    
+    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
-    if (isBear) opponents.push({inf:1, cav:0, arc:0}); 
-    else for(let i=0; i<=100; i+=20) for(let j=0; j<=100-i; j+=20) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
+
+    if (isBear) { 
+        opponents.push({inf:1, cav:0, arc:0}); 
+    } else if (mode === 'current') {
+        const t = optRole === 'atk' ? setup.def : setup.atk;
+        const total = sumTroops(processBatchData(t.batches));
+        const d = processBatchData(t.batches);
+        opponents.push({inf: d.inf/total, cav: d.cav/total, arc: d.arc/total});
+    } else {
+        for(let i=0; i<=100; i+=20) for(let j=0; j<=100-i; j+=20) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
+    }
 
     for (let i=0; i<=100; i+=5) {
         for (let j=0; j<=100-i; j+=5) {
             let k=100-i-j, wins = 0, totalNet = 0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                const userBatches = [{ inf_tier:10, inf_tg:3, inf:i*1000, cav_tier:10, cav_tg:3, cav:j*1000, arc_tier:10, arc_tg:3, arc:k*1000 }];
-                const oppBatches = [{ inf_tier:10, inf_tg:3, inf:opp.inf*100000, cav_tier:10, cav_tg:3, cav:opp.cav*100000, arc_tier:10, arc_tg:3, arc:opp.arc*100000 }];
-                if (optRole === 'atk') { s.atk.batches = userBatches; s.def.batches = oppBatches; }
-                else { s.def.batches = userBatches; s.atk.batches = oppBatches; }
+                const userBatch = { inf_tier:10, inf_tg:3, inf:i*1000, cav_tier:10, cav_tg:3, cav:j*1000, arc_tier:10, arc_tg:3, arc:k*1000 };
+                const oppBatch = { inf_tier:10, inf_tg:3, inf:opp.inf*100000, cav_tier:10, cav_tg:3, cav:opp.cav*100000, arc_tier:10, arc_tg:3, arc:opp.arc*100000 };
+                
+                if (optRole === 'atk') { s.atk.batches = [userBatch]; s.def.batches = isBear ? s.def.batches : [oppBatch]; }
+                else { s.def.batches = [userBatch]; s.atk.batches = [oppBatch]; }
+
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
-                const val = isBear ? r.totalDmg : (sumTroops(r.m_cur) - sumTroops(r.e_cur));
-                if (!isBear && val > 0) wins++; totalNet += val;
+                const userSurv = optRole === 'atk' ? sumTroops(r.m_cur) : sumTroops(r.e_cur);
+                const enemySurv = optRole === 'atk' ? sumTroops(r.e_cur) : sumTroops(r.m_cur);
+                const val = isBear ? r.totalDmg : (userSurv - enemySurv);
+                
+                if (!isBear && val > 0) wins++; 
+                totalNet += val;
             });
             const score = isBear ? totalNet : (wins * 1e15) + totalNet;
-            if (score > best.score) best = { score, form: [i,j,k], wins, net: totalNet/opponents.length };
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
+            if (score > best.score) best = { score, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
+    renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerText = isBear ? `Total Dmg: ${Math.round(best.net).toLocaleString()}` : `Win Rate: ${((best.wins/opponents.length)*100).toFixed(1)}%`;
+    scoreArea.innerText = isBear ? `Optimized Split Found` : `Win Rate: ${best.winRate.toFixed(1)}% | Net: ${Math.round(best.net).toLocaleString()}`;
 };
+
+function renderTernary(id, data, best, isBear) {
+    const traces = [{ type:'scatterternary', a:data.a, b:data.b, c:data.c, mode:'markers', marker:{ color:data.z, colorscale: 'Viridis', size:6 } },
+        { type:'scatterternary', a:[best.form[0]], b:[best.form[1]], c:[best.form[2]], name:'Best', mode:'markers', marker:{size:14, symbol:'star', color:'cyan', line:{width:2, color:'black'}} }];
+    Plotly.newPlot(id, traces, { ternary: { sum:100, aaxis:{title:'Inf'}, baxis:{title:'Cav'}, caxis:{title:'Arc'} }, paper_bgcolor:'rgba(0,0,0,0)', font:{color:'#64748b'}, margin:{l:0,r:0,t:30,b:0}, showlegend: false });
+}
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if (unlocked.length < 3) return alert("Unlock 3 heroes.");
-    const resArea = document.getElementById('optimizer-results'); resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-2 text-center text-blue-500 animate-pulse font-bold">CALCULATING...</div>';
+    if (unlocked.length < 3) return alert("Unlock at least 3 heroes.");
+    const resArea = document.getElementById('optimizer-results');
+    resArea.classList.remove('hidden');
+    resArea.innerHTML = '<div class="col-span-2 text-center py-8 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
+
+    const byType = { Inf: [], Cav: [], Arc: [] };
+    unlocked.forEach(n => byType[HEROES[n].type].push(n));
+
+    const scenarios = [
+        { l: "Solo Attack", c: "off", j: 0, w: false },
+        { l: "Rally (Offense)", c: "off", j: 4, w: true },
+        { l: "Garrison (Defense)", c: "def", j: 4, w: true }
+    ];
+
     setTimeout(() => {
         resArea.innerHTML = '';
-        const scenarios = [{ l: "Solo Attack", c: "off" }, { l: "Rally (Off)", c: "off" }];
         scenarios.forEach(s => {
-            const card = document.createElement('div'); card.className = "glass-card p-4";
-            card.innerHTML = `<div class="text-[10px] text-blue-400 font-bold uppercase">${s.l}</div><div class="text-xl font-black text-white">Analysis Ready</div>`;
+            let best = { leaders: [], joiners: [], score: -1 };
+            // Pruned loop for leaders
+            for (let i of byType.Inf) {
+                for (let c of byType.Cav) {
+                    for (let a of byType.Arc) {
+                        const score = calcPowerScore([i, c, a], [], s.c, s.w);
+                        if (score > best.score) best = { leaders: [i, c, a], joiners: [], score };
+                    }
+                }
+            }
+            const card = document.createElement('div'); card.className = "glass-card p-6 border-t-2 border-blue-500";
+            card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
+                <div class="flex gap-2 mb-2">${best.leaders.map(n => `<div class="w-10 h-10 rounded-full border border-blue-500 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}</div>
+                <div class="text-xl font-black text-white">${best.score.toFixed(3)}x Multiplier</div>`;
             resArea.appendChild(card);
         });
     }, 100);
 };
+
+function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
+    let skillBuckets = {};
+    const manifest = {};
+    leaders.forEach(n => { manifest[n] = { s1:1, s2:1, s3:1 }; });
+    joiners.forEach(n => { manifest[n] = { s1:1, s2:0, s3:0 }; });
+
+    for (const name in manifest) {
+        const d = HEROES[name], r = roster[name];
+        d.skills.forEach((s, si) => {
+            if (!manifest[name][`s${si+1}`]) return;
+            const lvl = r[`s${si+1}`] || 5;
+            const x = s.values[lvl-1], p = s.getChance(x), m = s.getMagnitude(x);
+            const ev = (p >= 1.0) ? m : (1 - Math.pow(1 - p, s.duration || 1)) * m;
+            s.ids.forEach((id, idx) => { skillBuckets[id] = (skillBuckets[id] || 0) + (Array.isArray(ev)?ev[idx]:ev); });
+        });
+    }
+    let mult = 1.0; Object.values(skillBuckets).forEach(v => mult *= (1+v));
+    return mult;
+}
+
+function processBatchData(batches) {
+    let totals = {inf:0,cav:0,arc:0};
+    batches.forEach(b => { totals.inf += b.inf||0; totals.cav += b.cav||0; totals.arc += b.arc||0; });
+    return totals;
+}
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 document.addEventListener('DOMContentLoaded', window.init);
