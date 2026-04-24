@@ -76,14 +76,35 @@ window.addBatch = (side, initial = false) => {
     if (!container) return;
     const div = document.createElement('div');
     div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 relative mb-2";
-    div.innerHTML = `<div class="flex justify-between items-center"><div class="flex gap-2">
-            <select class="batch-tier bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[11,10,9,8,7,6,5,4,3,2,1].map(t => `<option value="${t}" ${t===10?'selected':''}>T${t}</option>`).join('')}</select>
-            <select class="batch-tg bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">${[5,4,3,2,1,0].map(tg => `<option value="${tg}" ${tg===3?'selected':''}>TG${tg}</option>`).join('')}
-            </select></div>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}</div>
-        <div class="grid grid-cols-3 gap-2">
-            <input type="number" class="batch-inf input-dark text-blue-400" value="500000" oninput="window.updateFormation('${side}')"><input type="number" class="batch-cav input-dark text-amber-400" value="200000" oninput="window.updateFormation('${side}')"><input type="number" class="batch-arc input-dark text-emerald-400" value="300000" oninput="window.updateFormation('${side}')">
+    
+    const types = [
+        { label: 'Infantry', key: 'inf', color: 'text-blue-400' },
+        { label: 'Cavalry', key: 'cav', color: 'text-amber-400' },
+        { label: 'Archers', key: 'arc', color: 'text-emerald-400' }
+    ];
+
+    let html = `<div class="flex justify-between items-center">
+        <span class="text-[9px] font-bold text-slate-500 uppercase">Troop Configuration</span>
+        ${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}
+    </div>`;
+
+    types.forEach(t => {
+        html += `
+        <div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/50 pb-2">
+            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
+            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}
+            </select>
+            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}
+            </select>
+            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? (t.key === 'inf' ? 500000 : (t.key === 'cav' ? 200000 : 300000)) : 0}" oninput="window.updateFormation('${side}')">
         </div>`;
-    container.appendChild(div); window.updateFormation(side);
+    });
+
+    div.innerHTML = html;
+    container.appendChild(div); 
+    window.updateFormation(side);
 };
 
 window.updateFormation = (side) => {
