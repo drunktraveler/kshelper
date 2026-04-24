@@ -26,7 +26,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0, bp:0 }, def: { ds:0, ln:0, sh:0, bp:0 } };
     const m_skill = getMultipliers(setup.atk, atkP, 'num', atkLuck, shift, 'atk', isBear, isOptimizing);
-    const e_skill = isBear ? { units: {all:1}, logs: [] } : getMultipliers(setup.def, defP, 'den', defLuck, shift, 'def', false, isOptimizing);
+    const e_skill = isBear ? { units: {all:1}, logs: [] } : getMultipliers(setup.def, defP, 'num', defLuck, shift, 'def', false, isOptimizing);
 
     let wave = 0;
     // PURE SIMULATION: Loop strictly until one side is dead
@@ -110,19 +110,44 @@ if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
     const ceilRes = (cur) => ({ inf: Math.ceil(cur.inf), cav: Math.ceil(cur.cav), arc: Math.ceil(cur.arc) });
     
     // LOG TROOP STATUS
-    const finalAtkLogs = [...m_skill.logs];
-    const finalDefLogs = [...e_skill.logs];
-    ['atk', 'def'].forEach(side => {
-        const p = side==='atk'?atkP:defP, logArr = side==='atk'?finalAtkLogs:finalDefLogs;
-        ['inf','cav','arc'].forEach(u => {
-            if (p.weights[u].t7 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} T7+ Active`);
-            if (p.weights[u].tg3 > 0) logArr.unshift(`[Troop] ${u.toUpperCase()} TG3/5 Active`);
-        });
+    const finalizeLogs = (side, skillLogs) => {
+    const p = side === 'atk' ? atkP : defP;
+    const combinedLogs = [...skillLogs];
+    
+    // Troop Interaction Consolidation
+    let interactions = [];
+    ['inf', 'cav', 'arc'].forEach(u => {
+        const w = p.weights[u];
+        if (w.t7 > 0) interactions.push(`${u.toUpperCase()} T7+ (${(w.t7 * 100).toFixed(0)}%)`);
+        if (w.tg3 > 0 || w.tg5 > 0) {
+            const highTg = Math.max(w.tg3, w.tg5);
+            interactions.push(`${u.toUpperCase()} TG3+ (${(highTg * 100).toFixed(0)}%)`);
+        }
     });
 
-    return { m_cur: ceilRes(m_cur), e_cur: ceilRes(e_cur), wave, atk_mults: finalAtkLogs, def_mults: finalDefLogs, startAtk: totalStartAtk, startDef: totalStartDef };
-}
+    if (interactions.length > 0) {
+        combinedLogs.unshift(`<span class="text-slate-300">[Troop Abilities]</span> ${interactions.join(' | ')}`);
+    }
+    
+    // Static Interactions (Rock-Paper-Scissors)
+    combinedLogs.unshift(`<span class="text-slate-300">[Counters]</span> Standard 10% RPS active`);
+    
+    return combinedLogs;
+};
 
+const finalAtkLogs = finalizeLogs('atk', m_skill.logs);
+const finalDefLogs = finalizeLogs('def', e_skill.logs);
+
+return { 
+    m_cur: ceilRes(m_cur), 
+    e_cur: ceilRes(e_cur), 
+    wave, 
+    atk_mults: finalAtkLogs, 
+    def_mults: finalDefLogs, 
+    startAtk: totalStartAtk, 
+    startDef: totalStartDef 
+};
+    
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
     let weights = {inf:{t7:0,tg3:0,tg5:0},cav:{t7:0,tg3:0,tg5:0},arc:{t7:0,tg3:0,tg5:0}};
