@@ -601,19 +601,24 @@ function renderOptimizerCard(scenario, best, container) {
 
 function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillBuckets = {}; 
-    let widgetMults = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
+    // Widget sums initialized at 0 for additive stacking
+    let widgetGrowthSum = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    // 1. WIDGET MULTIPLIERS (Applied to Leads only)
-    // Applied in Solo Defense (ctx:def), Rally, Garrison, or Bear
-    if (isRally || ctx === 'def') {
-        leaders.forEach(n => {
-            if (n === "None" || !HEROES[n]) return;
-            const d = HEROES[n], r = roster[n];
-            if (d.widget && d.widget.context === ctx) {
-                widgetMults[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
-            }
-        });
-    }
+    // 1. WIDGET MULTIPLIERS (Leads Only)
+    // Rule: Additive within categories (Leth + Leth)
+    leaders.forEach(n => {
+        if (n === "None" || !HEROES[n]) return;
+        const d = HEROES[n], r = roster[n];
+        // Only apply if context matches (Solo Def uses def widgets, Rally uses off, etc.)
+        if (d.widget && d.widget.context === ctx) {
+            widgetGrowthSum[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        }
+    });
+
+    // Convert additive sums to multipliers
+    const widgetEffect = (1 + widgetGrowthSum.attack) * 
+                         (1 + widgetGrowthSum.lethality) * 
+                         (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
 
     // 2. SKILL STACKING Logic
     const manifest = {};
@@ -623,7 +628,6 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     for (const name in manifest) {
         const d = HEROES[name], r = roster[name], count = manifest[name];
         d.skills.forEach((s, si) => {
-            // Leaders contribute all skills, Joiners only S1
             const instances = count.l + (si === 0 ? count.j : 0);
             if (instances === 0) return;
 
@@ -632,17 +636,17 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
             
             let effectiveMagnitude;
             if (p >= 1.0) {
-                // Rule: Deterministic skills are ADDITIVE (1 + 0.25 + 0.25)
+                // Rule: Deterministic skills are ADDITIVE
                 effectiveMagnitude = instances; 
             } else {
-                // Rule: Chance based skills increase probability: 1 - (1-p)^n
+                // Rule: Chance based skills probability: 1 - (1-p)^n
                 const dur = isBear ? 1 : (s.duration || 1);
                 const probAny = 1 - Math.pow(1 - p, instances);
                 effectiveMagnitude = (1 - Math.pow(1 - probAny, dur));
             }
 
             s.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return; // Bear Trap ignores 2xx skills
+                if (isBear && id >= 200) return;
                 const val = (Array.isArray(m) ? m[idx] : m) * effectiveMagnitude;
                 skillBuckets[id] = (skillBuckets[id] || 0) + val;
             });
@@ -652,13 +656,14 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillMult = 1.0;
     Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
 
-    // 3. STAT POWER GAIN Layer
+    // 3. STAT POWER GAIN (Improvement Ratio)
     let statEffect = 1.0;
     if (document.getElementById('use-account-stats').checked && nakedStats) {
-        let totalGain = 0;
+        let totalRatio = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
             const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
             let flats = { att: 0, def: 0, leth: 0, hp: 0 };
+            
             leaders.forEach(name => {
                 if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
@@ -672,17 +677,17 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
                     }
                 }
             });
+
             const final = { att: naked.att + flats.att, leth: naked.leth + flats.leth, def: naked.def + flats.def, hp: naked.hp + flats.hp };
-            // Power calculation based on scenario
-            const nPwr = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
-            const fPwr = isBear ? (final.att * final.leth) : (final.att * final.leth * final.def * final.hp);
-            totalGain += (fPwr / (nPwr || 1));
+            
+            const nakedVolume = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
+            const finalVolume = isBear ? (final.att * final.leth) : (final.att * final.leth * final.def * final.hp);
+            
+            totalRatio += (finalVolume / (nakedVolume || 1));
         });
-        statEffect = totalGain / 3;
+        statEffect = totalRatio / 3;
     }
 
-    // Combine Widget Multipliers
-    const widgetEffect = isBear ? (widgetMults.attack * widgetMults.lethality) : (widgetMults.attack * widgetMults.lethality * widgetMults.defense * widgetMults.health);
     return statEffect * skillMult * widgetEffect;
 }
 
