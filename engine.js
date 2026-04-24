@@ -24,6 +24,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         return Math.max(0, Math.min(1, mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma));
     };
 
+    // Tracking for Stochastic Logs
     let triggers = { atk: {}, def: {} };
     let troopProcs = { atk: { wind:0, lance:0, shield:0, bypass:0 }, def: { wind:0, lance:0, shield:0, bypass:0 } };
 
@@ -111,7 +112,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
         
         const troopLog = interactions.length > 0 ? `<div class="text-slate-300 mb-1 font-bold">[Troop Efficiency] ${interactions.join(' | ')}</div>` : '';
-        const procLog = isStochastic ? `<div class="text-amber-500/80 text-[9px] mt-1 border-t border-slate-800/50 pt-1">Actual Trigger Counts: Wind(${tp.wind}) Lance(${tp.lance}) Shield(${tp.shield}) Bypass(${tp.bypass})</div>` : '';
+        const procLog = isStochastic ? `<div class="text-amber-500/80 text-[9px] mt-1 border-t border-slate-800/50 pt-1">Triggers: Wind(${tp.wind}) Lance(${tp.lance}) Shield(${tp.shield}) Bypass(${tp.bypass})</div>` : '';
         
         return [
             `<div class="text-slate-500 font-bold mb-1">[Passive] Standard 10% RPS Counters Active</div>`,
@@ -135,6 +136,7 @@ function processBatches(batches) {
     batches.forEach(b => {
         ['inf','cav','arc'].forEach(u => {
             const longU = u==='arc'?'archers':(u==='inf'?'infantry':'cavalry');
+            // Use unit-specific tiers gathered in ui-bridge
             const tier = b[u+'_tier'], tg = b[u+'_tg'], count = b[u];
             if (!count) return;
             const stats = UNITS[longU][tier][tg];
@@ -181,8 +183,8 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
 
             if(!isOptimizing) {
                 const isPassive = p >= 1.0;
-                const label = isStochastic && !isPassive ? `Triggers: ${triggerTracker[h.name][s.name]}` : `Effect: +${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%`;
-                logs.push(`<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span>${h.name} ${s.name}</span> <span class="${isPassive?'text-blue-400':'text-amber-500'} font-bold">${label}</span></div>`);
+                const label = isStochastic && !isPassive ? `Triggers: ${triggerTracker[h.name][s.name]}` : `Eff: +${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%`;
+                logs.push(`<div class="flex justify-between border-b border-slate-900/40 py-0.5"><span>${h.name} ${s.name}</span> <span class="${isPassive?'text-blue-400':'text-amber-500'} font-bold">${label}</span></div>`);
             }
         });
     });
