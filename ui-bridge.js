@@ -226,7 +226,6 @@ window.reverseEngineerAccount = () => {
     const ctx = document.getElementById('report-ctx').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
-    // 1. Temporary Multiplicative Buffs
     const tBuffs = {
         att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) / 100),
         def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) / 100),
@@ -239,15 +238,12 @@ window.reverseEngineerAccount = () => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    // 2. Widget Multipliers (Only applies if context is Rally/Defense)
     let wMults = { attack: 0, defense: 0, lethality: 0, health: 0 };
     if (mode === 'rally') {
         reportHeroNames.forEach(name => {
             if (name === "None" || !HEROES[name]) return;
             const d = HEROES[name], r = roster[name];
-            if (d.widget && d.widget.context === ctx) {
-                wMults[d.widget.stat] += WIDGET_GROWTH[r.widget];
-            }
+            if (d.widget && d.widget.context === ctx) wMults[d.widget.stat] += WIDGET_GROWTH[r.widget];
         });
     }
 
@@ -256,34 +252,22 @@ window.reverseEngineerAccount = () => {
         ['att', 'def', 'leth', 'hp'].forEach(s => {
             const statMap = { att: "attack", def: "defense", leth: "lethality", hp: "health" };
             const category = statMap[s];
-            
-            // Step A: Division (Remove Global Multipliers)
             let val = reportVal[`${t}_${s}`] / ((1 + wMults[category]) * tBuffs[s]);
             
-            // Step B: Subtraction (Remove Hero-Specific Flats)
             reportHeroNames.forEach(name => {
                 if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
-                
-                // Only subtract if hero type (e.g. Inf) matches column type (e.g. inf)
                 if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') {
-                        // Subtract Star Growth
-                        val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    } else if (s === 'leth' || s === 'hp') {
-                        // FIXED: Decoupled check. All widgets grant flat Leth/HP.
-                        // If template is "AMADEUS", pull from WIDGET_STATS["AMADEUS"][level]
-                        const templateStats = WIDGET_STATS[d.template];
-                        if (templateStats) {
-                            val -= (templateStats[r.widget] || 0);
-                        }
+                    if (s === 'att' || s === 'def') val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    else if (s === 'leth' || s === 'hp') {
+                        const widgetData = WIDGET_STATS[d.template];
+                        if (widgetData) val -= (widgetData[r.widget] || 0);
                     }
                 }
             });
             results[`${t}_${s}`] = Math.max(0, val);
         });
     });
-
     nakedStats = results;
     localStorage.setItem('ks_naked_stats', JSON.stringify(nakedStats));
     renderNakedStats();
@@ -603,54 +587,39 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillBuckets = {}; 
     let widgetGrowthSum = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    // 1. WIDGET MULTIPLIERS (Applied to Leads Only)
-    // Rule: Solo Attack (off) = False | Solo Defense (def) = True | Rally/Garrison/Bear = True
-    const widgetsAllowed = isRally || ctx === 'def';
-
-    if (widgetsAllowed) {
+    // 1. WIDGET MULTIPLIERS (Additive stacking within same stat)
+    if (isRally || ctx === 'def') {
         leaders.forEach(n => {
-            if (n === "None" || !HEROES[n]) return;
             const d = HEROES[n], r = roster[n];
-            // Widget only applies if its internal context matches the scenario context
-            if (d.widget && d.widget.context === ctx) {
+            if (d && d.widget && d.widget.context === ctx) {
                 widgetGrowthSum[d.widget.stat] += WIDGET_GROWTH[r.widget];
             }
         });
     }
 
-    const widgetEffect = (1 + widgetGrowthSum.attack) * 
-                         (1 + widgetGrowthSum.lethality) * 
-                         (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
-
-    // 2. SKILL STACKING Logic
+    // 2. SKILL STACKING (Deterministic additive, Chance probabilistic)
     const manifest = {};
-    leaders.forEach(n => { if(n !== "None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].l++; }});
-    joiners.forEach(n => { if(n !== "None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].j++; }});
+    leaders.forEach(n => { if(n!=="None"){ manifest[n]=manifest[n]||{l:0,j:0}; manifest[n].l++; }});
+    joiners.forEach(n => { if(n!=="None"){ manifest[n]=manifest[n]||{l:0,j:0}; manifest[n].j++; }});
 
     for (const name in manifest) {
         const d = HEROES[name], r = roster[name], count = manifest[name];
         d.skills.forEach((s, si) => {
             const instances = count.l + (si === 0 ? count.j : 0);
             if (instances === 0) return;
-
-            const lvl = r[`s${si+1}`] || 5;
-            const x = s.values[lvl-1], p = s.getChance(x), m = s.getMagnitude(x);
+            const x = s.values[(r[`s${si+1}`]||5)-1], p = s.getChance(x), m = s.getMagnitude(x);
             
             let effectiveMagnitude;
             if (p >= 1.0) {
-                // Rule: Deterministic skills are ADDITIVE (Sum magnitudes)
-                effectiveMagnitude = instances; 
+                effectiveMagnitude = instances; // Additive Stacking
             } else {
-                // Rule: Chance based skills increase probability (1 - (1-p)^n)
-                const dur = isBear ? 1 : (s.duration || 1);
-                const probAny = 1 - Math.pow(1 - p, instances);
-                effectiveMagnitude = (1 - Math.pow(1 - probAny, dur));
+                const probAny = 1 - Math.pow(1 - p, instances); // Chance Stacking
+                effectiveMagnitude = (1 - Math.pow(1 - probAny, isBear ? 1 : (s.duration || 1)));
             }
 
             s.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return; // Bear Trap ignores 2xx skills
-                const val = (Array.isArray(m) ? m[idx] : m) * effectiveMagnitude;
-                skillBuckets[id] = (skillBuckets[id] || 0) + val;
+                if (isBear && id >= 200) return;
+                skillBuckets[id] = (skillBuckets[id] || 0) + (Array.isArray(m)?m[idx]:m) * effectiveMagnitude;
             });
         });
     }
@@ -658,37 +627,33 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillMult = 1.0;
     Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
 
-    // 3. STAT POWER GAIN (Improvement Ratio)
+    // 3. STAT GAIN (Individual types, then averaged)
     let statEffect = 1.0;
     if (document.getElementById('use-account-stats').checked && nakedStats) {
         let totalRatio = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
             const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
             let flats = { att: 0, def: 0, leth: 0, hp: 0 };
-            
             leaders.forEach(name => {
-                if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
-                if (d.type.toLowerCase().slice(0,3) === t) {
+                if (d && d.type.toLowerCase().slice(0,3) === t) {
                     flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     if (d.widget) {
-                        const templateStats = WIDGET_STATS[d.template];
-                        if (d.widget.stat === 'lethality') flats.leth += (templateStats ? templateStats[r.widget] : 0);
-                        if (d.widget.stat === 'health') flats.hp += (templateStats ? templateStats[r.widget] : 0);
+                        const widgetData = WIDGET_STATS[d.template];
+                        flats.leth += (widgetData ? widgetData[r.widget] : 0);
+                        flats.hp += (widgetData ? widgetData[r.widget] : 0);
                     }
                 }
             });
-
-            const final = { att: naked.att + flats.att, leth: naked.leth + flats.leth, def: naked.def + flats.def, hp: naked.hp + flats.hp };
             const nVol = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
-            const fVol = isBear ? (final.att * final.leth) : (final.att * final.leth * final.def * final.hp);
-            
+            const fVol = isBear ? ((naked.att+flats.att)*(naked.leth+flats.leth)) : ((naked.att+flats.att)*(naked.leth+flats.leth)*(naked.def+flats.def)*(naked.hp+flats.hp));
             totalRatio += (fVol / (nVol || 1));
         });
         statEffect = totalRatio / 3;
     }
 
+    const widgetEffect = (1 + widgetGrowthSum.attack) * (1 + widgetGrowthSum.lethality) * (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
     return statEffect * skillMult * widgetEffect;
 }
 
