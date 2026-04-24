@@ -230,33 +230,38 @@ window.reverseEngineerAccount = () => {
         reportVal[`${t}_${s}`] = parseFloat(document.getElementById(`rep-${t}-${s}`).value) || 0;
     }));
 
-    // CATEGORIZED WIDGET SUMS
-    let widgetSums = { attack: 0, defense: 0, lethality: 0, health: 0 };
+    // 1. Calculate the Global Multiplier Sums per Category
+    let widgetMultiplierSums = { attack: 0, defense: 0, lethality: 0, health: 0 };
     reportHeroNames.forEach(name => {
-        if(name === "None") return;
         const d = HEROES[name], r = roster[name];
-        if (d.widget && d.widget.context === ctx) {
-            widgetSums[d.widget.stat] += WIDGET_GROWTH[r.widget];
+        if (d && d.widget && d.widget.context === ctx) {
+            widgetMultiplierSums[d.widget.stat] += WIDGET_GROWTH[r.widget];
         }
     });
 
     const results = {};
     ['inf','cav','arc'].forEach(t => {
         ['att','def','leth','hp'].forEach(s => {
-            // MAP STAT TO WIDGET TYPE
-            let type = s === 'att' ? 'attack' : (s === 'def' ? 'defense' : (s === 'leth' ? 'lethality' : 'health'));
+            // Map the stat to the widget category
+            const category = s === 'att' ? 'attack' : (s === 'def' ? 'defense' : (s === 'leth' ? 'lethality' : 'health'));
             
-            // DIVIDE BY SPECIFIC CATEGORY ONLY
-            let val = reportVal[`${t}_${s}`] / (1 + widgetSums[type]);
+            // Step A: Remove the global multiplier
+            let val = reportVal[`${t}_${s}`] / (1 + widgetMultiplierSums[category]);
             
+            // Step B: Subtract unit-specific flats
             reportHeroNames.forEach(name => {
-                if(name === "None") return;
                 const d = HEROES[name], r = roster[name];
-                if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    else if (d.widget && d.widget.stat === type) val -= (WIDGET_STATS[d.template][r.widget] || 0);
+                if (!d || d.type.toLowerCase().slice(0,3) !== t) return;
+
+                if (s === 'att' || s === 'def') {
+                    // Attack and Defense flats come from Star Index
+                    val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                } else if (d.widget && d.widget.stat === category) {
+                    // Lethality and Health flats come from Widget Level
+                    val -= (WIDGET_STATS[d.template][r.widget] || 0);
                 }
             });
+
             results[`${t}_${s}`] = Math.max(0, val);
         });
     });
@@ -530,114 +535,85 @@ function renderOptimizerCard(scenario, best, container) {
     container.appendChild(card);
 }
 
-function calcPowerScore(leaders, joiners, ctx, allowWidgets, isBear) {
+function calcPowerScore(leaders, joiners, ctx, isBear) {
     let skillBuckets = {};
-    let widgetBuckets = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
+    let widgetMults = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
     
-    // 1. Global Widget Multiplier (Leaders only)
-    if (allowWidgets) {
-        leaders.forEach(n => {
-            const d = HEROES[n];
-            const r = roster[n];
-            if (d && d.widget && d.widget.context === ctx) {
-                // Widget multiplier ONLY increases its specific bucket
-                widgetBuckets[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
-            }
-        });
-    }
-
-    // 2. Tally Skill Counts (Leaders get S1-S3, Joiners S1 only)
-    const manifest = {}; 
+    // 1. Identify Global Widget Multipliers
     leaders.forEach(n => {
-        if(!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
-        manifest[n].s1++; manifest[n].s2++; manifest[n].s3++;
-    });
-    joiners.forEach(n => {
-        if(!manifest[n]) manifest[n] = { s1: 0, s2: 0, s3: 0 };
-        manifest[n].s1++;
+        const d = HEROES[n], r = roster[n];
+        if (d && d.widget && d.widget.context === ctx) {
+            widgetMults[d.widget.stat] *= (1 + WIDGET_GROWTH[r.widget]);
+        }
     });
 
-    // 3. Process Buckets
+    // 2. Tally Skill IDs (1XX = Self, 2XX = Enemy)
+    const manifest = {};
+    leaders.forEach(n => { manifest[n] = { s1: 1, s2: 1, s3: 1 }; });
+    joiners.forEach(n => { manifest[n] = { s1: 1, s2: 0, s3: 0 }; });
+
     for (const name in manifest) {
-        const d = HEROES[name];
-        const r = roster[name];
+        const d = HEROES[name], r = roster[name];
         if (!d) continue;
-
         d.skills.forEach((s, si) => {
-            const count = manifest[name][`s${si+1}`];
-            if (!count || count <= 0) return;
-
+            if (!manifest[name][`s${si+1}`]) return;
             const lvl = r[`s${si+1}`] || 5;
-            const p = s.getChance(s.values[lvl-1]);
-            const m = s.getMagnitude(s.values[lvl-1]);
-            const dur = isBear ? 0 : (s.duration || 0);
-
-            let effectiveMagnitude;
-
-            if (p >= 1.0) {
-                // PASSIVE STACKING: 10% x 3 heroes = 30%
-                effectiveMagnitude = count * 1.0; // The '1.0' represents uptime
-            } else {
-                // CHANCE STACKING: Uptime-based (Independence Rule)
-                const pAny = 1 - Math.pow(1 - p, count);
-                effectiveMagnitude = (dur === 0) ? pAny : (1 - Math.pow(1 - pAny, dur));
-            }
-
+            const x = s.values[lvl-1], p = s.getChance(x), m = s.getMagnitude(x);
+            const ev = (p >= 1.0) ? m : (1 - Math.pow(1 - p, s.duration || 1)) * m;
             s.ids.forEach((id, idx) => {
-                // BEAR LEAK FIX: Strictly block non-1xx IDs during Bear calculation
                 if (isBear && id >= 200) return;
-
-                const mag = Array.isArray(m) ? m[idx] : m;
-                skillBuckets[id] = (skillBuckets[id] || 0) + (effectiveMagnitude * mag);
+                const val = (Array.isArray(ev) ? ev[idx] : ev);
+                skillBuckets[id] = (skillBuckets[id] || 0) + val;
             });
         });
     }
 
-    // 4. Combine Buckets Multiplicatively
-    let skillMult = 1.0;
-    Object.values(skillBuckets).forEach(v => skillMult *= (1 + v));
+    let sMult = 1.0;
+    Object.values(skillBuckets).forEach(v => sMult *= (1 + v));
 
-    // 5. Apply Account Stat Scaling
+    // 3. Apply Account Stats (Naked + Flats) * Multiplier
     let statEffect = 1.0;
-    const isUsingStats = document.getElementById('use-account-stats').checked && nakedStats;
-
-     if (isUsingStats) {
+    if (document.getElementById('use-account-stats').checked && nakedStats) {
         let totalGain = 0;
         ['inf', 'cav', 'arc'].forEach(t => {
-            const naked = {
-                att: nakedStats[`${t}_att`] || 1,
-                leth: nakedStats[`${t}_leth`] || 1,
-                def: nakedStats[`${t}_def`] || 1,
-                hp: nakedStats[`${t}_hp`] || 1
+            const naked = { 
+                att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], 
+                def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] 
             };
             
-            let flats = { att: 0, leth: 0, def: 0, hp: 0 };
-            leaders.forEach(n => {
-                const d = HEROES[n], r = roster[n];
-                if (d && d.type.toLowerCase().slice(0,3) === t) {
-                    flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    if (d.widget) {
-                        if (d.widget.stat === 'lethality') flats.leth += (WIDGET_STATS[d.template][r.widget] || 0);
-                        if (d.widget.stat === 'health') flats.hp += (WIDGET_STATS[d.template][r.widget] || 0);
-                    }
+            let flats = { att: 0, def: 0, leth: 0, hp: 0 };
+            leaders.forEach(name => {
+                const d = HEROES[name], r = roster[name];
+                if (d.type.toLowerCase().slice(0,3) !== t) return;
+                
+                // Star Flats
+                flats.att += GROWTH_TEMPLATES[d.template][r.starIndex];
+                flats.def += GROWTH_TEMPLATES[d.template][r.starIndex];
+                
+                // Widget Flats
+                if (d.widget) {
+                    if (d.widget.stat === 'lethality') flats.leth += WIDGET_STATS[d.template][r.widget];
+                    if (d.widget.stat === 'health') flats.hp += WIDGET_STATS[d.template][r.widget];
                 }
             });
 
-            // APPLY WIDGETS STAT-SPECIFICALLY
-            const finalAtt = (naked.att + flats.att) * widgetBuckets.attack;
-            const finalLeth = (naked.leth + flats.leth) * widgetBuckets.lethality;
-            const finalDef = (naked.def + flats.def) * widgetBuckets.defense;
-            const finalHp = (naked.hp + flats.hp) * widgetBuckets.health;
+            const final = {
+                att: (naked.att + flats.att) * widgetMults.attack,
+                leth: (naked.leth + flats.leth) * widgetMults.lethality,
+                def: (naked.def + flats.def) * widgetMults.defense,
+                hp: (naked.hp + flats.hp) * widgetMults.health
+            };
 
-            // Simple Power Score Factor: (Att * Leth) / (Def * HP)
-            totalGain += ( (finalAtt * finalLeth) / (finalDef * finalHp) ) / ( (naked.att * naked.leth) / (naked.def * naked.hp) );
+            // Gain = (Final Power / Naked Power)
+            totalGain += ( (final.att * final.leth) / (final.def * final.hp) ) / ( (naked.att * naked.leth) / (naked.def * naked.hp) );
         });
         statEffect = totalGain / 3;
+    } else {
+        // Fallback if naked stats are off: use Widget Multipliers as raw power factors
+        statEffect = widgetMults.attack * widgetMults.lethality;
     }
 
-    // Skill multiplier remains global, while widgets are already baked into statEffect
-    return statEffect * skillMult * (!isUsingStats ? (widgetBuckets.attack * widgetBuckets.lethality) : 1.0);
+    return statEffect * sMult;
 }
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
