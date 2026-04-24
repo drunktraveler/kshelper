@@ -23,7 +23,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         return Math.max(0, Math.min(1, mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma));
     };
 
-    const m_data = getMultipliers(setup.atk, atkLuck, shift, isOptimizing, isBear);
+    let triggers = {}; 
+    const m_data = getMultipliers(setup.atk, atkLuck, shift, isOptimizing, isBear, triggers);
     const e_data = isBear ? { selfMult: 1, enemyMult: 1, logs: [] } : getMultipliers(setup.def, defLuck, shift, isOptimizing, false);
 
     let wave = 0;
@@ -102,8 +103,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     return { 
         m_cur, e_cur, wave, 
-        atk_mults: finalizeLogs('atk', m_data.logs), 
-        def_mults: finalizeLogs('def', e_data.logs), 
+        atk_logs: { skills: m_data.logs, triggers: triggers, troopEff: t7List.join(' | ') },
+        def_logs: { skills: e_data.logs, troopEff: defT7.join(' | ') }, 
         totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
     };
 }
@@ -137,28 +138,49 @@ function processBatches(batches) {
     return { counts: totals, avgBase, weights };
 }
 
-function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear) {
+function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, triggerTracker) {
     let selfPool = {}, enemyPool = {}, logs = [];
+    const isStochastic = (luckMode === 'stochastic');
+
     sideSetup.heroes.forEach((h, index) => {
-        if(h.name === "None") return;
+        if(h.name === "None" || !HEROES[h.name]) return;
         const d = HEROES[h.name];
         d.skills.forEach((s, si) => {
             if (index >= 3 && si > 0) return;
             const x = s.values[h[`s${si+1}`]-1], p = s.getChance(x), m = s.getMagnitude(x);
-            let ev = (p >= 1.0) ? m : (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
-            if (ev === 0) return;
+            
+            let ev;
+            if (p >= 1.0) {
+                ev = m;
+            } else if (isStochastic) {
+                // Actual Trigger Count Logic
+                const hits = Math.random() < p ? 1 : 0;
+                const skillKey = `${h.name} ${s.name}`;
+                if (!triggerTracker[skillKey]) triggerTracker[skillKey] = 0;
+                triggerTracker[skillKey] += hits;
+                ev = hits * m;
+            } else {
+                ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
+            }
+
             s.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
                 const val = (Array.isArray(ev) ? ev[idx] : ev);
                 if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
                 else enemyPool[id] = (enemyPool[id] || 0) + val;
             });
+
             if(!isOptimizing) {
-                const display = (Array.isArray(ev) ? ev[0] : ev);
-                logs.push(`${h.name}: ${s.name} (+${(display*100).toFixed(1)}%)`);
+                const isPassive = p >= 1.0;
+                logs.push({ 
+                    name: `${h.name} ${s.name}`, 
+                    val: isPassive ? `+${(m * 100).toFixed(1)}%` : ev, 
+                    isPassive,
+                    rawMag: m 
+                });
             }
         });
     });
-    const calcMult = (pool) => { let m = 1.0; Object.values(pool).forEach(v => m *= (1 + v)); return m; };
-    return { selfMult: calcMult(selfPool), enemyMult: calcMult(enemyPool), logs };
+    const calc = (pool) => { let m = 1.0; Object.values(pool).forEach(v => m *= (1 + v)); return m; };
+    return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
 }
