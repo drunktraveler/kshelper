@@ -170,19 +170,31 @@ function getMultipliers(side, proc, type, luckMode, shiftFn, sideKey, isBear, is
         if(h.name === "None") return;
         const d = HEROES[h.name];
         d.skills.forEach((s, si) => {
-            if (s.group !== type && s.group !== 'den') return;
+            // Logic: A side always procs its own 'num' (Buffs) 
+            // and it procs 'den' (Debuffs) to be applied to the enemy.
+            // The simulation handles the application.
             if (index >= 3 && si > 0) return;
+            
             const x = s.values[h[`s${si+1}`]-1];
             const p = s.getChance(x), m = s.getMagnitude(x);
             let ev;
+            
             if (p >= 1.0) ev = m;
             else if (isStochastic) ev = (Math.random() < p ? m : 0);
             else ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
 
-            s.ids.forEach((id, idx) => pools[id] = (pools[id] || 0) + (Array.isArray(ev) ? ev[idx] : ev));
-            if(!isOptimizing) logs.push(`Slot ${index+1} ${h.name}: ${s.name} (+${((Array.isArray(ev)?ev[0]:ev)*100).toFixed(1)}%)`);
+            s.ids.forEach((id, idx) => {
+                const val = (Array.isArray(ev) ? ev[idx] : ev);
+                pools[id] = (pools[id] || 0) + val;
+            });
+            
+            if(!isOptimizing && ev !== 0) {
+                const displayVal = (Array.isArray(ev) ? ev[0] : ev);
+                logs.push(`<span class="text-slate-500">Slot ${index+1}</span> ${h.name}: ${s.name} <span class="text-blue-400">+${(displayVal * 100).toFixed(1)}%</span>`);
+            }
         });
     });
-    let mult = 1.0; Object.values(pools).forEach(v => mult *= (1+v));
+    let mult = 1.0; 
+    Object.values(pools).forEach(v => mult *= (1+v));
     return { units: {all:mult}, logs };
 }
