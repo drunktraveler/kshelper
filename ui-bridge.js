@@ -11,20 +11,23 @@ let optRole = 'atk';
 const sumTroops = (c) => Math.round((c.inf || 0) + (c.cav || 0) + (c.arc || 0));
 
 let state = {
-    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: roster["None"]?.widget || 0 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: roster["None"]?.widget || 0 })) }
+    atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
-// --- 1. INITIALIZATION ---
+
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
     const mainSel = document.getElementById('hero-select');
+    if(mainSel) {
+        mainSel.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => { mainSel.innerHTML += `<option value="${n}">${n}</option>`; });
+        mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
+    }
     const calibSels = document.querySelectorAll('.rep-hero');
-    [mainSel, ...calibSels].forEach(sel => {
-        if(!sel) return;
+    calibSels.forEach(sel => {
         sel.innerHTML = '<option value="None">None</option>';
         Object.keys(HEROES).sort().forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
     });
-    if(mainSel) mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
     buildStatTable();
     window.addBatch('atk', true); window.addBatch('def', true);
     window.updateGrids(); renderRosterUI(); 
@@ -50,18 +53,16 @@ window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
     Object.keys(screens).forEach(k => {
-        const el = document.getElementById(screens[k]);
-        if (el) el.classList.toggle('hidden', k !== tab);
-        const b = document.getElementById(btns[k]);
-        if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
+        if(document.getElementById(screens[k])) document.getElementById(screens[k]).classList.toggle('hidden', k !== tab);
+        if(document.getElementById(btns[k])) document.getElementById(btns[k]).className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
 };
 
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
     const btn = document.getElementById('toggle-details-btn');
-    box.classList.toggle('hidden');
-    btn.innerText = box.classList.contains('hidden') ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
+    const isHidden = box.classList.toggle('hidden');
+    btn.innerText = isHidden ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
 };
 
 window.setOptRole = (role) => {
@@ -76,9 +77,10 @@ window.addBatch = (side, initial = false) => {
     const div = document.createElement('div');
     div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-3 mb-2";
     const types = [{ l: 'Infantry', k: 'inf', c: 'text-blue-400', v: 500000 }, { l: 'Cavalry', k: 'cav', c: 'text-amber-400', v: 200000 }, { l: 'Archers', k: 'arc', c: 'text-emerald-400', v: 300000 }];
-    let h = `<div class="flex justify-between items-center"><span class="text-[9px] font-bold text-slate-500 uppercase">Batch</span>${!initial?`<button onclick="this.parentElement.parentElement.remove();window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>`:''}</div>`;
+    let h = `<div class="flex justify-between items-center"><span class="text-[9px] font-bold text-slate-500 uppercase">Army Config</span>${!initial?`<button onclick="this.parentElement.parentElement.remove();window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>`:''}</div>`;
     types.forEach(t => {
-        h += `<div class="grid grid-cols-12 gap-2 items-center"><div class="col-span-3 text-[10px] font-bold ${t.c}">${t.l}</div>
+        h += `<div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/20 pb-1">
+            <div class="col-span-3 text-[10px] font-bold ${t.c}">${t.l}</div>
             <select class="batch-tier-${t.k} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
             <select class="batch-tg-${t.k} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="5">TG5</option><option value="3" selected>TG3</option><option value="0">TG0</option></select>
             <input type="number" class="batch-${t.k} col-span-5 input-dark !text-right" value="${initial?t.v:0}" oninput="window.updateFormation('${side}')"></div>`;
@@ -115,7 +117,7 @@ function renderLevelPicker(hero, key, current, isRoster = true) {
     let h = `<div class="flex gap-1">`;
     for(let i=1; i<=5; i++) {
         const action = isRoster ? `window.updateRoster('${hero}','${key}',${i})` : `window.updateModalLevel('${key}',${i})`;
-        h += `<button onclick="event.stopPropagation(); ${action}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}">${i}</button>`;
+        h += `<button onclick="event.stopPropagation(); ${action}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
     }
     return h + `</div>`;
 }
@@ -136,12 +138,13 @@ function renderRosterUI() {
         const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-        card.className = `p-4 glass-card border-2 cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50' : 'opacity-40 border-transparent bg-slate-950/20'}`;
+        card.className = `p-4 glass-card border-2 cursor-pointer transition-all ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-blue-500/20 shadow-lg' : 'opacity-40 border-transparent bg-slate-950/20'}`;
         let skillsHtml = h.skills.map((s, i) => `<div class="mt-2" onclick="event.stopPropagation()"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
         card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase">${n}</div></div>${r.unlocked ? `<div class="space-y-3"><div><span class="text-[8px] text-slate-500 font-black uppercase">Development</span>${renderStarSelector(n, r.starIndex)}</div>${skillsHtml}</div>` : ''}`;
         grid.appendChild(card);
     });
 }
+
 window.updateRoster = (n,k,v) => { roster[n][k]=parseInt(v); localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
 
 // --- 4. BATTLE LOGIC ---
@@ -166,7 +169,7 @@ function renderSkillsInModal(name, slot) {
 }
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
-    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30, widgetLv: roster[name]?.widget || 0 };
+    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30 };
     window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
@@ -176,7 +179,7 @@ window.updateGrids = () => {
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
             div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
-            if (h.name !== 'None') div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover rounded-full">`;
+            if (h.name !== 'None') div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover rounded-full shadow-inner">`;
             else div.innerText = (i + 1);
             div.onclick = () => window.openHeroModal(side, i);
             container.appendChild(div);
@@ -197,27 +200,49 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const mode = document.getElementById('sim-mode-select').value;
-    let rAvg, rBest, rWorst;
+    let rFinal, rBest, rWorst, winRateText = "";
 
     if (mode === 'monte-carlo') {
-        let batch = [];
-        for (let i = 0; i < 100; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
-        rAvg = batch[50]; rWorst = batch[0]; rBest = batch[99];
+        let results = [];
+        let winAtk = 0, winDef = 0;
+        let sumAtk = 0, sumDef = 0;
+
+        for (let i = 0; i < 100; i++) {
+            const r = runCombatSim(setup, 'stochastic', 'stochastic');
+            const atkV = sumTroops(r.m_cur), defV = sumTroops(r.e_cur);
+            if (atkV > defV) winAtk++; else winDef++;
+            sumAtk += atkV; sumDef += defV;
+            results.push(r);
+        }
+
+        const avgAtk = sumAtk / 100, avgDef = sumDef / 100;
+        winRateText = `Atk Win Rate: ${winAtk}% | Def Win Rate: ${winDef}%`;
+        
+        // Per requirement: If Atk won more, show average Atk and 0 Def.
+        rFinal = {
+            m_cur: { inf: winAtk >= winDef ? avgAtk : 0, cav: 0, arc: 0 },
+            e_cur: { inf: winDef > winAtk ? avgDef : 0, cav: 0, arc: 0 },
+            wave: results[50].wave,
+            atk_mults: results[50].atk_mults,
+            def_mults: results[50].def_mults
+        };
+        // Range for labels
+        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
+        rWorst = results[0]; rBest = results[99];
     } else {
-        rAvg = runCombatSim(setup, 'average', 'average');
+        rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky');
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    const s = document.getElementById('result-screen'); s.classList.remove('hidden');
-    document.getElementById('res-atk-total').innerText = sumTroops(rAvg.m_cur).toLocaleString();
-    document.getElementById('res-def-total').innerText = sumTroops(rAvg.e_cur).toLocaleString();
-    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>Avg Duration: ${rAvg.wave} Waves`;
+    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('res-atk-total').innerText = Math.round(sumTroops(rFinal.m_cur)).toLocaleString();
+    document.getElementById('res-def-total').innerText = Math.round(sumTroops(rFinal.e_cur)).toLocaleString();
+    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>${winRateText}<br>Typical Duration: ${rFinal.wave} Waves`;
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-    document.getElementById('battle-details').innerHTML = rAvg.atk_mults.join('') + rAvg.def_mults.join('');
-    s.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('battle-details').innerHTML = `<div class="mb-4 text-emerald-500 font-bold border-b border-emerald-900/30">Attacker Multipliers</div>` + rFinal.atk_mults.join('') + `<div class="mt-6 mb-4 text-red-500 font-bold border-b border-red-900/30">Defender Multipliers</div>` + rFinal.def_mults.join('');
+    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
 // --- 5. ACCOUNT CALIBRATION ---
@@ -270,7 +295,7 @@ window.runOptimizer = (mode) => {
         opponents.push({inf:1, cav:0, arc:0}); 
     } else if (mode === 'current') {
         const t = optRole === 'atk' ? setup.def : setup.atk;
-        const total = sumTroops(processBatchData(t.batches));
+        const total = sumTroops(processBatchData(t.batches)) || 1;
         const d = processBatchData(t.batches);
         opponents.push({inf: d.inf/total, cav: d.cav/total, arc: d.arc/total});
     } else {
@@ -303,7 +328,7 @@ window.runOptimizer = (mode) => {
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerText = isBear ? `Optimized Split Found` : `Win Rate: ${best.winRate.toFixed(1)}% | Net: ${Math.round(best.net).toLocaleString()}`;
+    scoreArea.innerText = isBear ? `Total Net DMG Split Calculated` : `Coverage: ${best.winRate.toFixed(1)}% | Net: ${Math.round(best.net).toLocaleString()}`;
 };
 
 function renderTernary(id, data, best, isBear) {
@@ -314,10 +339,10 @@ function renderTernary(id, data, best, isBear) {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked);
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes.");
+    if (unlocked.length < 3) return alert("Select at least 3 heroes in Roster.");
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-2 text-center py-8 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
+    resArea.innerHTML = '<div class="col-span-2 text-center py-8 text-blue-500 animate-pulse font-black uppercase">Solving for BIS Lineups...</div>';
 
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
@@ -331,20 +356,19 @@ window.calculateOptimalLineups = () => {
     setTimeout(() => {
         resArea.innerHTML = '';
         scenarios.forEach(s => {
-            let best = { leaders: [], joiners: [], score: -1 };
-            // Pruned loop for leaders
+            let best = { leaders: [], score: -1 };
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
                         const score = calcPowerScore([i, c, a], [], s.c, s.w);
-                        if (score > best.score) best = { leaders: [i, c, a], joiners: [], score };
+                        if (score > best.score) best = { leaders: [i, c, a], score };
                     }
                 }
             }
             const card = document.createElement('div'); card.className = "glass-card p-6 border-t-2 border-blue-500";
             card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
-                <div class="flex gap-2 mb-2">${best.leaders.map(n => `<div class="w-10 h-10 rounded-full border border-blue-500 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}</div>
-                <div class="text-xl font-black text-white">${best.score.toFixed(3)}x Multiplier</div>`;
+                <div class="flex gap-2 mb-4">${best.leaders.map(n => `<div class="w-10 h-10 rounded-full border border-blue-500 overflow-hidden shadow-lg"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}</div>
+                <div class="text-xl font-black text-white">${best.score.toFixed(3)}x Pwr</div>`;
             resArea.appendChild(card);
         });
     }, 100);
@@ -355,7 +379,6 @@ function calcPowerScore(leaders, joiners, ctx, allowWidgets) {
     const manifest = {};
     leaders.forEach(n => { manifest[n] = { s1:1, s2:1, s3:1 }; });
     joiners.forEach(n => { manifest[n] = { s1:1, s2:0, s3:0 }; });
-
     for (const name in manifest) {
         const d = HEROES[name], r = roster[name];
         d.skills.forEach((s, si) => {
