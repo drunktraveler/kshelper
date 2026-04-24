@@ -17,7 +17,7 @@ export const HEROES = {
         widget: { stat: "lethality", context: "off", values: WIDGET_GROWTH },
         skills: [
             { name: "Wild Card", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
-            { name: "Rumhead", ids: [202], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
+            { name: "Rumhead", ids: [202], group: "den", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
             { name: "Dynamo", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
@@ -26,7 +26,7 @@ export const HEROES = {
         template: "SEASON_1",
         widget: { stat: "lethality", context: "def", values: WIDGET_GROWTH },
         skills: [
-            { name: "Rally Flag", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
+            { name: "Rally Flag", ids: [201], group: "den", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
             { name: "Hero's Domain", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "Youthful Rage", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
@@ -35,8 +35,8 @@ export const HEROES = {
         type: "Inf",
         template: "SR",
         skills: [
-            { name: "Defender", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "Weaken", ids: [202], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+            { name: "Defender", ids: [201], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Weaken", ids: [202], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
     "Chenko": {
@@ -44,14 +44,14 @@ export const HEROES = {
         template: "SR",
         skills: [
             { name: "Stand of Arms", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "Shield Wall", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+            { name: "Shield Wall", ids: [201], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
     "Quinn": {
         type: "Arc",
         template: "SR",
         skills: [
-            { name: "Sixth Sense", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Sixth Sense", ids: [201], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "Precision Shot", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
@@ -59,7 +59,7 @@ export const HEROES = {
         type: "Cav",
         template: "SR",
         skills: [
-            { name: "Super Nutrients", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Super Nutrients", ids: [203], group: "den", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "Trash Talk", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
@@ -70,7 +70,7 @@ export const HEROES = {
         skills: [
             { name: "Evil Eye", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "The Favor", ids: [101], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.5, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "The Shield", ids: [201], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.4, getMagnitude: (X) => X / 100, duration: 0 }
+            { name: "The Shield", ids: [201], group: "den", values: [10, 20, 30, 40, 50], getChance: (X) => 0.4, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
     "Amane": {
@@ -100,7 +100,7 @@ export const HEROES = {
         type: "Cav",
         template: "SR",
         skills: [
-            { name: "Desert Eclipse", ids: [205], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+            { name: "Desert Eclipse", ids: [205], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
     "Hilde": {
@@ -110,7 +110,7 @@ export const HEROES = {
         skills: [
             { name: "Noble Path", ids: [102, 204], group: "num", values: [[3, 2], [6, 4], [9, 6], [12, 8], [15, 10]], getChance: (X) => 1.0, getMagnitude: (X) => [X[0] / 100, X[1] / 100], duration: 0 },
             { name: "Elixir of Strength", ids: [102], group: "num", values: [120, 140, 160, 180, 200], getChance: (X) => 0.25, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "Trial by Fire", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 }
+            { name: "Trial by Fire", ids: [201], group: "den", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 }
         ]
     },
     "Eric": {
@@ -118,9 +118,9 @@ export const HEROES = {
         template: "SEASON_3",
         widget: { stat: "defense", context: "def", values: WIDGET_GROWTH },
         skills: [
-            { name: "Holy Warrior", ids: [202], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "Conviction", ids: [201], group: "num", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
-            { name: "Exhortation", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+            { name: "Holy Warrior", ids: [202], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Conviction", ids: [201], group: "den", values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Exhortation", ids: [203], group: "den", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     },
     "Amadeus": {
@@ -138,7 +138,7 @@ export const HEROES = {
         template: "SEASON_1",
         widget: { stat: "lethality", context: "off", values: WIDGET_GROWTH },
         skills: [
-            { name: "Oath of Guardian", ids: [201], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
+            { name: "Oath of Guardian", ids: [201], group: "den", values: [8, 16, 24, 32, 40], getChance: (X) => X / 100, getMagnitude: (X) => 0.50, duration: 0 },
             { name: "Echoes of Valhalla", ids: [102], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "Nature's Balance", ids: [101], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
@@ -149,7 +149,7 @@ export const HEROES = {
         widget: { stat: "health", context: "def", values: WIDGET_GROWTH },
         skills: [
             { name: "The Tempest", ids: [102], group: "num", values: [8, 16, 24, 32, 40], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 3 },
-            { name: "The Resistance", ids: [202], group: "num", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
+            { name: "The Resistance", ids: [202], group: "den", values: [10, 20, 30, 40, 50], getChance: (X) => 0.2, getMagnitude: (X) => X / 100, duration: 2 },
             { name: "The Celebration", ids: [203], group: "num", values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
         ]
     }
