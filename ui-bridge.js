@@ -330,56 +330,57 @@ function gatherSetup() {
 
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
-    const simMode = document.getElementById('sim-mode-select').value;
-    let rAvg, rBest, rWorst, modeLabel;
+    const mode = document.getElementById('sim-mode-select').value;
+    let rFinal, rBest, rWorst, winAtk = 0, winDef = 0;
 
-    if (simMode === 'monte-carlo') {
-        modeLabel = "Stochastic Sampling (Monte Carlo)";
-        let batch = [];
-        for (let i = 0; i < 100; i++) batch.push(runCombatSim(setup, 'stochastic', 'stochastic'));
-        batch.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
-        rAvg = batch[50]; rWorst = batch[0]; rBest = batch[99];
+    if (mode === 'monte-carlo') {
+        let results = [], sumAtkWins = 0, sumDefWins = 0;
+        for (let i = 0; i < 100; i++) {
+            const r = runCombatSim(setup, 'stochastic', 'stochastic');
+            const atkV = sumTroops(r.m_cur), defV = sumTroops(r.e_cur);
+            if (atkV > defV) { winAtk++; sumAtkWins += atkV; } 
+            else { winDef++; sumDefWins += defV; }
+            results.push(r);
+        }
+        rFinal = {
+            m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
+            e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
+            wave: results[50].wave, atk_logs: results[50].atk_logs, def_logs: results[50].def_logs
+        };
+        results.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)));
+        rWorst = results[0]; rBest = results[99];
     } else {
-        modeLabel = "Deterministic Range (95% CI)";
-        rAvg = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky');
+        rFinal = runCombatSim(setup, 'average', 'average');
+        rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    const screen = document.getElementById('result-screen');
-    screen.classList.remove('hidden');
-    
-    document.getElementById('res-atk-total').innerText = sumTroops(rAvg.m_cur).toLocaleString();
-    document.getElementById('res-def-total').innerText = sumTroops(rAvg.e_cur).toLocaleString();
-
-    const getResScore = (r) => (sumTroops(r.m_cur) / (r.startAtk||1)) - (sumTroops(r.e_cur) / (r.startDef||1));
-    const sAvg = getResScore(rAvg), sMin = getResScore(rWorst), sMax = getResScore(rBest);
-    const luckPct = ((sAvg - sMin) / (Math.abs(sMax - sMin) || 1)) * 100;
-
-    document.getElementById('result-waves').innerHTML = `
-        <span class="text-blue-400 font-black">${modeLabel}</span><br>
-        Avg Duration: <span class="text-white">${rAvg.wave} Waves</span>
-        ${simMode === 'monte-carlo' ? `<br>Visualized Battle Luck: <span class="text-amber-500">${luckPct.toFixed(0)}th Percentile</span>` : ''}
+    const logHTML = (side, data) => `
+        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
+        <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
+        ${data.skills.map(s => {
+            const displayVal = s.isPassive ? s.val : (mode === 'monte-carlo' ? `Triggers: ${data.triggers[s.name] || 0}` : `Eff: +${(s.val * 100).toFixed(1)}%`);
+            return `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${displayVal}</span></div>`;
+        }).join('')}
     `;
 
+    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('res-atk-total').innerText = Math.round(sumTroops(rFinal.m_cur)).toLocaleString();
+    document.getElementById('res-def-total').innerText = Math.round(sumTroops(rFinal.e_cur)).toLocaleString();
+    
+    // Range Bar Calculation
+    const sAtk = sumTroops(rFinal.m_cur), sDef = sumTroops(rFinal.e_cur);
+    const score = (sAtk / (sumTroops(setup.atk.batches[0]) || 1)) - (sDef / (sumTroops(setup.def.batches[0]) || 1));
+    const bar = document.getElementById('luck-bar-inner');
+    bar.style.left = "50%"; bar.style.width = Math.min(50, Math.abs(score * 50)) + "%";
+    bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
+
+    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black uppercase">Monte-Carlo Analysis</span><br>Atk Wins: ${winAtk}% | Def Wins: ${winDef}%<br>Duration: ${rFinal.wave} Waves`;
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-
-    const bar = document.getElementById('luck-bar-inner');
-    const rightSidePos = ((1 - Math.min(sMin, sMax)) * 50); 
-    bar.style.right = (100 - rightSidePos) + "%"; 
-    bar.style.width = Math.max(1.5, Math.abs(sMax - sMin) * 50) + "%";
-    bar.style.left = "auto";
-
-    const logHTML = (side, data) => `
-    <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
-    <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
-    ${data.skills.map(s => {
-        const displayVal = s.isPassive ? s.val : (mode === 'monte-carlo' ? `Triggers: ${data.triggers[s.name] || 0}` : `Eff: +${(s.val * 100).toFixed(1)}%`);
-        return `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${displayVal}</span></div>`;
-    }).join('')}
-    `;
-    screen.scrollIntoView({ behavior: 'smooth' });
+    
+    document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
+    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
 };
 
 window.runOptimizer = (mode) => {
@@ -390,54 +391,51 @@ window.runOptimizer = (mode) => {
     let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
     let opponents = [];
 
-    // Volume & Tier Identification
     const userSide = optRole === 'atk' ? setup.atk : setup.def;
     const userTotal = userSide.batches.reduce((s,b) => s + (b.inf+b.cav+b.arc), 0) || 1;
     
     if (isBear) { 
         opponents.push({inf:1, cav:0, arc:0}); 
+        setup.atk.stats = { 
+            inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
+            cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
+            arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
+        };
     } else if (mode === 'current') {
         const oppSide = optRole === 'atk' ? setup.def : setup.atk;
         const d = oppSide.batches.reduce((s,b) => ({inf:s.inf+b.inf, cav:s.cav+b.cav, arc:s.arc+b.arc}), {inf:0,cav:0,arc:0});
         const t = d.inf+d.cav+d.arc || 1;
         opponents.push({inf: d.inf/t, cav: d.cav/t, arc: d.arc/t});
     } else {
-        // Meta analysis targets 66 common compositions
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    for (let i=0; i<=100; i+=2) {
-        for (let j=0; j<=100-i; j+=2) {
+    for (let i=0; i<=100; i+=5) {
+        for (let j=0; j<=100-i; j+=5) {
             let k=100-i-j, wins = 0, totalNet = 0;
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                
-                // Construct the varied batch using lead tiers from the Sim
                 const varBatch = {
                     inf_tier: userSide.batches[0].inf_tier, inf_tg: userSide.batches[0].inf_tg, inf: (i/100) * userTotal,
                     cav_tier: userSide.batches[0].cav_tier, cav_tg: userSide.batches[0].cav_tg, cav: (j/100) * userTotal,
                     arc_tier: userSide.batches[0].arc_tier, arc_tg: userSide.batches[0].arc_tg, arc: (k/100) * userTotal
                 };
-
                 if (optRole === 'atk') s.atk.batches = [varBatch]; else s.def.batches = [varBatch];
                 
                 const r = runCombatSim(s, 'average', 'average', 1, isBear, true);
                 const userSurv = optRole === 'atk' ? sumTroops(r.m_cur) : sumTroops(r.e_cur);
                 const enemySurv = optRole === 'atk' ? sumTroops(r.e_cur) : sumTroops(r.m_cur);
                 const val = isBear ? r.totalDmg : (userSurv - enemySurv);
-                
-                if (!isBear && val > 0) wins++; 
-                totalNet += val;
+                if (!isBear && val > 0) wins++; totalNet += val;
             });
             const score = isBear ? totalNet : (wins * 1e15) + totalNet;
             dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalNet : wins);
             if (score > best.score) best = { score, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalNet/opponents.length };
         }
     }
-    
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? `Maximized Multi-Wave Damage` : `Win Rate: ${best.winRate.toFixed(1)}% | Net: <span class="${best.net>0?'text-emerald-400':'text-red-400'}">${Math.round(best.net).toLocaleString()}</span>`;
+    scoreArea.innerHTML = isBear ? `Maximized Damage Split` : `Coverage: ${best.winRate.toFixed(1)}% | Net: <span class="${best.net>0?'text-emerald-400':'text-red-400'}">${Math.round(best.net).toLocaleString()}</span>`;
 };
 
 function renderTernary(id, data, best, isBear) {
