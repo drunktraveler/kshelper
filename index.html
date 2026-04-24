@@ -245,6 +245,31 @@
                             <button onclick="window.reverseEngineerAccount()" class="bg-blue-900/50 border border-blue-500/30 text-blue-400 px-6 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition-all">Calibrate</button>
                         </div>
                     </div>
+                    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4 p-4 bg-slate-900/50 rounded-xl border border-slate-800">
+    <div class="col-span-2">
+        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Report Context</label>
+        <select id="report-mode" class="input-dark !py-1 text-[10px]">
+            <option value="solo">Solo Attack / Defense</option>
+            <option value="rally" selected>Rally / Garrison / Facility</option>
+        </select>
+    </div>
+    <div>
+        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Temp Att%</label>
+        <select id="temp-buff-att" class="input-dark !py-1 text-[10px]"><option value="0">0%</option><option value="10">10%</option><option value="20">20%</option></select>
+    </div>
+    <div>
+        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Temp Def%</label>
+        <select id="temp-buff-def" class="input-dark !py-1 text-[10px]"><option value="0">0%</option><option value="10">10%</option><option value="20">20%</option></select>
+    </div>
+    <div>
+        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Temp Leth%</label>
+        <select id="temp-buff-leth" class="input-dark !py-1 text-[10px]"><option value="0">0%</option><option value="10">10%</option><option value="20">20%</option></select>
+    </div>
+    <div>
+        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Temp HP%</label>
+        <select id="temp-buff-hp" class="input-dark !py-1 text-[10px]"><option value="0">0%</option><option value="10">10%</option><option value="20">20%</option></select>
+    </div>
+</div>
                     <div id="naked-stats-display" class="hidden grid grid-cols-3 gap-4 p-4 bg-slate-950/50 rounded-xl border border-slate-800"></div>
                 </div>
             </div>
