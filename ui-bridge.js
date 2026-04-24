@@ -258,8 +258,10 @@ window.reverseEngineerAccount = () => {
                 if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) === t) {
-                    if (s === 'att' || s === 'def') val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    else if (s === 'leth' || s === 'hp') {
+                    if (s === 'att' || s === 'def') {
+                        val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    } else if (s === 'leth' || s === 'hp') {
+                        // VERIFIED: Pulling from widgets.js correctly
                         const widgetData = WIDGET_STATS[d.template];
                         if (widgetData) val -= (widgetData[r.widget] || 0);
                     }
@@ -469,8 +471,7 @@ function renderTernary(id, data, best, isBear) {
 
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes in Roster.");
-    
+    if (unlocked.length < 3) return alert("Unlock 3 heroes in Roster.");
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
     resArea.innerHTML = '<div class="col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
@@ -491,29 +492,21 @@ window.calculateOptimalLineups = () => {
         scenarios.forEach(s => {
             let best = { leads: [], joiners: [], score: -1 };
 
-            // 1. Loop through all 1-1-1 Leader Combos
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
                         const leads = [i, c, a];
                         let currentJoiners = [];
 
-                        // 2. Iterative Joiner Selection (Fixes the duplicate hero issue)
                         if (s.rally || s.bear) {
+                            // Find the best mix by filling slots one by one
                             for (let slot = 0; slot < 4; slot++) {
-                                let bestJForSlot = null;
-                                let maxJScore = -1;
-
-                                // Test every unlocked hero for this specific slot
-                                unlocked.forEach(candidate => {
-                                    const testJoiners = [...currentJoiners, candidate];
-                                    const score = calcPowerScore(leads, testJoiners, s.ctx, s.rally, s.bear);
-                                    if (score > maxJScore) {
-                                        maxJScore = score;
-                                        bestJForSlot = candidate;
-                                    }
+                                let bestJ = null, maxJScore = -1;
+                                unlocked.forEach(cand => {
+                                    const score = calcPowerScore(leads, [...currentJoiners, cand], s.ctx, s.rally, s.bear);
+                                    if (score > maxJScore) { maxJScore = score; bestJ = cand; }
                                 });
-                                currentJoiners.push(bestJForSlot);
+                                currentJoiners.push(bestJ);
                             }
                         }
 
@@ -525,25 +518,16 @@ window.calculateOptimalLineups = () => {
                 }
             }
             
-            // Format joiner names for clean display (e.g. Saul x3, Fahd x1)
-            const joinerCounts = {};
-            best.joiners.forEach(j => joinerCounts[j] = (joinerCounts[j] || 0) + 1);
-            const joinerStr = Object.entries(joinerCounts).map(([name, count]) => `${name} x${count}`).join(', ');
+            const jCounts = {};
+            best.joiners.forEach(name => jCounts[name] = (jCounts[name] || 0) + 1);
+            const jStr = Object.entries(jCounts).map(([n, c]) => `${n} x${c}`).join(', ');
 
             const card = document.createElement('div');
-            card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center gap-4";
-            card.innerHTML = `
-                <div>
-                    <div class="text-[10px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
-                    <div class="flex -space-x-3">
-                        ${best.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden bg-slate-900 shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
-                    </div>
-                    ${(s.rally || s.bear) ? `<div class="mt-2 text-[9px] text-slate-500 font-bold uppercase">Joiners: ${joinerStr}</div>` : ''}
-                </div>
-                <div class="text-right">
-                    <div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div>
-                    <div class="text-[8px] text-slate-500 uppercase font-black">Power Factor</div>
-                </div>`;
+            card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center";
+            card.innerHTML = `<div><div class="text-[10px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
+                <div class="flex -space-x-3 mb-2">${best.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden bg-slate-900 shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}</div>
+                ${jStr ? `<div class="text-[9px] text-slate-500 font-bold uppercase">Joiners: ${jStr}</div>` : ''}</div>
+                <div class="text-right"><div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div><div class="text-[8px] text-slate-500 uppercase font-black">Account Improvement</div></div>`;
             resArea.appendChild(card);
         });
     }, 100);
@@ -587,20 +571,25 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillBuckets = {}; 
     let widgetGrowthSum = { attack: 0, defense: 0, lethality: 0, health: 0 };
     
-    // 1. WIDGET MULTIPLIERS (Additive stacking within same stat)
+    // 1. WIDGET MULTIPLIERS (Additive within same stat)
+    // Solo Attack = None | Solo Defense = Def Only | Rally = Context specific
     if (isRally || ctx === 'def') {
         leaders.forEach(n => {
+            if (n === "None" || !HEROES[n]) return;
             const d = HEROES[n], r = roster[n];
-            if (d && d.widget && d.widget.context === ctx) {
+            if (d.widget && d.widget.context === ctx) {
                 widgetGrowthSum[d.widget.stat] += WIDGET_GROWTH[r.widget];
             }
         });
     }
 
-    // 2. SKILL STACKING (Deterministic additive, Chance probabilistic)
+    const widgetEffect = (1 + widgetGrowthSum.attack) * (1 + widgetGrowthSum.lethality) * 
+                         (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
+
+    // 2. SKILL STACKING (Manifest used to count instances of a hero)
     const manifest = {};
-    leaders.forEach(n => { if(n!=="None"){ manifest[n]=manifest[n]||{l:0,j:0}; manifest[n].l++; }});
-    joiners.forEach(n => { if(n!=="None"){ manifest[n]=manifest[n]||{l:0,j:0}; manifest[n].j++; }});
+    leaders.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].l++; }});
+    joiners.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].j++; }});
 
     for (const name in manifest) {
         const d = HEROES[name], r = roster[name], count = manifest[name];
@@ -611,15 +600,17 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
             
             let effectiveMagnitude;
             if (p >= 1.0) {
-                effectiveMagnitude = instances; // Additive Stacking
+                effectiveMagnitude = instances; // Additive: (1 + .25 + .25)
             } else {
-                const probAny = 1 - Math.pow(1 - p, instances); // Chance Stacking
+                // Probabilistic: 1 - (1-p)^n
+                const probAny = 1 - Math.pow(1 - p, instances);
                 effectiveMagnitude = (1 - Math.pow(1 - probAny, isBear ? 1 : (s.duration || 1)));
             }
 
             s.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                skillBuckets[id] = (skillBuckets[id] || 0) + (Array.isArray(m)?m[idx]:m) * effectiveMagnitude;
+                const val = (Array.isArray(m) ? m[idx] : m) * effectiveMagnitude;
+                skillBuckets[id] = (skillBuckets[id] || 0) + val;
             });
         });
     }
@@ -627,33 +618,38 @@ function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     let skillMult = 1.0;
     Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
 
-    // 3. STAT GAIN (Individual types, then averaged)
+    // 3. STAT POWER GAIN (The "Normal Multiplier" upgrade to your account)
     let statEffect = 1.0;
     if (document.getElementById('use-account-stats').checked && nakedStats) {
-        let totalRatio = 0;
+        let totalNakedVol = 0, totalFinalVol = 0;
+
         ['inf', 'cav', 'arc'].forEach(t => {
             const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
             let flats = { att: 0, def: 0, leth: 0, hp: 0 };
+            
             leaders.forEach(name => {
+                if (name === "None" || !HEROES[name]) return;
                 const d = HEROES[name], r = roster[name];
-                if (d && d.type.toLowerCase().slice(0,3) === t) {
+                if (d.type.toLowerCase().slice(0,3) === t) {
                     flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     if (d.widget) {
-                        const widgetData = WIDGET_STATS[d.template];
-                        flats.leth += (widgetData ? widgetData[r.widget] : 0);
-                        flats.hp += (widgetData ? widgetData[r.widget] : 0);
+                        const templateStats = WIDGET_STATS[d.template];
+                        flats.leth += (templateStats ? templateStats[r.widget] : 0);
+                        flats.hp += (templateStats ? templateStats[r.widget] : 0);
                     }
                 }
             });
+
             const nVol = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
             const fVol = isBear ? ((naked.att+flats.att)*(naked.leth+flats.leth)) : ((naked.att+flats.att)*(naked.leth+flats.leth)*(naked.def+flats.def)*(naked.hp+flats.hp));
-            totalRatio += (fVol / (nVol || 1));
+            
+            totalNakedVol += nVol;
+            totalFinalVol += fVol;
         });
-        statEffect = totalRatio / 3;
+        statEffect = totalFinalVol / (totalNakedVol || 1);
     }
 
-    const widgetEffect = (1 + widgetGrowthSum.attack) * (1 + widgetGrowthSum.lethality) * (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
     return statEffect * skillMult * widgetEffect;
 }
 
