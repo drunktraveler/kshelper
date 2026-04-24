@@ -27,8 +27,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     };
 
     // 2. Gather Hero Multipliers (ID-driven)
-    const m_data = getMultipliers(setup.atk, atkLuck, shift, isOptimizing);
-    const e_data = isBear ? { selfMult: 1, enemyMult: 1, logs: [] } : getMultipliers(setup.def, defLuck, shift, isOptimizing);
+    const m_data = getMultipliers(setup.atk, atkLuck, shift, isOptimizing, isBear);
+    const e_data = isBear ? { selfMult: 1, enemyMult: 1, logs: [] } : getMultipliers(setup.def, defLuck, shift, isOptimizing, false);
 
     let troopProcs = { atk: { ds:0, ln:0, sh:0, bp:0 }, def: { ds:0, ln:0, sh:0, bp:0 } };
     let wave = 0;
@@ -150,8 +150,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         wave, 
         atk_mults: finalizeLogs('atk', m_data.logs), 
         def_mults: finalizeLogs('def', e_data.logs), 
-        startAtk: totalStartAtk, 
-        startDef: totalStartDef 
+        totalDmg: isBear ? (1000000 - e_cur.inf) : 0 // Backwards compat for Bear Opt
     };
 }
 
@@ -186,6 +185,52 @@ function processBatches(batches) {
         } 
     });
     return { counts: totals, avgBase, weights };
+}
+
+// 2. Multiplier logic with Bear Leak Fix
+function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear = false) {
+    let selfPool = {}, enemyPool = {}, logs = [];
+    const isStochastic = (luckMode === 'stochastic');
+
+    sideSetup.heroes.forEach((h, index) => {
+        if(h.name === "None") return;
+        const d = HEROES[h.name];
+        d.skills.forEach((s, si) => {
+            if (index >= 3 && si > 0) return;
+            
+            const x = s.values[h[`s${si+1}`]-1];
+            const p = s.getChance(x), m = s.getMagnitude(x);
+            let ev;
+
+            if (p >= 1.0) ev = m;
+            else if (isStochastic) ev = (Math.random() < p ? m : 0);
+            else ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
+
+            if (ev === 0) return;
+
+            s.ids.forEach((id, idx) => {
+                // BEAR LEAK FIX: Strictly block non-1xx IDs (Debuffs/2XX) during Bear calculation
+                if (isBear && id >= 200) return;
+
+                const val = (Array.isArray(ev) ? ev[idx] : ev);
+                if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
+                else enemyPool[id] = (enemyPool[id] || 0) + val;
+            });
+
+            if(!isOptimizing) {
+                const displayVal = (Array.isArray(ev) ? ev[0] : ev);
+                logs.push(`<span class="text-slate-500">Slot ${index+1}</span> ${h.name}: ${s.name} <span class="text-blue-400">+${(displayVal * 100).toFixed(1)}%</span>`);
+            }
+        });
+    });
+
+    const calcMult = (pool) => {
+        let m = 1.0;
+        Object.values(pool).forEach(v => m *= (1 + v));
+        return m;
+    };
+
+    return { selfMult: calcMult(selfPool), enemyMult: calcMult(enemyPool), logs };
 }
 
 function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing) {
