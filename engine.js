@@ -126,14 +126,29 @@ if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
     let weights = {inf:{t7:0,tg3:0,tg5:0},cav:{t7:0,tg3:0,tg5:0},arc:{t7:0,tg3:0,tg5:0}};
+    
     batches.forEach(b => {
         ['inf','cav','arc'].forEach(u => {
-            const longU = u==='arc'?'archers':(u==='inf'?'infantry':'cavalry'), stats = UNITS[longU][b.tier][b.tg];
-            totals[u] += b[u]; avgBase[u].atk += stats[0]*b[u]; avgBase[u].def += stats[1]*b[u]; avgBase[u].leth += stats[2]*b[u]; avgBase[u].hp += stats[3]*b[u];
-            if (b.tier >= 7) weights[u].t7 += b[u]; if (b.tg >= 3) weights[u].tg3 += b[u]; if (b.tg >= 5) weights[u].tg5 += b[u];
+            const longU = u==='arc'?'archers':(u==='inf'?'infantry':'cavalry');
+            const tier = b[u+'_tier'], tg = b[u+'_tg'], count = b[u];
+            if (!count) return;
+            const stats = UNITS[longU][tier][tg];
+            totals[u] += count;
+            avgBase[u].atk += stats[0] * count; 
+            avgBase[u].def += stats[1] * count; 
+            avgBase[u].leth += stats[2] * count; 
+            avgBase[u].hp += stats[3] * count;
+            if (tier >= 7) weights[u].t7 += count;
+            if (tg >= 3) weights[u].tg3 += count;
+            if (tg >= 5) weights[u].tg5 += count;
         });
     });
-    ['inf', 'cav', 'arc'].forEach(u => { if (totals[u]>0) { Object.keys(avgBase[u]).forEach(k => avgBase[u][k] /= totals[u]); Object.keys(weights[u]).forEach(k => weights[u][k] /= totals[u]); } });
+    ['inf', 'cav', 'arc'].forEach(u => { 
+        if (totals[u] > 0) { 
+            Object.keys(avgBase[u]).forEach(k => avgBase[u][k] /= totals[u]); 
+            Object.keys(weights[u]).forEach(k => weights[u][k] /= totals[u]); 
+        } 
+    });
     return { counts: totals, avgBase, weights };
 }
 
