@@ -396,8 +396,14 @@ window.runOptimizer = (mode) => {
     const oppSide = optRole === 'atk' ? setup.def : setup.atk;
     const oppTotal = oppSide.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1;
 
-    if (isBear) { 
+     if (isBear) { 
         opponents.push({inf:1, cav:0, arc:0}); 
+        // Force stats from Bear UI input fields
+        setup.atk.stats = { 
+            inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
+            cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
+            arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
+        };
     } else if (mode === 'current') {
         const d = oppSide.batches.reduce((s,b) => ({inf:s.inf+b.inf, cav:s.cav+b.cav, arc:s.arc+b.arc}), {inf:0,cav:0,arc:0});
         opponents.push({inf: d.inf/oppTotal, cav: d.cav/oppTotal, arc: d.arc/oppTotal});
@@ -405,22 +411,24 @@ window.runOptimizer = (mode) => {
         const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
         const t = i+c+a || 1; opponents.push({inf:i/t, cav:c/t, arc:a/t});
     } else {
-        // Meta analysis
+        // Meta analysis covers the ternary space in 10% increments
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    // Increased step precision and full-battle simulation
+    // 2% steps for high-definition heatmap
     for (let i=0; i<=100; i+=2) {
         for (let j=0; j<=100-i; j+=2) {
-            let k=100-i-j, wins = 0, totalScore = 0;
+            let k=100-i-j, wins = 0, totalMargin = 0;
             
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
+                
                 const varBatch = {
                     inf_tier: userSide.batches[0].inf_tier, inf_tg: userSide.batches[0].inf_tg, inf: (i/100) * userTotal,
                     cav_tier: userSide.batches[0].cav_tier, cav_tg: userSide.batches[0].cav_tg, cav: (j/100) * userTotal,
                     arc_tier: userSide.batches[0].arc_tier, arc_tg: userSide.batches[0].arc_tg, arc: (k/100) * userTotal
                 };
+
                 const fixBatch = {
                     inf_tier: oppSide.batches[0].inf_tier, inf_tg: oppSide.batches[0].inf_tg, inf: opp.inf * oppTotal,
                     cav_tier: oppSide.batches[0].cav_tier, cav_tg: oppSide.batches[0].cav_tg, cav: opp.cav * oppTotal,
@@ -430,32 +438,35 @@ window.runOptimizer = (mode) => {
                 if (optRole === 'atk') { s.atk.batches = [varBatch]; s.def.batches = isBear ? s.def.batches : [fixBatch]; }
                 else { s.def.batches = [varBatch]; s.atk.batches = [fixBatch]; }
                 
-                // FIXED: Run simulation for 100 waves (except Bear) to penalize frontline collapse
-                const r = runCombatSim(s, 'average', 'average', isBear ? 1 : 100, isBear, true);
+                // Run full-length simulation (1000 waves)
+                const r = runCombatSim(s, 'average', 'average', isBear ? 1 : 1000, isBear, true);
                 
                 const userSurv = optRole === 'atk' ? sumTroops(r.m_cur) : sumTroops(r.e_cur);
                 const enemySurv = optRole === 'atk' ? sumTroops(r.e_cur) : sumTroops(r.m_cur);
                 
-                // FIXED: Score is now User Surviving Ratio. 
-                // This ensures the optimizer values keeping your backline alive.
-                const val = isBear ? r.totalDmg : (userSurv / userTotal);
+                // Value is the Net Margin. If negative, you lost.
+                const val = isBear ? r.totalDmg : (userSurv - enemySurv);
                 
                 if (!isBear && (userSurv > enemySurv)) wins++; 
-                totalScore += val;
+                totalMargin += val;
             });
 
-            const finalScore = isBear ? totalScore : (wins * 1e15) + totalScore;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalScore : wins);
+            // Weight Win Rate highest, using Margin as the tie-breaker
+            const finalScore = isBear ? totalMargin : (wins * 1e15) + totalMargin;
+            
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); 
+            // Display wins for standard combat, damage for bear
+            dataPoints.z.push(isBear ? totalMargin : wins);
             
             if (finalScore > best.score) {
-                best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalScore/opponents.length };
+                best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalMargin/opponents.length };
             }
         }
     }
     
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? `Total Net Damage Optimized` : `Win Rate: ${best.winRate.toFixed(1)}% | Avg Survival: ${(best.net * 100).toFixed(1)}%`;
+    scoreArea.innerHTML = isBear ? `Maximized Damage Output` : `Win Rate: ${best.winRate.toFixed(1)}% | Avg Margin: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${Math.round(best.net).toLocaleString()}</span>`;
 };
 
 function renderTernary(id, data, best, isBear) {
