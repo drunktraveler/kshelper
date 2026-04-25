@@ -4,32 +4,104 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
 
-export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 100, isBear = false, isOptimizing = false) {
+export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 1000, isBear = false, isOptimizing = false) {
     const isStochastic = (atkLuck === 'stochastic');
-    const atkP = processBatches(setup.atk.batches), defP = isBear ? {
+    const atkP = processBatches(setup.atk.batches);
+    const defP = isBear ? {
         counts: { inf: 1000000, cav: 0, arc: 0 },
         avgBase: { inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 }, cav: { atk: 0, def: 0, leth: 0, hp: 0 }, arc: { atk: 0, def: 0, leth: 0, hp: 0 } },
         weights: { inf: { t7: 1, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
+
+    const atkH = getHeroData(setup.atk);
+    const defH = isBear ? { passives:{self:{},enemy:{}}, actives:[] } : getHeroData(setup.def);
 
     let m_cur = { ...atkP.counts }, e_cur = { ...defP.counts };
     const totalStartAtk = Object.values(m_cur).reduce((a, b) => a + b, 0);
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    const shift = (p, mode) => {
-        if (mode === 'average' || p <= 0 || p >= 1) return p;
-        const sigma = Math.sqrt((p * (1 - p)) / 12); 
-        return Math.max(0, Math.min(1, mode === 'lucky' ? p + 1.96 * sigma : p - 1.96 * sigma));
+    // Widget Multipliers (Solo Defense/Rally context logic)
+    const getWidgetMults = (side, ctx) => {
+        let sums = { attack: 0, defense: 0, lethality: 0, health: 0 };
+        setup[side].heroes.slice(0, 3).forEach(h => {
+            if (h.name === "None") return;
+            const d = HEROES[h.name];
+            if (d.widget && d.widget.context === ctx) sums[d.widget.stat] += WIDGET_GROWTH[h.widgetLv || 10];
+        });
+        return { 
+            atkLeth: (1 + sums.attack) * (1 + sums.lethality),
+            defHp: (1 + sums.defense) * (1 + sums.health)
+        };
     };
 
-    let triggers = {}; 
-    const m_data = getMultipliers(setup.atk, atkLuck, shift, isOptimizing, isBear, triggers);
-    const e_data = isBear ? { selfMult: 1, enemyMult: 1, logs: [] } : getMultipliers(setup.def, defLuck, shift, isOptimizing, false);
+    // Widgets: Sim uses screen values usually, but we verify context here
+    // If Attacker is in sim, we assume 'off' context. If Defender, 'def' context.
+    const w_atk = getWidgetMults('atk', 'off');
+    const w_def = getWidgetMults('def', 'def');
 
-    let wave = 0;
+    let wave = 0, triggers = { atk: {}, def: {} };
+    let activeBuffs = { atk: [], def: [] }; // { ids, mag, expires }
+
+    // PRE-CALCULATE DETERMINISTIC MULTIPLIERS
+    // If not stochastic, we calculate EV once and apply statically.
+    let detMults = { atk: { self: 1, enemy: 1 }, def: { self: 1, enemy: 1 } };
+    if (!isStochastic) {
+        ['atk', 'def'].forEach(side => {
+            const h = (side === 'atk' ? atkH : defH);
+            const luck = (side === 'atk' ? atkLuck : defLuck);
+            let sPool = { ...h.passives.self }, ePool = { ...h.passives.enemy };
+
+            h.actives.forEach(act => {
+                const combinedP = 1 - Math.pow(1 - act.p, act.instances);
+                const shift = (p, mode) => (mode === 'average' || p <= 0 || p >= 1) ? p : (mode === 'lucky' ? Math.min(1, p + 0.1) : Math.max(0, p - 0.1));
+                const uptime = (1 - Math.pow(1 - shift(combinedP, luck), isBear ? 1 : act.duration));
+                
+                act.ids.forEach((id, idx) => {
+                    if (isBear && id >= 200) return;
+                    const val = (Array.isArray(act.m) ? act.m[idx] : act.m) * uptime;
+                    const p = id < 200 ? sPool : ePool;
+                    p[id] = (p[id] || 0) + val;
+                });
+            });
+            const calc = (p) => { let m = 1.0; Object.values(p).forEach(v => m *= (1 + v)); return m; };
+            detMults[side] = { self: calc(sPool), enemy: calc(ePool) };
+        });
+    }
+
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
+        let m_wave_mults = { self: detMults.atk.self, enemy: detMults.atk.enemy };
+        let e_wave_mults = { self: detMults.def.self, enemy: detMults.def.enemy };
+
+        if (isStochastic) {
+            ['atk', 'def'].forEach(side => {
+                const h = (side === 'atk' ? atkH : defH);
+                activeBuffs[side] = activeBuffs[side].filter(b => b.expires > wave);
+                
+                h.actives.forEach(act => {
+                    const combinedP = 1 - Math.pow(1 - act.p, act.instances);
+                    if (Math.random() < combinedP) {
+                        triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
+                        activeBuffs[side].push({ ids: act.ids, mag: act.m, expires: wave + (isBear ? 1 : act.duration) });
+                    }
+                });
+
+                let sPool = { ...h.passives.self }, ePool = { ...h.passives.enemy };
+                activeBuffs[side].forEach(b => {
+                    b.ids.forEach((id, idx) => {
+                        if (isBear && id >= 200) return;
+                        const val = Array.isArray(b.mag) ? b.mag[idx] : b.mag;
+                        const p = id < 200 ? sPool : ePool;
+                        p[id] = (p[id] || 0) + val;
+                    });
+                });
+                const calc = (p) => { let m = 1.0; Object.values(p).forEach(v => m *= (1 + v)); return m; };
+                if (side === 'atk') m_wave_mults = { self: calc(sPool), enemy: calc(ePool) };
+                else e_wave_mults = { self: calc(sPool), enemy: calc(ePool) };
+            });
+        }
+
         const mf = (['inf', 'cav', 'arc'].find(u => m_cur[u] >= 1) || 'arc');
         const ef = (['inf', 'cav', 'arc'].find(u => e_cur[u] >= 1) || 'arc');
         let pending = [];
@@ -41,38 +113,36 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const sS = setup[side], tS = setup[target], tf = (side==='atk' ? ef : mf);
             const sL = (side==='atk'?atkLuck:defLuck);
             
-            // Damage = Source.SelfBuffs * Opponent.Debuffs (applied to source)
-            const effectiveMult = (side === 'atk') ? (m_data.selfMult * e_data.enemyMult) : (e_data.selfMult * m_data.enemyMult);
+            const selfM = (side === 'atk' ? m_wave_mults.self : e_wave_mults.self);
+            const oppE = (side === 'atk' ? e_wave_mults.enemy : m_wave_mults.enemy);
+            const widgetM = (side === 'atk' ? w_atk.atkLeth : w_def.atkLeth);
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] < 1) return;
                 const b = sP.avgBase[u], w = sP.weights[u];
-
                 const calcKills = (targetType, abilMod = 1.0) => {
                     const tb = tP.avgBase[targetType];
-                    const atk = b.atk * (1 + sS.stats[u+'_att']/100), leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                    let df = tb.def * (1 + tS.stats[targetType+'_def']/100), hp = tb.hp * (1 + tS.stats[targetType+'_hp']/100);
+                    const atk = b.atk * (1 + sS.stats[u+'_att']/100);
+                    const leth = b.leth * (1 + sS.stats[u+'_leth']/100);
+                    let df = tb.def * (1 + tS.stats[targetType+'_def']/100);
+                    const hp = tb.hp * (1 + tS.stats[targetType+'_hp']/100);
                     const interaction = (u==='inf'&&targetType=='cav') || (u==='cav'&&targetType=='arc') || (u==='arc'&&targetType=='inf') ? 1.1 : 1.0;
-                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * interaction * abilMod * effectiveMult) / (df * hp * 100);
+                    // Precision formula: (Base * Multipliers * Widgets)
+                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * interaction * abilMod * selfM * oppE * widgetM) / (df * hp * 100);
                 };
 
                 let abil = 1.0;
-                const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : shift(p, sL);
-
+                const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : p;
                 if (u==='arc') {
-                    const windP = w.tg5 ? 0.3 : (w.tg3 ? 0.2 : 0);
-                    if (windP > 0) abil *= (1 + roll(windP) * 0.5);
+                    if (w.tg3 || w.tg5) abil *= (1 + roll(w.tg5?0.3:0.2) * 0.5);
                     if (w.t7 > 0) abil *= (1 + roll(0.1) * w.t7);
                 }
-                if (u==='cav') {
-                    const lanceP = w.tg5 ? 0.15 : (w.tg3 ? 0.1 : 0);
-                    if (lanceP > 0) abil *= (1 + roll(lanceP));
-                }
-                if (tf==='inf') {
+                if (u==='cav') { if (w.tg3 || w.tg5) abil *= (1 + roll(w.tg5?0.15:0.1)); }
+                if (tf==='inf') { 
                     const tw = tP.weights.inf;
-                    const shieldP = tw.tg5 ? 0.375 : (tw.tg3 ? 0.25 : 0);
-                    if (shieldP > 0) abil *= (1 - (roll(shieldP) * 0.36));
+                    if (tw.tg3 || tw.tg5) abil *= (1 - (roll(tw.tg5?0.375:0.25) * 0.36));
                 }
+
                 if (u === 'cav' && w.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const bp = roll(0.2);
                     pending.push({dict: tC, unit: tf, amt: calcKills(tf, abil) * (1 - bp)});
@@ -86,26 +156,24 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break;
     }
 
-    const finalizeLogs = (side, skillLogs, triggerTracker) => {
-        const p = side === 'atk' ? atkP : defP;
-        let interactions = [];
-        ['inf', 'cav', 'arc'].forEach(u => {
-            const w = p.weights[u];
-            if (w.t7 > 0) interactions.push(`${u.toUpperCase()} T7+ (${(w.t7 * 100).toFixed(0)}%)`);
-            if (w.tg3 > 0 || w.tg5 > 0) interactions.push(`${u.toUpperCase()} TG3/5 (${(Math.max(w.tg3, w.tg5)*100).toFixed(0)}%)`);
+    const finalizeLogs = (side, h) => {
+        let l = [];
+        const p = side==='atk'?atkP:defP;
+        let t7 = []; ['inf','cav','arc'].forEach(u => { if(p.weights[u].t7>0) t7.push(`${u.toUpperCase()}(${(p.weights[u].t7*100).toFixed(0)}%)`)});
+        // Active Skills
+        h.actives.forEach(act => {
+            const val = isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${(act.m * (1-Math.pow(1-(act.p), act.duration))*100).toFixed(1)}%`;
+            l.push({ name: act.name, val, isPassive: false });
         });
-        return {
-            skills: skillLogs,
-            troopEff: interactions.join(' | '),
-            triggers: triggerTracker
-        };
+        // Passives
+        for (let id in h.passives.self) l.push({ name: `ID ${id} Passive`, val: `+${(h.passives.self[id]*100).toFixed(1)}%`, isPassive: true });
+        return { skills: l, troopEff: t7.join(' | '), triggers: triggers[side] };
     };
 
     return { 
-        m_cur, e_cur, wave, 
-        atk_logs: finalizeLogs('atk', m_data.logs, triggers), 
-        def_logs: finalizeLogs('def', e_data.logs, {}), // Defender triggers not tracked in this context
-        totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
+        m_cur: {inf: Math.ceil(m_cur.inf), cav: Math.ceil(m_cur.cav), arc: Math.ceil(m_cur.arc)}, 
+        e_cur: {inf: Math.ceil(e_cur.inf), cav: Math.ceil(e_cur.cav), arc: Math.ceil(e_cur.arc)}, 
+        wave, atk_logs: finalizeLogs('atk', atkH), def_logs: finalizeLogs('def', defH), totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
     };
 }
 
