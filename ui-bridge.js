@@ -331,50 +331,44 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const mode = document.getElementById('sim-mode-select').value;
-    const resultScreen = document.getElementById('result-screen');
-    let rFinal, rBest, rWorst, winAtk = 0, winDef = 0;
+    let rFinal, winAtk = 0, winDef = 0;
 
     if (mode === 'monte-carlo') {
         let results = [], sumAtkWins = 0, sumDefWins = 0;
-        let accTriggersAtk = {}, accTriggersDef = {};
-
+        let accTrigAtk = {}, accTrigDef = {};
         for (let i = 0; i < 100; i++) {
             const r = runCombatSim(setup, 'stochastic', 'stochastic');
             const atkV = sumTroops(r.m_cur), defV = sumTroops(r.e_cur);
             if (atkV > defV) { winAtk++; sumAtkWins += atkV; } 
-            else { winDef++; sumDefWins += defV; }
-            
-            // Accumulate trigger counts
-            Object.entries(r.atk_logs.triggers).forEach(([k, v]) => accTriggersAtk[k] = (accTriggersAtk[k] || 0) + v);
-            Object.entries(r.def_logs.triggers).forEach(([k, v]) => accTriggersDef[k] = (accTriggersDef[k] || 0) + v);
+            else if (defV > atkV) { winDef++; sumDefWins += defV; }
+            Object.entries(r.atk_logs.triggers).forEach(([k, v]) => accTrigAtk[k] = (accTrigAtk[k] || 0) + v);
+            Object.entries(r.def_logs.triggers).forEach(([k, v]) => accTrigDef[k] = (accTrigDef[k] || 0) + v);
             results.push(r);
         }
 
         // Logic: Winner shows average, loser shows 0
-        rFinal = {
-            m_cur: { inf: winAtk >= winDef ? (sumAtkWins / Math.max(1, winAtk)) : 0, cav: 0, arc: 0 },
-            e_cur: { inf: winDef > winAtk ? (sumDefWins / Math.max(1, winDef)) : 0, cav: 0, arc: 0 },
+       rFinal = {
+            m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
+            e_cur: { inf: winDef > winAtk ? (sumDefWins / winDef) : 0, cav: 0, arc: 0 },
             wave: results[0].wave,
-            atk_logs: {
-                ...results[0].atk_logs,
-                skills: results[0].atk_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg Triggers: ${(accTriggersAtk[s.name]/100).toFixed(1)}`}))
-            },
-            def_logs: {
-                ...results[0].def_logs,
-                skills: results[0].def_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg Triggers: ${(accTriggersDef[s.name]/100).toFixed(1)}`}))
-            }
+            atk_logs: { ...results[0].atk_logs, skills: results[0].atk_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigAtk[s.name]||0)/100}`})) },
+            def_logs: { ...results[0].def_logs, skills: results[0].def_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigDef[s.name]||0)/100}`})) }
         };
-        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
-        rWorst = results[0]; rBest = results[99];
     } else {
         rFinal = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
-        rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    resultScreen.classList.remove('hidden');
-    document.getElementById('res-atk-total').innerText = Math.round(sumTroops(rFinal.m_cur)).toLocaleString();
-    document.getElementById('res-def-total').innerText = Math.round(sumTroops(rFinal.e_cur)).toLocaleString();
+    // Round survivors to prevent fractional counts showing in UI
+    const sAtk = Math.round(sumTroops(rFinal.m_cur)), sDef = Math.round(sumTroops(rFinal.e_cur));
+    document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
+    document.getElementById('res-def-total').innerText = sDef.toLocaleString();
+
+    const bar = document.getElementById('luck-bar-inner');
+    const totalStart = sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]);
+    const score = (sAtk - sDef) / (totalStart || 1);
+    bar.style.left = "50%"; 
+    bar.style.width = Math.abs(score * 50) + "%";
+    bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
     
     document.getElementById('result-waves').innerHTML = `
         <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
