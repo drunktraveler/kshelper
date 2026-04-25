@@ -232,3 +232,39 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
     };
     return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
 }
+
+function getHeroData(sideSetup) {
+    const lineup = {}; 
+    sideSetup.heroes.forEach((h, index) => {
+        if (h.name === "None" || !HEROES[h.name]) return;
+        if (!lineup[h.name]) {
+            lineup[h.name] = { lead: 0, joiner: 0, data: HEROES[h.name], levels: { s1: h.s1, s2: h.s2, s3: h.s3 } };
+        }
+        if (index < 3) lineup[h.name].lead++; else lineup[h.name].joiner++;
+    });
+
+    let passives = { self: {}, enemy: {} }, actives = [];
+    for (const name in lineup) {
+        const h = lineup[name];
+        h.data.skills.forEach((s, si) => {
+            const instances = h.lead + (si === 0 ? h.joiner : 0);
+            if (instances === 0) return;
+            const lvl = h.levels[`s${si+1}`] || 5;
+            const x = s.values[lvl - 1];
+            const p = s.getChance(x), m = s.getMagnitude(x);
+
+            if (p >= 1.0) {
+                // PASSIVE: Magnitude * instances (Additive)
+                s.ids.forEach((id, idx) => {
+                    const val = (Array.isArray(m) ? m[idx] : m) * instances;
+                    const pool = id < 200 ? passives.self : passives.enemy;
+                    pool[id] = (pool[id] || 0) + val;
+                });
+            } else {
+                // ACTIVE: Stored for the wave loop
+                actives.push({ name: `${name} ${s.name}`, p, m, ids: s.ids, duration: s.duration || 1, instances });
+            }
+        });
+    }
+    return { passives, actives };
+}
