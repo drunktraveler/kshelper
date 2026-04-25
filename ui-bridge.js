@@ -331,16 +331,20 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const mode = document.getElementById('sim-mode-select').value;
-    let rFinal, rBest, rWorst, winAtk = 0, winDef = 0;
+    
+    let rFinal, rBest, rWorst;
+    let winAtk = 0, winDef = 0, winRateText = "";
 
     if (mode === 'monte-carlo') {
         let results = [], sumAtkWins = 0, sumDefWins = 0;
         for (let i = 0; i < 100; i++) {
             const r = runCombatSim(setup, 'stochastic', 'stochastic');
             const aV = sumTroops(r.m_cur), dV = sumTroops(r.e_cur);
-            if (aV > dV) { winAtk++; sumAtkWins += aV; } else if (dV > aV) { winDef++; sumDefWins += dV; }
+            if (aV > dV) { winAtk++; sumAtkWins += aV; } 
+            else if (dV > aV) { winDef++; sumDefWins += dV; }
             results.push(r);
         }
+        winRateText = `Atk Wins: ${winAtk}% | Def Wins: ${winDef}%`;
         rFinal = {
             m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
             e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
@@ -349,29 +353,34 @@ window.handleSimulation = async () => {
         results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
         rWorst = results[0]; rBest = results[99];
     } else {
+        // Deterministic Range Assignment
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    // Rounding and UI Logic
     const sAtk = Math.round(sumTroops(rFinal.m_cur)), sDef = Math.round(sumTroops(rFinal.e_cur));
     document.getElementById('result-screen').classList.remove('hidden');
     document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
     document.getElementById('res-def-total').innerText = sDef.toLocaleString();
+    
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
 
-    // Range Bar
     const bar = document.getElementById('luck-bar-inner');
     const score = (sAtk - sDef) / (sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]) || 1);
     bar.style.left = "50%"; bar.style.width = Math.abs(score * 50) + "%";
     bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
 
+    document.getElementById('result-waves').innerHTML = `
+        <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
+        ${winRateText ? winRateText + '<br>' : ''}
+        Representative Duration: ${rFinal.wave} Waves`;
+
     const logHTML = (side, data) => `
-        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'}</div>
+        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
         <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
-        ${data.skills.map(s => `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-400'} font-black">${s.val}</span></div>`).join('')}
+        ${data.skills.map(s => `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span></div>`).join('')}
     `;
     document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
 };
