@@ -142,10 +142,18 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
     let selfPool = {}, enemyPool = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
 
+    // 1. Group lineup to apply stacking rules correctly
     const lineup = {}; 
     sideSetup.heroes.forEach((h, index) => {
         if (h.name === "None" || !HEROES[h.name]) return;
-        if (!lineup[h.name]) lineup[h.name] = { lead: 0, joiner: 0, data: HEROES[h.name], roster: h };
+        if (!lineup[h.name]) {
+            lineup[h.name] = { 
+                lead: 0, 
+                joiner: 0, 
+                data: HEROES[h.name], 
+                levels: { s1: h.s1, s2: h.s2, s3: h.s3 } 
+            };
+        }
         if (index < 3) lineup[h.name].lead++; 
         else lineup[h.name].joiner++;
     });
@@ -153,11 +161,12 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
     for (const name in lineup) {
         const h = lineup[name];
         h.data.skills.forEach((s, si) => {
+            // Logic: Leaders get all skills, Joiners get S1 only
             const instances = h.lead + (si === 0 ? h.joiner : 0);
             if (instances === 0) return;
 
-            // SAFETY: Default to level 5 if roster data is missing/corrupt
-            const lvl = h.roster[`s${si+1}`] || 5;
+            // FIXED: Corrected property access (removed .roster)
+            const lvl = h.levels[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
             if (x === undefined) return;
 
@@ -179,7 +188,7 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
                 }
             }
 
-            // FIXED: Apply factor to magnitude correctly (handles Saul/Hilde arrays)
+            // Calculation for math pool (handles multi-part arrays)
             const effectiveMagnitude = Array.isArray(m) ? m.map(v => v * factor) : m * factor;
 
             s.ids.forEach((id, idx) => {
@@ -191,17 +200,25 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
                 else enemyPool[id] = (enemyPool[id] || 0) + val;
             });
 
+            // 2. LOGGING (Handles multi-part visibility)
             if (!isOptimizing) {
                 const isPassive = p >= 1.0;
-                // Grab the first value for display if magnitude is an array
-                const displayNum = Array.isArray(effectiveMagnitude) ? effectiveMagnitude[0] : effectiveMagnitude;
-                const label = isStochastic && !isPassive 
-                    ? `Triggers: ${triggerTracker[name + " " + s.name] || 0}` 
-                    : `+${(displayNum * 100).toFixed(1)}%`;
+                let logVal;
+                
+                if (isStochastic && !isPassive) {
+                    logVal = `Triggers: ${triggerTracker[`${name} ${s.name}`] || 0}`;
+                } else {
+                    // FIXED: Now maps all parts of Saul/Hilde skills into the log string
+                    if (Array.isArray(effectiveMagnitude)) {
+                        logVal = "+" + effectiveMagnitude.map(v => (v * 100).toFixed(1) + "%").join("/");
+                    } else {
+                        logVal = `+${(effectiveMagnitude * 100).toFixed(1)}%`;
+                    }
+                }
                 
                 logs.push({ 
                     name: `${name} ${s.name}${instances > 1 ? ' (x' + instances + ')' : ''}`, 
-                    val: label, 
+                    val: logVal, 
                     isPassive 
                 });
             }
