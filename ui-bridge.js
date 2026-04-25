@@ -331,67 +331,102 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const mode = document.getElementById('sim-mode-select').value;
-    let rFinal, winAtk = 0, winDef = 0;
+    
+    // Declare all variables at the top level to avoid "not defined" errors
+    let rFinal, rBest, rWorst;
+    let winAtk = 0, winDef = 0;
 
     if (mode === 'monte-carlo') {
         let results = [], sumAtkWins = 0, sumDefWins = 0;
         let accTrigAtk = {}, accTrigDef = {};
+
         for (let i = 0; i < 100; i++) {
             const r = runCombatSim(setup, 'stochastic', 'stochastic');
             const atkV = sumTroops(r.m_cur), defV = sumTroops(r.e_cur);
-            if (atkV > defV) { winAtk++; sumAtkWins += atkV; } 
-            else if (defV > atkV) { winDef++; sumDefWins += defV; }
+            
+            if (atkV > defV) { 
+                winAtk++; 
+                sumAtkWins += atkV; 
+            } else if (defV > atkV) { 
+                winDef++; 
+                sumDefWins += defV; 
+            }
+            
+            // Collect triggers for averaging
             Object.entries(r.atk_logs.triggers).forEach(([k, v]) => accTrigAtk[k] = (accTrigAtk[k] || 0) + v);
             Object.entries(r.def_logs.triggers).forEach(([k, v]) => accTrigDef[k] = (accTrigDef[k] || 0) + v);
             results.push(r);
         }
 
-        // Logic: Winner shows average, loser shows 0
-       rFinal = {
+        // Calculate "Stochastic Mean": Winner shows avg, Loser shows 0
+        rFinal = {
             m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
-            e_cur: { inf: winDef > winAtk ? (sumDefWins / winDef) : 0, cav: 0, arc: 0 },
+            e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
             wave: results[0].wave,
-            atk_logs: { ...results[0].atk_logs, skills: results[0].atk_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigAtk[s.name]||0)/100}`})) },
-            def_logs: { ...results[0].def_logs, skills: results[0].def_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigDef[s.name]||0)/100}`})) }
+            atk_logs: { 
+                ...results[0].atk_logs, 
+                skills: results[0].atk_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigAtk[s.name]||0)/100}`})) 
+            },
+            def_logs: { 
+                ...results[0].def_logs, 
+                skills: results[0].def_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg: ${(accTrigDef[s.name]||0)/100}`})) 
+            }
         };
+
+        // Define Range based on the 100 samples
+        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
+        rWorst = results[0]; 
+        rBest = results[99];
+
     } else {
+        // Deterministic Mode: Calculate specific luck bounds
         rFinal = runCombatSim(setup, 'average', 'average');
+        rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
+        rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    // Round survivors to prevent fractional counts showing in UI
-    const sAtk = Math.round(sumTroops(rFinal.m_cur)), sDef = Math.round(sumTroops(rFinal.e_cur));
+    // --- UI UPDATES ---
+    const resultScreen = document.getElementById('result-screen');
+    resultScreen.classList.remove('hidden');
+
+    const sAtk = Math.round(sumTroops(rFinal.m_cur));
+    const sDef = Math.round(sumTroops(rFinal.e_cur));
+    
     document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
     document.getElementById('res-def-total').innerText = sDef.toLocaleString();
+    
+    // Fixed Range Labels
+    document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
+    document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
 
+    // Luck Bar Logic (Comparison vs Initial Army Size)
     const bar = document.getElementById('luck-bar-inner');
     const totalStart = sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]);
     const score = (sAtk - sDef) / (totalStart || 1);
     bar.style.left = "50%"; 
     bar.style.width = Math.abs(score * 50) + "%";
     bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
-    
+
+    // Text labels
     document.getElementById('result-waves').innerHTML = `
         <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
         ${mode === 'monte-carlo' ? `Atk Wins: ${winAtk}% | Def Wins: ${winDef}%<br>` : ''}
         Representative Duration: ${rFinal.wave} Waves`;
 
-    document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-
+    // Combat Details / Log Colors
     const logHTML = (side, data) => `
         <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
         <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
         ${data.skills.map(s => `
             <div class="flex justify-between border-b border-slate-900/50 py-0.5">
                 <span class="text-slate-400">${s.name}</span>
-                <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span>
+                <span class="${s.isPassive ? 'text-blue-400' : 'text-amber-500'} font-black">${s.val}</span>
             </div>`).join('')}
     `;
 
     document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
     resultScreen.scrollIntoView({ behavior: 'smooth' });
 };
-
 window.runOptimizer = (mode) => {
     const isBear = mode === 'bear', setup = gatherSetup();
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
