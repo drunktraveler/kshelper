@@ -142,7 +142,6 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
     let selfPool = {}, enemyPool = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
 
-    // 1. Manifest the lineup to count instances for proper stacking
     const lineup = {}; 
     sideSetup.heroes.forEach((h, index) => {
         if (h.name === "None" || !HEROES[h.name]) return;
@@ -151,56 +150,54 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
         else lineup[h.name].joiner++;
     });
 
-    // 2. Process each Hero type in the lineup
     for (const name in lineup) {
         const h = lineup[name];
         h.data.skills.forEach((s, si) => {
-            // Rule: Leaders get all skills, Joiners get S1 only
             const instances = h.lead + (si === 0 ? h.joiner : 0);
             if (instances === 0) return;
 
-            const x = s.values[h.roster[`s${si+1}`] - 1];
+            // SAFETY: Default to level 5 if roster data is missing/corrupt
+            const lvl = h.roster[`s${si+1}`] || 5;
+            const x = s.values[lvl - 1];
+            if (x === undefined) return;
+
             const p = s.getChance(x);
             const m = s.getMagnitude(x);
             
-            let effectiveMagnitude;
+            let factor;
             if (p >= 1.0) {
-                // DETERMINISTIC RULE: Add magnitudes (1 + 0.25 + 0.25)
-                effectiveMagnitude = instances * m;
+                factor = instances;
             } else {
-                // CHANCE RULE: Stacking instances increases probability
-                // Prob = 1 - (1 - p)^instances
                 const combinedProb = 1 - Math.pow(1 - p, instances);
-                
                 if (isStochastic) {
                     const hit = Math.random() < combinedProb ? 1 : 0;
-                    const skillKey = `${name} ${s.name}`;
-                    if (hit) triggerTracker[skillKey] = (triggerTracker[skillKey] || 0) + 1;
-                    effectiveMagnitude = hit * m;
+                    if (hit) triggerTracker[`${name} ${s.name}`] = (triggerTracker[`${name} ${s.name}`] || 0) + 1;
+                    factor = hit;
                 } else {
-                    // Average/Luck logic based on the combined probability
                     const dur = isBear ? 1 : (s.duration || 1);
-                    const uptime = (1 - Math.pow(1 - shiftFn(combinedProb, luckMode), dur));
-                    effectiveMagnitude = uptime * m;
+                    factor = (1 - Math.pow(1 - shiftFn(combinedProb, luckMode), dur));
                 }
             }
 
-            if (effectiveMagnitude === 0) return;
+            // FIXED: Apply factor to magnitude correctly (handles Saul/Hilde arrays)
+            const effectiveMagnitude = Array.isArray(m) ? m.map(v => v * factor) : m * factor;
 
             s.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                const val = (Array.isArray(effectiveMagnitude) ? effectiveMagnitude[idx] : effectiveMagnitude);
-                
+                const val = Array.isArray(effectiveMagnitude) ? effectiveMagnitude[idx] : effectiveMagnitude;
+                if (val === 0) return;
+
                 if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
                 else enemyPool[id] = (enemyPool[id] || 0) + val;
             });
 
             if (!isOptimizing) {
                 const isPassive = p >= 1.0;
-                const displayVal = (Array.isArray(effectiveMagnitude) ? effectiveMagnitude[0] : effectiveMagnitude);
+                // Grab the first value for display if magnitude is an array
+                const displayNum = Array.isArray(effectiveMagnitude) ? effectiveMagnitude[0] : effectiveMagnitude;
                 const label = isStochastic && !isPassive 
                     ? `Triggers: ${triggerTracker[name + " " + s.name] || 0}` 
-                    : `+${(displayVal * 100).toFixed(1)}%`;
+                    : `+${(displayNum * 100).toFixed(1)}%`;
                 
                 logs.push({ 
                     name: `${name} ${s.name}${instances > 1 ? ' (x' + instances + ')' : ''}`, 
@@ -211,6 +208,10 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
         });
     }
 
-    const calc = (pool) => { let m = 1.0; Object.values(pool).forEach(v => m *= (1 + v)); return m; };
+    const calc = (pool) => { 
+        let m = 1.0; 
+        Object.values(pool).forEach(v => { if(!isNaN(v)) m *= (1 + v); }); 
+        return m; 
+    };
     return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
 }
