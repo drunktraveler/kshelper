@@ -398,7 +398,6 @@ window.runOptimizer = (mode) => {
     const oppSide = optRole === 'atk' ? setup.def : setup.atk;
     const oppTotal = oppSide.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1;
 
-    // Bear specific data injection
     let bearStats = {}, bearTiers = {};
     if (isBear) {
         opponents.push({inf:1, cav:0, arc:0}); 
@@ -415,17 +414,21 @@ window.runOptimizer = (mode) => {
     } else if (mode === 'current') {
         const d = oppSide.batches.reduce((s,b) => ({inf:s.inf+b.inf, cav:s.cav+b.cav, arc:s.arc+b.arc}), {inf:0,cav:0,arc:0});
         opponents.push({inf: d.inf/oppTotal, cav: d.cav/oppTotal, arc: d.arc/oppTotal});
+    } else if (mode === 'custom') {
+        const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
+        const t = i+c+a || 1; opponents.push({inf:i/t, cav:c/t, arc:a/t});
     } else {
+        // Meta Opponents: 10% steps (66 variants) to maintain performance while maximizing user precision
         for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
     }
 
-    for (let i=0; i<=100; i+=5) {
-        for (let j=0; j<=100-i; j+=5) {
+    // EXHAUSTIVE SEARCH: 1% steps = 5151 iterations
+    for (let i=0; i<=100; i++) {
+        for (let j=0; j<=100-i; j++) {
             let k=100-i-j, wins = 0, totalMargin = 0;
+            
             opponents.forEach(opp => {
                 let s = JSON.parse(JSON.stringify(setup));
-                
-                // Construct batch using correct Tiers/TGs
                 const varBatch = {
                     inf_tier: isBear ? bearTiers.inf : userSide.batches[0].inf_tier, 
                     inf_tg: isBear ? bearTiers.inf_tg : userSide.batches[0].inf_tg, 
@@ -438,11 +441,17 @@ window.runOptimizer = (mode) => {
                     arc: (k/100) * userTotal
                 };
 
+                const fixBatch = {
+                    inf_tier: oppSide.batches[0].inf_tier, inf_tg: oppSide.batches[0].inf_tg, inf: opp.inf * oppTotal,
+                    cav_tier: oppSide.batches[0].cav_tier, cav_tg: oppSide.batches[0].cav_tg, cav: opp.cav * oppTotal,
+                    arc_tier: oppSide.batches[0].arc_tier, arc_tg: oppSide.batches[0].arc_tg, arc: opp.arc * oppTotal
+                };
+
                 if (optRole === 'atk') { 
-                    s.atk.batches = [varBatch]; 
+                    s.atk.batches = [varBatch]; s.def.batches = isBear ? s.def.batches : [fixBatch];
                     if(isBear) s.atk.stats = bearStats;
                 } else { 
-                    s.def.batches = [varBatch]; 
+                    s.def.batches = [varBatch]; s.atk.batches = [fixBatch];
                 }
                 
                 const r = runCombatSim(s, 'average', 'average', isBear ? 1 : 1000, isBear, true);
@@ -450,43 +459,63 @@ window.runOptimizer = (mode) => {
                 if (!isBear && val > 0) wins++; totalMargin += val;
             });
 
-            const finalScore = isBear ? totalMargin : (wins * 1e15) + totalMargin;
+            const finalScore = isBear ? totalMargin : (wins * 1e20) + totalMargin;
             dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalMargin : wins);
-            if (finalScore > best.score) best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalMargin/opponents.length };
+            
+            if (finalScore > best.score) {
+                best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalMargin/opponents.length };
+            }
         }
     }
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? `Maximized Damage Output` : `Win Rate: ${best.winRate.toFixed(1)}% | Net Survival: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${Math.round(best.net).toLocaleString()}</span>`;
+    scoreArea.innerHTML = isBear ? `Full Range Precision Analysis Complete` : `Meta Coverage: ${best.winRate.toFixed(1)}% | Avg Margin: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${Math.round(best.net).toLocaleString()}</span>`;
 };
 
 function renderTernary(id, data, best, isBear) {
     const traces = [
         { 
             type: 'scatterternary', a: data.a, b: data.b, c: data.c, mode: 'markers', 
-            marker: { color: data.z, colorscale: 'Viridis', size: 5, opacity: 0.8 } 
+            name: 'Heatmap',
+            marker: { 
+                color: data.z, 
+                colorscale: 'Viridis', 
+                size: 4, 
+                opacity: 0.7,
+                showscale: false 
+            },
+            hoverinfo: 'none'
         },
+        // Standard Reference Marker (50/20/30 or 10/10/80)
         { 
             type: 'scatterternary', a: [isBear ? 10 : 50], b: [isBear ? 10 : 20], c: [isBear ? 80 : 30], 
-            name: 'Standard', mode: 'markers', 
-            marker: { size: 12, symbol: 'circle-open', color: 'white', line: { width: 2.5 } } 
+            name: 'Standard Reference', mode: 'markers', 
+            marker: { size: 14, symbol: 'circle-open', color: 'white', line: { width: 3 } } 
         },
+        // Best Result Marker (Cyan Star)
         { 
             type: 'scatterternary', a: [best.form[0]], b: [best.form[1]], c: [best.form[2]], 
-            name: 'Best', mode: 'markers', 
-            marker: { size: 16, symbol: 'star', color: 'cyan', line: { width: 1.5, color: 'black' } } 
+            name: 'Optimal Point', mode: 'markers', 
+            marker: { size: 20, symbol: 'star', color: '#00f2ff', line: { width: 1.5, color: 'black' } } 
         }
     ];
 
     const layout = {
-        ternary: { sum: 100, aaxis: { title: 'Infantry' }, baxis: { title: 'Cavalry' }, caxis: { title: 'Archers' } },
-        paper_bgcolor: 'rgba(0,0,0,0)', font: { color: '#94a3b8', size: 10 },
-        margin: { l: 0, r: 0, t: 30, b: 0 }, showlegend: false
+        ternary: { 
+            sum: 100, 
+            aaxis: { title: 'INF', titlefont: { size: 12, color: '#3b82f6' }, tickfont: { color: '#64748b' }, min: 0 }, 
+            baxis: { title: 'CAV', titlefont: { size: 12, color: '#f59e0b' }, tickfont: { color: '#64748b' }, min: 0 }, 
+            caxis: { title: 'ARC', titlefont: { size: 12, color: '#10b981' }, tickfont: { color: '#64748b' }, min: 0 } 
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)', 
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#94a3b8', family: 'Inter, sans-serif' },
+        margin: { l: 10, r: 10, t: 40, b: 20 }, 
+        showlegend: false
     };
 
-    Plotly.newPlot(id, traces, layout, { displayModeBar: false });
+    Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
     if (unlocked.length < 3) return alert("Unlock 3 heroes in Roster.");
