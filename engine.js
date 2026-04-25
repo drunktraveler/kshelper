@@ -142,43 +142,75 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
     let selfPool = {}, enemyPool = {}, logs = [];
     const isStochastic = (luckMode === 'stochastic');
 
+    // 1. Manifest the lineup to count instances for proper stacking
+    const lineup = {}; 
     sideSetup.heroes.forEach((h, index) => {
-        if(h.name === "None" || !HEROES[h.name]) return;
-        const d = HEROES[h.name];
-        d.skills.forEach((s, si) => {
-            if (index >= 3 && si > 0) return;
-            const x = s.values[h[`s${si+1}`]-1], p = s.getChance(x), m = s.getMagnitude(x);
+        if (h.name === "None" || !HEROES[h.name]) return;
+        if (!lineup[h.name]) lineup[h.name] = { lead: 0, joiner: 0, data: HEROES[h.name], roster: h };
+        if (index < 3) lineup[h.name].lead++; 
+        else lineup[h.name].joiner++;
+    });
+
+    // 2. Process each Hero type in the lineup
+    for (const name in lineup) {
+        const h = lineup[name];
+        h.data.skills.forEach((s, si) => {
+            // Rule: Leaders get all skills, Joiners get S1 only
+            const instances = h.lead + (si === 0 ? h.joiner : 0);
+            if (instances === 0) return;
+
+            const x = s.values[h.roster[`s${si+1}`] - 1];
+            const p = s.getChance(x);
+            const m = s.getMagnitude(x);
             
-            let ev;
+            let effectiveMagnitude;
             if (p >= 1.0) {
-                ev = m;
-            } else if (isStochastic) {
-                const hits = Math.random() < p ? 1 : 0;
-                const skillKey = `${h.name} ${s.name}`;
-                if (hits) triggerTracker[skillKey] = (triggerTracker[skillKey] || 0) + 1;
-                ev = hits * m;
+                // DETERMINISTIC RULE: Add magnitudes (1 + 0.25 + 0.25)
+                effectiveMagnitude = instances * m;
             } else {
-                ev = (s.duration === 0 ? shiftFn(p, luckMode) : (1 - Math.pow(1 - shiftFn(p, luckMode), s.duration))) * m;
+                // CHANCE RULE: Stacking instances increases probability
+                // Prob = 1 - (1 - p)^instances
+                const combinedProb = 1 - Math.pow(1 - p, instances);
+                
+                if (isStochastic) {
+                    const hit = Math.random() < combinedProb ? 1 : 0;
+                    const skillKey = `${name} ${s.name}`;
+                    if (hit) triggerTracker[skillKey] = (triggerTracker[skillKey] || 0) + 1;
+                    effectiveMagnitude = hit * m;
+                } else {
+                    // Average/Luck logic based on the combined probability
+                    const dur = isBear ? 1 : (s.duration || 1);
+                    const uptime = (1 - Math.pow(1 - shiftFn(combinedProb, luckMode), dur));
+                    effectiveMagnitude = uptime * m;
+                }
             }
+
+            if (effectiveMagnitude === 0) return;
 
             s.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                const val = (Array.isArray(ev) ? ev[idx] : ev);
+                const val = (Array.isArray(effectiveMagnitude) ? effectiveMagnitude[idx] : effectiveMagnitude);
+                
                 if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
                 else enemyPool[id] = (enemyPool[id] || 0) + val;
             });
 
-            if(!isOptimizing) {
+            if (!isOptimizing) {
                 const isPassive = p >= 1.0;
+                const displayVal = (Array.isArray(effectiveMagnitude) ? effectiveMagnitude[0] : effectiveMagnitude);
+                const label = isStochastic && !isPassive 
+                    ? `Triggers: ${triggerTracker[name + " " + s.name] || 0}` 
+                    : `+${(displayVal * 100).toFixed(1)}%`;
+                
                 logs.push({ 
-                    name: `${h.name} ${s.name}`, 
-                    val: ev, 
-                    isPassive,
-                    rawMag: m 
+                    name: `${name} ${s.name}${instances > 1 ? ' (x' + instances + ')' : ''}`, 
+                    val: label, 
+                    isPassive 
                 });
             }
         });
-    });
+    }
+
     const calc = (pool) => { let m = 1.0; Object.values(pool).forEach(v => m *= (1 + v)); return m; };
     return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
 }
