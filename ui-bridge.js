@@ -331,23 +331,40 @@ function gatherSetup() {
 window.handleSimulation = async () => {
     const setup = gatherSetup(); 
     const mode = document.getElementById('sim-mode-select').value;
+    const resultScreen = document.getElementById('result-screen');
     let rFinal, rBest, rWorst, winAtk = 0, winDef = 0;
 
     if (mode === 'monte-carlo') {
         let results = [], sumAtkWins = 0, sumDefWins = 0;
+        let accTriggersAtk = {}, accTriggersDef = {};
+
         for (let i = 0; i < 100; i++) {
             const r = runCombatSim(setup, 'stochastic', 'stochastic');
             const atkV = sumTroops(r.m_cur), defV = sumTroops(r.e_cur);
             if (atkV > defV) { winAtk++; sumAtkWins += atkV; } 
             else { winDef++; sumDefWins += defV; }
+            
+            // Accumulate trigger counts
+            Object.entries(r.atk_logs.triggers).forEach(([k, v]) => accTriggersAtk[k] = (accTriggersAtk[k] || 0) + v);
+            Object.entries(r.def_logs.triggers).forEach(([k, v]) => accTriggersDef[k] = (accTriggersDef[k] || 0) + v);
             results.push(r);
         }
+
+        // Logic: Winner shows average, loser shows 0
         rFinal = {
-            m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
-            e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
-            wave: results[50].wave, atk_logs: results[50].atk_logs, def_logs: results[50].def_logs
+            m_cur: { inf: winAtk >= winDef ? (sumAtkWins / Math.max(1, winAtk)) : 0, cav: 0, arc: 0 },
+            e_cur: { inf: winDef > winAtk ? (sumDefWins / Math.max(1, winDef)) : 0, cav: 0, arc: 0 },
+            wave: results[0].wave,
+            atk_logs: {
+                ...results[0].atk_logs,
+                skills: results[0].atk_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg Triggers: ${(accTriggersAtk[s.name]/100).toFixed(1)}`}))
+            },
+            def_logs: {
+                ...results[0].def_logs,
+                skills: results[0].def_logs.skills.map(s => ({...s, val: s.isPassive ? s.val : `Avg Triggers: ${(accTriggersDef[s.name]/100).toFixed(1)}`}))
+            }
         };
-        results.sort((a,b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)));
+        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
         rWorst = results[0]; rBest = results[99];
     } else {
         rFinal = runCombatSim(setup, 'average', 'average');
@@ -355,32 +372,30 @@ window.handleSimulation = async () => {
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
     }
 
-    const logHTML = (side, data) => `
-        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
-        <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
-        ${data.skills.map(s => {
-            const displayVal = s.isPassive ? s.val : (mode === 'monte-carlo' ? `Triggers: ${data.triggers[s.name] || 0}` : `Eff: +${(s.val * 100).toFixed(1)}%`);
-            return `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${displayVal}</span></div>`;
-        }).join('')}
-    `;
-
-    document.getElementById('result-screen').classList.remove('hidden');
+    resultScreen.classList.remove('hidden');
     document.getElementById('res-atk-total').innerText = Math.round(sumTroops(rFinal.m_cur)).toLocaleString();
     document.getElementById('res-def-total').innerText = Math.round(sumTroops(rFinal.e_cur)).toLocaleString();
     
-    // Range Bar Calculation
-    const sAtk = sumTroops(rFinal.m_cur), sDef = sumTroops(rFinal.e_cur);
-    const score = (sAtk / (sumTroops(setup.atk.batches[0]) || 1)) - (sDef / (sumTroops(setup.def.batches[0]) || 1));
-    const bar = document.getElementById('luck-bar-inner');
-    bar.style.left = "50%"; bar.style.width = Math.min(50, Math.abs(score * 50)) + "%";
-    bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
+    document.getElementById('result-waves').innerHTML = `
+        <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
+        ${mode === 'monte-carlo' ? `Atk Wins: ${winAtk}% | Def Wins: ${winDef}%<br>` : ''}
+        Representative Duration: ${rFinal.wave} Waves`;
 
-    document.getElementById('result-waves').innerHTML = `<span class="text-blue-400 font-black uppercase">Monte-Carlo Analysis</span><br>Atk Wins: ${winAtk}% | Def Wins: ${winDef}%<br>Duration: ${rFinal.wave} Waves`;
     document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-    
+
+    const logHTML = (side, data) => `
+        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
+        <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
+        ${data.skills.map(s => `
+            <div class="flex justify-between border-b border-slate-900/50 py-0.5">
+                <span class="text-slate-400">${s.name}</span>
+                <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span>
+            </div>`).join('')}
+    `;
+
     document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
-    document.getElementById('result-screen').scrollIntoView({ behavior: 'smooth' });
+    resultScreen.scrollIntoView({ behavior: 'smooth' });
 };
 
 window.runOptimizer = (mode) => {
