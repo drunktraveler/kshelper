@@ -518,14 +518,23 @@ function renderTernary(id, data, best, isBear) {
 }
 window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes in Roster.");
+    if (unlocked.length < 1) return alert("Unlock heroes in the Roster tab first.");
     
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Global Optimum...</div>';
+    resArea.innerHTML = '<div class="col-span-1 md:col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Global Optimum...</div>';
 
-    const byType = { Inf: [], Cav: [], Arc: [] };
-    unlocked.forEach(n => byType[HEROES[n].type].push(n));
+    // 1. Group by type, but allow "None" if a type is missing to keep loops running
+    const byType = { 
+        Inf: Object.keys(HEROES).filter(n => roster[n]?.unlocked && HEROES[n].type === "Inf"),
+        Cav: Object.keys(HEROES).filter(n => roster[n]?.unlocked && HEROES[n].type === "Cav"),
+        Arc: Object.keys(HEROES).filter(n => roster[n]?.unlocked && HEROES[n].type === "Arc")
+    };
+    
+    // Ensure every loop has at least one iteration
+    if (byType.Inf.length === 0) byType.Inf = ["None"];
+    if (byType.Cav.length === 0) byType.Cav = ["None"];
+    if (byType.Arc.length === 0) byType.Arc = ["None"];
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", rally: false, bear: false },
@@ -535,38 +544,36 @@ window.calculateOptimalLineups = () => {
         { l: "Bear Trap", ctx: "off", rally: true, bear: true }
     ];
 
-    // Execution in setTimeout to prevent UI freeze during 5k+ iterations
     setTimeout(() => {
-        resArea.innerHTML = '';
+        resArea.innerHTML = ''; // Clear the loading text
+        
         scenarios.forEach(s => {
             let bestLineup = { leads: [], joiners: [], score: -1 };
 
-            // 1. Nested Leader Search
+            // 2. The Search
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
-                        const currentLeads = [i, c, a];
+                        const currentLeads = [i, c, a].filter(n => n !== "None");
                         let currentJoiners = [];
 
-                        // 2. Greedy Joiner Selection (Nested inside Leaders)
                         if (s.rally || s.bear) {
+                            // Find best 4 joiners for THIS specific leader set
                             for (let slot = 0; slot < 4; slot++) {
-                                let bestJForThisSlot = null;
+                                let bestJForSlot = "None";
                                 let maxJScore = -1;
 
                                 unlocked.forEach(cand => {
-                                    // Test candidate in the next available slot
                                     const score = calcPowerScore(currentLeads, [...currentJoiners, cand], s.ctx, s.rally, s.bear);
                                     if (score > maxJScore) {
                                         maxJScore = score;
-                                        bestJForThisSlot = cand;
+                                        bestJForSlot = cand;
                                     }
                                 });
-                                currentJoiners.push(bestJForThisSlot);
+                                currentJoiners.push(bestJForSlot);
                             }
                         }
 
-                        // 3. Final Comparison
                         const finalScore = calcPowerScore(currentLeads, currentJoiners, s.ctx, s.rally, s.bear);
                         if (finalScore > bestLineup.score) {
                             bestLineup = { leads: currentLeads, joiners: currentJoiners, score: finalScore };
@@ -575,38 +582,40 @@ window.calculateOptimalLineups = () => {
                 }
             }
             
-            renderOptimizerCard(s, { leaders: bestLineup.leads, joiners: bestLineup.joiners, score: bestLineup.score }, resArea);
+            // 3. Render ONLY the winner for this scenario
+            if (bestLineup.score > -1) {
+                renderOptimizerCard(s, { leaders: bestLineup.leads, joiners: bestLineup.joiners, score: bestLineup.score }, resArea);
+            }
         });
     }, 50);
 };
 
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
-    card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4";
+    card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4 mb-4";
     
-    // Everything is now a clean multiplier (e.g., 2.450x)
-    const scoreDisplay = best.score.toFixed(3) + "x";
-
     card.innerHTML = `
         <div class="flex flex-col md:flex-row items-center gap-6 w-full">
-            <div class="text-center md:text-left min-w-[120px]">
+            <div class="text-center md:text-left min-w-[140px]">
                 <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">${scenario.l}</div>
-                <div class="text-2xl font-black text-white">${scoreDisplay}</div>
+                <div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div>
             </div>
             <div class="flex -space-x-3">
-                ${best.leaders.map(n => `
+                ${best.leaders.map(n => n !== "None" ? `
                     <div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-800 overflow-hidden shadow-lg z-10">
-                        <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
+                        <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.opacity='0'">
+                        <span class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/20">${n[0]}</span>
                     </div>
-                `).join('')}
+                ` : '').join('')}
             </div>
             ${best.joiners.length > 0 ? `
                 <div class="flex flex-wrap gap-1 justify-center opacity-60">
-                    ${best.joiners.map(n => `
-                        <div class="w-10 h-10 rounded-full border border-slate-700 bg-slate-900 overflow-hidden">
-                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover">
+                    ${best.joiners.map(n => n !== "None" ? `
+                        <div class="w-10 h-10 rounded-full border border-slate-700 bg-slate-900 overflow-hidden relative">
+                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.opacity='0'">
+                            <span class="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white/10">${n[0]}</span>
                         </div>
-                    `).join('')}
+                    ` : '').join('')}
                 </div>
             ` : ''}
         </div>
