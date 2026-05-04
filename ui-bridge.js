@@ -516,7 +516,7 @@ function renderTernary(id, data, best, isBear) {
 
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-wwindow.calculateOptimalLineups = () => {
+window.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
     if (unlocked.length < 3) return alert("Unlock at least 3 heroes in Roster.");
     
