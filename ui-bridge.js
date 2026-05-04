@@ -516,12 +516,13 @@ function renderTernary(id, data, best, isBear) {
 
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-window.calculateOptimalLineups = () => {
+wwindow.calculateOptimalLineups = () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock 3 heroes in Roster.");
+    if (unlocked.length < 3) return alert("Unlock at least 3 heroes in Roster.");
+    
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = '<div class="col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase">Solving BIP Synergies...</div>';
+    resArea.innerHTML = '<div class="col-span-2 text-center py-12 text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Global Optimum...</div>';
 
     const byType = { Inf: [], Cav: [], Arc: [] };
     unlocked.forEach(n => byType[HEROES[n].type].push(n));
@@ -534,50 +535,49 @@ window.calculateOptimalLineups = () => {
         { l: "Bear Trap", ctx: "off", rally: true, bear: true }
     ];
 
+    // Execution in setTimeout to prevent UI freeze during 5k+ iterations
     setTimeout(() => {
         resArea.innerHTML = '';
         scenarios.forEach(s => {
-            let best = { leads: [], joiners: [], score: -1 };
+            let bestLineup = { leads: [], joiners: [], score: -1 };
 
+            // 1. Nested Leader Search
             for (let i of byType.Inf) {
                 for (let c of byType.Cav) {
                     for (let a of byType.Arc) {
-                        const leads = [i, c, a];
+                        const currentLeads = [i, c, a];
                         let currentJoiners = [];
 
+                        // 2. Greedy Joiner Selection (Nested inside Leaders)
                         if (s.rally || s.bear) {
-                            // Find the best mix by filling slots one by one
                             for (let slot = 0; slot < 4; slot++) {
-                                let bestJ = null, maxJScore = -1;
+                                let bestJForThisSlot = null;
+                                let maxJScore = -1;
+
                                 unlocked.forEach(cand => {
-                                    const score = calcPowerScore(leads, [...currentJoiners, cand], s.ctx, s.rally, s.bear);
-                                    if (score > maxJScore) { maxJScore = score; bestJ = cand; }
+                                    // Test candidate in the next available slot
+                                    const score = calcPowerScore(currentLeads, [...currentJoiners, cand], s.ctx, s.rally, s.bear);
+                                    if (score > maxJScore) {
+                                        maxJScore = score;
+                                        bestJForThisSlot = cand;
+                                    }
                                 });
-                                currentJoiners.push(bestJ);
+                                currentJoiners.push(bestJForThisSlot);
                             }
                         }
 
-                        const finalScore = calcPowerScore(leads, currentJoiners, s.ctx, s.rally, s.bear);
-                        if (finalScore > best.score) {
-                            best = { leads, joiners: currentJoiners, score: finalScore };
+                        // 3. Final Comparison
+                        const finalScore = calcPowerScore(currentLeads, currentJoiners, s.ctx, s.rally, s.bear);
+                        if (finalScore > bestLineup.score) {
+                            bestLineup = { leads: currentLeads, joiners: currentJoiners, score: finalScore };
                         }
                     }
                 }
             }
             
-            const jCounts = {};
-            best.joiners.forEach(name => jCounts[name] = (jCounts[name] || 0) + 1);
-            const jStr = Object.entries(jCounts).map(([n, c]) => `${n} x${c}`).join(', ');
-
-            const card = document.createElement('div');
-            card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center";
-            card.innerHTML = `<div><div class="text-[10px] font-black text-blue-400 uppercase mb-2">${s.l}</div>
-                <div class="flex -space-x-3 mb-2">${best.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden bg-slate-900 shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}</div>
-                ${jStr ? `<div class="text-[9px] text-slate-500 font-bold uppercase">Joiners: ${jStr}</div>` : ''}</div>
-                <div class="text-right"><div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div><div class="text-[8px] text-slate-500 uppercase font-black">Account Improvement</div></div>`;
-            resArea.appendChild(card);
+            renderOptimizerCard(s, { leaders: bestLineup.leads, joiners: bestLineup.joiners, score: bestLineup.score }, resArea);
         });
-    }, 100);
+    }, 50);
 };
 
 function renderOptimizerCard(scenario, best, container) {
