@@ -517,25 +517,23 @@ function renderTernary(id, data, best, isBear) {
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
 // --- NEW UTILITY FOR VOLUME CALCULATION ---
+// --- ACCURATE SYSTEM VOLUME CALCULATION ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear) {
-    // 1. Fallback for stats if not calibrated
-    const s = nakedStats || { 
-        inf_att: 1000, inf_hp: 500, cav_att: 1000, cav_hp: 500, arc_att: 1000, arc_hp: 500 
-    };
+    const s = nakedStats || { inf_att: 1000, inf_def: 1000, inf_leth: 500, inf_hp: 500, cav_att: 1000, cav_def: 1000, cav_leth: 500, cav_hp: 500, arc_att: 1000, arc_def: 1000, arc_leth: 500, arc_hp: 500 };
     
-    let buckets = { 101: 0, 102: 0, 201: 0, 206: 0 };
+    // Multipliers initialized to 1.0 (Base)
+    let m101 = { inf: 1, cav: 1, arc: 1 }, m102 = { inf: 1, cav: 1, arc: 1 };
+    let m201 = { inf: 1, cav: 1, arc: 1 }, m206 = 1.0;
     let wAtk = 1.0, wHP = 1.0;
 
-    // 2. Aggregate Hero Instances
     const counts = {};
     leads.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
-    const leadNames = Object.keys(counts); // Store names that are actually leads
+    const leadNames = Object.keys(counts);
     joiners.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
 
     for (const name in counts) {
-        const h = HEROES[name];
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10 };
         if (!h) continue;
-        const r = roster[name] || { s1:5, s2:5, s3:5, widget:10 };
 
         // Widgets (Leads Only)
         if (leadNames.includes(name) && h.widget && h.widget.context === ctx) {
@@ -546,43 +544,43 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
 
         // Skills
         h.skills.forEach((skill, si) => {
-            // Logic: Leaders get all skills, Joiners get S1 only
             const instances = (leadNames.includes(name) ? 1 : 0) + (si === 0 ? (counts[name] - (leadNames.includes(name) ? 1 : 0)) : 0);
             if (instances <= 0) return;
 
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
+            if (x === undefined) return;
             const p = skill.getChance(x), m = skill.getMagnitude(x);
             const uptime = skill.uptime || (p >= 1.0 ? 1.0 : (1 - Math.pow(1 - p, skill.duration || 1)));
 
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                let val = (Array.isArray(m) ? m[idx] : m) * instances * uptime;
+                const rawMag = (Array.isArray(m) ? m[idx] : m) * instances * uptime;
 
-                if (typeof val === 'object') {
-                    // Weighted Targeted Buff
-                    val = (val.inf * (formation[0]/100)) + (val.cav * (formation[1]/100)) + (val.arc * (formation[2]/100));
-                }
-                buckets[id] = (buckets[id] || 0) + val;
+                // DISTRIBUTE MAGNITUDE TO TARGETS
+                ['inf', 'cav', 'arc'].forEach(unit => {
+                    let targetMag = (typeof rawMag === 'object') ? (rawMag[unit] || 0) : rawMag;
+                    if (id === 101) m101[unit] += targetMag;
+                    if (id === 102) m102[unit] += targetMag;
+                    if (id === 201) m201[unit] += targetMag;
+                    if (id === 206) m206 += targetMag;
+                });
             });
         });
     }
 
-    const f = { i: formation[0], c: formation[1], a: formation[2] };
-    const m101 = 1 + (buckets[101] || 0), m102 = 1 + (buckets[102] || 0);
-    const m201 = 1 + (buckets[201] || 0), m206 = 1 + (buckets[206] || 0);
+    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
 
-    // 3. System Volume Math
-    // D = sum(sqrt(n) * BaseAtk * AccAtk * WidgetAtk * SkillAtk * SkillLeth)
-    const dmg = (Math.sqrt(f.i) * 597 * (1 + s.inf_att/100) * wAtk * m101 * m102) +
-                (Math.sqrt(f.c) * 1790 * (1 + s.cav_att/100) * wAtk * m101 * m102) +
-                (Math.sqrt(f.a) * 2387 * (1 + s.arc_att/100) * wAtk * m101 * m102);
+    // Damage = Sum( sqrt(n) * BaseAtk * AccAtk * WidgetAtk * SkillAtk * SkillLeth )
+    const dmg = (Math.sqrt(f.inf) * 597 * (1 + s.inf_att/100) * wAtk * m101.inf * m102.inf) +
+                (Math.sqrt(f.cav) * 1790 * (1 + s.cav_att/100) * wAtk * m101.cav * m102.cav) +
+                (Math.sqrt(f.arc) * 2387 * (1 + s.arc_att/100) * wAtk * m101.arc * m102.arc);
 
     if (isBear) return dmg;
 
-    // T = sum(n * BaseHP * AccHP * WidgetHP * SkillDef)
-    const tank = (f.i * 1790 * (1 + s.inf_hp/100) * wHP * m201) +
-                 (f.c * 597 * (1 + s.cav_hp/100) * wHP * m201) +
-                 (f.a * 448 * (1 + s.arc_hp/100) * wHP * m201);
+    // Tanking = Sum( n * BaseHP * AccHP * WidgetHP * SkillDef )
+    const tank = (f.inf * 1790 * (1 + s.inf_hp/100) * wHP * m201.inf) +
+                 (f.cav * 597 * (1 + s.cav_hp/100) * wHP * m201.cav) +
+                 (f.arc * 448 * (1 + s.arc_hp/100) * wHP * m201.arc);
 
     return dmg * tank * m206;
 }
@@ -593,7 +591,7 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center"><div class="text-blue-500 animate-pulse font-black text-xl mb-2">GENERATING OPTIMAL STRATEGIES</div><div class="text-slate-500 text-[10px] uppercase font-bold tracking-widest">Processing System Volume Heatmaps...</div></div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center"><div class="text-blue-500 animate-pulse font-black text-xl mb-2">GENERATING OPTIMAL STRATEGIES</div></div>`;
 
     const byType = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -601,6 +599,9 @@ window.calculateOptimalLineups = async () => {
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byType[t].length === 0) byType[t] = ["None"]; });
+
+    // Baseline: Power with No Heroes at 50/20/30
+    const baselineVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], "off", false);
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", rally: false, bear: false },
@@ -612,21 +613,19 @@ window.calculateOptimalLineups = async () => {
 
     const pivots = [[50,20,30], [60,40,0], [33,33,34], [70,10,20], [10,10,80], [30,60,10], [50,50,0]];
 
-    // Use a small delay to allow UI to update
     await new Promise(r => setTimeout(r, 100));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
         let candidates = [];
 
-        // Phase 1: Team Filtering (Pivot Based)
+        // Phase 1: Filter
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
                     const leads = [i, c, a];
-                    let bestV = -1, bestJ = [], bestP = pivots[0];
+                    let bestV = -1, bestJ = [];
 
-                    // Find best joiners for this triplet
                     for (const p of pivots) {
                         let curJ = [];
                         if (s.rally || s.bear) {
@@ -640,52 +639,53 @@ window.calculateOptimalLineups = async () => {
                             }
                         }
                         const finalV = getSystemVolume(leads, curJ, p, s.ctx, s.bear);
-                        if (finalV > bestV) { bestV = finalV; bestJ = curJ; bestP = p; }
+                        if (finalV > bestV) { bestV = finalV; bestJ = curJ; }
                     }
                     candidates.push({ leads, joiners: bestJ, score: bestV });
                 }
             }
         }
 
-        // Phase 2: Deep Formation Search for the Top Candidate
+        // Phase 2: Deep Search on Top 3
         candidates.sort((a,b) => b.score - a.score);
-        const top = candidates[0];
-        let bestF = [50,20,30], peakV = -1;
+        const top3 = candidates.slice(0, 3);
 
-        // 2% steps to prevent browser hang
-        for (let i=0; i<=100; i+=2) {
-            for (let c=0; c<=100-i; c+=2) {
-                const f = [i, c, 100-i-c];
-                const v = getSystemVolume(top.leads, top.joiners, f, s.ctx, s.bear);
-                if (v > peakV) { peakV = v; bestF = f; }
+        top3.forEach(async (top) => {
+            let bestF = [50,20,30], peakV = -1;
+            for (let i=0; i<=100; i+=2) {
+                for (let c=0; c<=100-i; c+=2) {
+                    const f = [i, c, 100-i-c];
+                    const v = getSystemVolume(top.leads, top.joiners, f, s.ctx, s.bear);
+                    if (v > peakV) { peakV = v; bestF = f; }
+                }
             }
-        }
 
-        const card = document.createElement('div');
-        card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center";
-        card.innerHTML = `
-            <div class="flex items-center gap-6">
-                <div>
-                    <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">${s.l}</div>
-                    <div class="flex -space-x-3">
-                        ${top.leads.map(n => n !== "None" ? `<div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-900 overflow-hidden shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
+            const gain = peakV / baselineVol;
+            const card = document.createElement('div');
+            card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center mb-4";
+            card.innerHTML = `
+                <div class="flex items-center gap-6">
+                    <div>
+                        <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">${s.l}</div>
+                        <div class="flex -space-x-3">
+                            ${top.leads.map(n => n !== "None" ? `<div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-900 overflow-hidden shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
+                        </div>
+                    </div>
+                    <div class="pt-4">
+                        <div class="text-[9px] text-slate-500 font-bold uppercase">Formation</div>
+                        <div class="text-lg font-black text-white">${bestF[0]} / ${bestF[1]} / ${bestF[2]}</div>
                     </div>
                 </div>
-                <div class="pt-4">
-                    <div class="text-[9px] text-slate-500 font-bold uppercase">Formation</div>
-                    <div class="text-lg font-black text-white">${bestF[0]} / ${bestF[1]} / ${bestF[2]}</div>
-                </div>
-            </div>
-            <div class="text-right">
-                <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Power Index</div>
-                <div class="text-3xl font-black text-white">${(peakV / 1e16).toFixed(3)}</div>
-            </div>`;
-        resArea.appendChild(card);
-        
-        // Give the browser a breather between scenarios
+                <div class="text-right">
+                    <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Power Gain</div>
+                    <div class="text-3xl font-black text-white">${gain.toFixed(3)}x</div>
+                </div>`;
+            resArea.appendChild(card);
+        });
         await new Promise(r => setTimeout(r, 10));
     }
 };
+
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
     card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4 mb-4";
