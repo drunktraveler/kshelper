@@ -516,12 +516,15 @@ function renderTernary(id, data, best, isBear) {
 
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-// --- NEW UTILITY FOR VOLUME CALCULATION ---
-// --- ACCURATE SYSTEM VOLUME CALCULATION ---
+// --- UPDATED SYSTEM VOLUME LOGIC ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear) {
-    const s = nakedStats || { inf_att: 1000, inf_def: 1000, inf_leth: 500, inf_hp: 500, cav_att: 1000, cav_def: 1000, cav_leth: 500, cav_hp: 500, arc_att: 1000, arc_def: 1000, arc_leth: 500, arc_hp: 500 };
+    // RE-FETCH nakedStats to ensure calibration changes are captured
+    const s = JSON.parse(localStorage.getItem('ks_naked_stats')) || { 
+        inf_att: 1000, inf_hp: 500, inf_def: 1000, inf_leth: 500,
+        cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
+        arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
+    };
     
-    // Multipliers initialized to 1.0 (Base)
     let m101 = { inf: 1, cav: 1, arc: 1 }, m102 = { inf: 1, cav: 1, arc: 1 };
     let m201 = { inf: 1, cav: 1, arc: 1 }, m206 = 1.0;
     let wAtk = 1.0, wHP = 1.0;
@@ -535,18 +538,15 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10 };
         if (!h) continue;
 
-        // Widgets (Leads Only)
         if (leadNames.includes(name) && h.widget && h.widget.context === ctx) {
             const wv = WIDGET_GROWTH[r.widget] || 0;
             if (h.widget.stat === "attack") wAtk += wv;
             if (h.widget.stat === "health") wHP += wv;
         }
 
-        // Skills
         h.skills.forEach((skill, si) => {
             const instances = (leadNames.includes(name) ? 1 : 0) + (si === 0 ? (counts[name] - (leadNames.includes(name) ? 1 : 0)) : 0);
             if (instances <= 0) return;
-
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             if (x === undefined) return;
             const p = skill.getChance(x), m = skill.getMagnitude(x);
@@ -555,8 +555,6 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
                 const rawMag = (Array.isArray(m) ? m[idx] : m) * instances * uptime;
-
-                // DISTRIBUTE MAGNITUDE TO TARGETS
                 ['inf', 'cav', 'arc'].forEach(unit => {
                     let targetMag = (typeof rawMag === 'object') ? (rawMag[unit] || 0) : rawMag;
                     if (id === 101) m101[unit] += targetMag;
@@ -568,30 +566,25 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
         });
     }
 
-    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
-
-    // Damage = Sum( sqrt(n) * BaseAtk * AccAtk * WidgetAtk * SkillAtk * SkillLeth )
-    const dmg = (Math.sqrt(f.inf) * 597 * (1 + s.inf_att/100) * wAtk * m101.inf * m102.inf) +
-                (Math.sqrt(f.cav) * 1790 * (1 + s.cav_att/100) * wAtk * m101.cav * m102.cav) +
-                (Math.sqrt(f.arc) * 2387 * (1 + s.arc_att/100) * wAtk * m101.arc * m102.arc);
+    const f = { i: formation[0], c: formation[1], a: formation[2] };
+    const dmg = (Math.sqrt(f.i) * 597 * (1 + s.inf_att/100) * wAtk * m101.inf * m102.inf) +
+                (Math.sqrt(f.c) * 1790 * (1 + s.cav_att/100) * wAtk * m101.cav * m102.cav) +
+                (Math.sqrt(f.a) * 2387 * (1 + s.arc_att/100) * wAtk * m101.arc * m102.arc);
 
     if (isBear) return dmg;
 
-    // Tanking = Sum( n * BaseHP * AccHP * WidgetHP * SkillDef )
-    const tank = (f.inf * 1790 * (1 + s.inf_hp/100) * wHP * m201.inf) +
-                 (f.cav * 597 * (1 + s.cav_hp/100) * wHP * m201.cav) +
-                 (f.arc * 448 * (1 + s.arc_hp/100) * wHP * m201.arc);
+    const tank = (f.i * 1790 * (1 + s.inf_hp/100) * wHP * m201.inf) +
+                 (f.c * 597 * (1 + s.cav_hp/100) * wHP * m201.cav) +
+                 (f.a * 448 * (1 + s.arc_hp/100) * wHP * m201.arc);
 
     return dmg * tank * m206;
 }
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes first.");
-
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center"><div class="text-blue-500 animate-pulse font-black text-xl mb-2">GENERATING OPTIMAL STRATEGIES</div></div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase">Analyzing Global Efficiency...</div>`;
 
     const byType = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -599,9 +592,6 @@ window.calculateOptimalLineups = async () => {
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byType[t].length === 0) byType[t] = ["None"]; });
-
-    // Baseline: Power with No Heroes at 50/20/30
-    const baselineVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], "off", false);
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", rally: false, bear: false },
@@ -617,15 +607,15 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
+        // Calculate a scenario-specific baseline
+        const baseV = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
         let candidates = [];
 
-        // Phase 1: Filter
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
                     const leads = [i, c, a];
                     let bestV = -1, bestJ = [];
-
                     for (const p of pivots) {
                         let curJ = [];
                         if (s.rally || s.bear) {
@@ -646,42 +636,58 @@ window.calculateOptimalLineups = async () => {
             }
         }
 
-        // Phase 2: Deep Search on Top 3
         candidates.sort((a,b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
-
-        top3.forEach(async (top) => {
+        
+        // --- SCENARIO CARD UI ---
+        const scenarioCard = document.createElement('div');
+        scenarioCard.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 space-y-4 mb-6";
+        let html = `<div class="text-xs font-black text-blue-400 uppercase tracking-widest mb-4">${s.l}</div>`;
+        
+        for (let rank = 0; rank < top3.length; rank++) {
+            const team = top3[rank];
             let bestF = [50,20,30], peakV = -1;
+            // Precise Search for final result
             for (let i=0; i<=100; i+=2) {
                 for (let c=0; c<=100-i; c+=2) {
                     const f = [i, c, 100-i-c];
-                    const v = getSystemVolume(top.leads, top.joiners, f, s.ctx, s.bear);
+                    const v = getSystemVolume(team.leads, team.joiners, f, s.ctx, s.bear);
                     if (v > peakV) { peakV = v; bestF = f; }
                 }
             }
+            
+            const gain = peakV / baseV;
+            const jNames = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
+                const count = team.joiners.filter(x=>x===n).length;
+                return `${n}${count > 1 ? ' x'+count : ''}`;
+            }).join(', ');
 
-            const gain = peakV / baselineVol;
-            const card = document.createElement('div');
-            card.className = "glass-card p-6 border-t-2 border-blue-500 flex justify-between items-center mb-4";
-            card.innerHTML = `
-                <div class="flex items-center gap-6">
-                    <div>
-                        <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">${s.l}</div>
-                        <div class="flex -space-x-3">
-                            ${top.leads.map(n => n !== "None" ? `<div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-900 overflow-hidden shadow-lg z-10"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
-                        </div>
+            html += `
+            <div class="flex items-center justify-between py-3 ${rank < 2 ? 'border-b border-slate-800' : ''}">
+                <div class="flex items-center gap-4">
+                    <div class="text-slate-600 font-black text-xs">#${rank+1}</div>
+                    <div class="flex -space-x-2">
+                        ${team.leads.map(n => `<div class="w-10 h-10 rounded-full border-2 border-blue-500/50 bg-slate-900 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
                     </div>
-                    <div class="pt-4">
-                        <div class="text-[9px] text-slate-500 font-bold uppercase">Formation</div>
-                        <div class="text-lg font-black text-white">${bestF[0]} / ${bestF[1]} / ${bestF[2]}</div>
+                    <div>
+                        <div class="text-[9px] font-bold text-white uppercase">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
+                        <div class="text-[7px] text-slate-500 font-bold uppercase truncate max-w-[150px]">${jNames || 'No Joiners'}</div>
                     </div>
                 </div>
-                <div class="text-right">
-                    <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Power Gain</div>
-                    <div class="text-3xl font-black text-white">${gain.toFixed(3)}x</div>
-                </div>`;
-            resArea.appendChild(card);
-        });
+                <div class="flex gap-8 text-right">
+                    <div>
+                        <div class="text-[7px] text-slate-500 font-black uppercase">Formation</div>
+                        <div class="text-[10px] font-black text-white">${bestF[0]}/${bestF[1]}/${bestF[2]}</div>
+                    </div>
+                    <div>
+                        <div class="text-[7px] text-slate-500 font-black uppercase">Gain</div>
+                        <div class="text-[10px] font-black text-emerald-400">${gain.toFixed(3)}x</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+        scenarioCard.innerHTML = html;
+        resArea.appendChild(scenarioCard);
         await new Promise(r => setTimeout(r, 10));
     }
 };
