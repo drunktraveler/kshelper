@@ -519,9 +519,7 @@ function renderTernary(id, data, best, isBear) {
 // --- UPDATED SYSTEM VOLUME LOGIC ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear) {
     const s = JSON.parse(localStorage.getItem('ks_naked_stats')) || { 
-        inf_att: 1000, inf_hp: 500, inf_def: 1000, inf_leth: 500,
-        cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
-        arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
+        inf_att: 1000, inf_hp: 500, cav_att: 1000, cav_hp: 500, arc_att: 1000, arc_hp: 500 
     };
     
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
@@ -549,18 +547,15 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             if (x === undefined) return;
             const p = skill.getChance(x), m = skill.getMagnitude(x);
-            const uptime = skill.uptime || (p >= 1.0 ? 1.0 : (1 - Math.pow(1 - p, skill.duration || 1)));
+            // S3 permanent logic + EV for chance based
+            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (skill.uptime || (p >= 1.0 ? 1.0 : (1 - Math.pow(1 - p, skill.duration || 1))));
 
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                
-                // FIXED: Corrected Object multiplication logic
+                const rawMag = (Array.isArray(m) ? m[idx] : m);
+
                 ['inf', 'cav', 'arc'].forEach(unit => {
-                    let baseMag = (Array.isArray(m) ? m[idx] : m);
-                    let targetVal = (typeof baseMag === 'object' && baseMag !== null) 
-                        ? (baseMag[unit] || 0) 
-                        : baseMag;
-                    
+                    let targetVal = (typeof rawMag === 'object' && rawMag !== null) ? (rawMag[unit] || 0) : rawMag;
                     const finalMag = targetVal * instances * uptime;
                     
                     if (id === 101) m101[unit] += finalMag;
@@ -573,15 +568,12 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
     }
 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
-    
-    // Total Damage calculation
     const dmg = (Math.sqrt(f.i) * 597 * (1 + s.inf_att/100) * wAtk * m101.inf * m102.inf) +
                 (Math.sqrt(f.c) * 1790 * (1 + s.cav_att/100) * wAtk * m101.cav * m102.cav) +
                 (Math.sqrt(f.a) * 2387 * (1 + s.arc_att/100) * wAtk * m101.arc * m102.arc);
 
     if (isBear) return dmg;
 
-    // Total Tanking calculation
     const tank = (f.i * 1790 * (1 + s.inf_hp/100) * wHP * m201.inf) +
                  (f.c * 597 * (1 + s.cav_hp/100) * wHP * m201.cav) +
                  (f.a * 448 * (1 + s.arc_hp/100) * wHP * m201.arc);
@@ -591,7 +583,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes in the Roster tab.");
+    if (unlocked.length < 3) return alert("Unlock at least 3 heroes first.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
@@ -614,19 +606,19 @@ window.calculateOptimalLineups = async () => {
 
     const pivots = [[50,20,30], [60,40,0], [33,33,34], [70,10,20], [10,10,80], [30,60,10], [50,50,0]];
 
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 100)); // UI Breather
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        const baseVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
+        const baseV = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
         let candidates = [];
 
+        // Phase 1: Team Search
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
                     const leads = [i, c, a];
                     let bestV = -1, bestJ = [];
-
                     for (const p of pivots) {
                         let curJ = [];
                         if (s.rally || s.bear) {
@@ -650,14 +642,15 @@ window.calculateOptimalLineups = async () => {
         candidates.sort((a,b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
         
+        // Scenario Card Setup
         const card = document.createElement('div');
-        card.className = "glass-card p-6 border-l-4 border-blue-600 col-span-1 md:col-span-2 mb-6";
+        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
         let html = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
 
         for (let rank = 0; rank < top3.length; rank++) {
             const team = top3[rank];
             let bestF = [50,20,30], peakV = -1;
-            // Precise Search for the best team found
+            // Precise Formation Search (Step of 2 to ensure speed)
             for (let i=0; i<=100; i+=2) {
                 for (let c=0; c<=100-i; c+=2) {
                     const f = [i, c, 100-i-c];
@@ -665,11 +658,10 @@ window.calculateOptimalLineups = async () => {
                     if (v > peakV) { peakV = v; bestF = f; }
                 }
             }
-
             const gain = peakV / baseV;
             const jNames = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
-                const c = team.joiners.filter(x=>x===n).length;
-                return `${n}${c > 1 ? ' x'+c : ''}`;
+                const count = team.joiners.filter(x=>x===n).length;
+                return `${n}${count > 1 ? ' x'+count : ''}`;
             }).join(', ');
 
             html += `
@@ -681,7 +673,7 @@ window.calculateOptimalLineups = async () => {
                     </div>
                     <div>
                         <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
-                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jNames || 'Solo Setup'}</div>
+                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${jNames || 'Solo Setup'}</div>
                     </div>
                 </div>
                 <div class="flex gap-10 text-right">
@@ -690,7 +682,7 @@ window.calculateOptimalLineups = async () => {
                         <div class="text-xs font-black text-white">${bestF[0]}/${bestF[1]}/${bestF[2]}</div>
                     </div>
                     <div>
-                        <div class="text-[8px] text-slate-600 font-black uppercase">Account Gain</div>
+                        <div class="text-[8px] text-slate-600 font-black uppercase">Gain</div>
                         <div class="text-xs font-black text-emerald-400">${gain.toFixed(3)}x</div>
                     </div>
                 </div>
@@ -698,7 +690,7 @@ window.calculateOptimalLineups = async () => {
         }
         card.innerHTML = html;
         resArea.appendChild(card);
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 10)); // Give main thread air
     }
 };
 
