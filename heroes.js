@@ -1,6 +1,37 @@
 import { WIDGET_GROWTH } from './constants.js';
 
 export const HEROES = {
+    // Add to HEROES in heroes.js
+    "Rosa": {
+        type: "Arc",
+        template: "SEASON_4",
+        widget: { stat: "lethality", context: "off", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Chaos Gambit", ids: [101], values: [10, 20, 30, 40, 50], getChance: (X) => 0.4, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Rose of War", ids: [201], values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Golden Rhythm", ids: [102], values: [6, 12, 18, 24, 30], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 }
+        ]
+    },
+    "Alcar": {
+        type: "Inf",
+        template: "SEASON_4",
+        widget: { stat: "health", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Rescuing Hands", ids: [201], values: [14, 28, 42, 56, 70], getChance: (X) => 1.0, getMagnitude: (X) => ({ inf: X/100, cav: 0, arc: X/100 }), duration: 2, uptime: 0.4 },
+            { name: "Praetorian Will", ids: [101], values: [20, 40, 60, 80, 100], getChance: (X) => 1.0, getMagnitude: (X) => ({ inf: X/100, cav: 0.1, arc: 0.1 }), duration: 0 },
+            { name: "Carpe Diem", ids: [101], values: [12, 24, 36, 48, 60], getChance: (X) => 1.0, getMagnitude: (X) => ({ inf: X/100, cav: 0.25, arc: 0.25 }), duration: 0 }
+        ]
+    },
+    "Margot": {
+        type: "Cav",
+        template: "SEASON_4",
+        widget: { stat: "lethality", context: "def", values: WIDGET_GROWTH },
+        skills: [
+            { name: "Iron Maiden", ids: [102], values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Shield of Grace", ids: [206], values: [4, 8, 12, 16, 20], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
+            { name: "Second Strike", ids: [101], values: [120, 140, 160, 180, 200], getChance: (X) => 0.25, getMagnitude: (X) => ({ inf: 0, cav: (X+100)/100, arc: 0 }), duration: 0 }
+        ]
+    },
     "Zoe": {
         type: "Inf",
         template: "SEASON_2",
