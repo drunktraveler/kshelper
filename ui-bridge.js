@@ -526,18 +526,15 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
     };
 
-    // Separate stats per unit type
     let curS = {
         inf: { att: s.inf_att, leth: s.inf_leth, hp: s.inf_hp, def: s.inf_def },
         cav: { att: s.cav_att, leth: s.cav_leth, hp: s.cav_hp, def: s.cav_def },
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // 1XX = Offensive Buffs | 2XX = Defensive Debuffs
     let b = { 
-        101: {i:0,c:0,a:0}, 102: {i:0,c:0,a:0}, 
-        201: {i:0,c:0,a:0}, 202: {i:0,c:0,a:0}, 203: {i:0,c:0,a:0}, 
-        204: {i:0,c:0,a:0}, 205: {i:0,c:0,a:0}, 206: 0 
+        101:{i:0,c:0,a:0}, 102:{i:0,c:0,a:0}, 201:{i:0,c:0,a:0}, 202:{i:0,c:0,a:0}, 
+        203:{i:0,c:0,a:0}, 204:{i:0,c:0,a:0}, 205:{i:0,c:0,a:0}, 206:0 
     };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
@@ -550,23 +547,15 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     Object.keys(lineup).forEach(name => {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
-        
         if (isCalibrated) {
-            // Hero Star Stats: Unit Specific
-            const starStats = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
-            curS[tk].att += starStats;
-            curS[tk].def += starStats;
-
-            // Widget Flat Stats: Unit Specific
+            const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
+            curS[tk].att += star; curS[tk].def += star;
             if (h.widget) {
-                const wTable = WIDGET_STATS[h.template] || [];
-                const flatVal = wTable[r.widget] || 0;
-                if (h.widget.stat === "lethality") curS[tk].leth += flatVal;
-                if (h.widget.stat === "health") curS[tk].hp += flatVal;
+                const wT = WIDGET_STATS[h.template] || [];
+                if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
+                if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
             }
         }
-
-        // Global Widget Multipliers (Scenario Dependent)
         if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
             wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
         }
@@ -575,27 +564,23 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     // 2. SKILL PROCESSING
     Object.keys(totalLineup).forEach(name => {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
-        const lCount = lineup[name] || 0;
-        const jCount = totalLineup[name] - lCount;
+        const leadCount = lineup[name] || 0;
+        const joinCount = totalLineup[name] - leadCount;
 
         h.skills.forEach((skill, si) => {
-            const instances = lCount + (si === 0 ? jCount : 0);
+            const instances = leadCount + (si === 0 ? joinCount : 0);
             if (instances <= 0) return;
-            
-            const x = skill.values[(r[`s${si+1}`]||5)-1];
+            const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             const p = skill.getChance(x), mFull = skill.getMagnitude(x);
-            // Alcar S3 permanent, others use probability EV
             const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
             
             skill.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return; // All 2XX skills ignored in Bear
-
+                if (isBear && id >= 200) return;
                 const mPart = Array.isArray(mFull) ? mFull[idx] : mFull;
                 ['inf', 'cav', 'arc'].forEach(u => {
                     let val = (typeof mPart === 'object' && mPart !== null) ? (mPart[u] || 0) : mPart;
-                    const final = val * instances * uptime;
-                    if (id === 206) b[206] += final;
-                    else if (b[id]) b[id][u[0]] += final;
+                    if (id === 206) b[206] += val * instances * uptime;
+                    else if (b[id]) b[id][u[0]] += val * instances * uptime;
                 });
             });
         });
@@ -604,7 +589,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
     const getM = (id, uChar) => 1 + b[id][uChar];
 
-    // DAMAGE (D): Stats * Ally Buffs (1XX Only)
+    // Offense (D): (Stats * Ally Buffs)
     const dmg = (u, baseAtk) => {
         const c = u[0];
         return Math.sqrt(f[c]) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, c) * 
@@ -614,7 +599,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
     if (isBear) return totalD;
 
-    // TANKING (T): Survival Stats * ALL Enemy Debuffs (2XX)
+    // Tanking (T): (Your Stats) * (ALL 2XX Multipliers)
     const tank = (u, baseHP) => {
         const c = u[0];
         return f[c] * baseHP * (1 + curS[u].hp/100) * wM.health * 
@@ -632,7 +617,7 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Optimum...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
 
     const jList = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
     const jPool = unlocked.filter(n => jList.includes(n));
@@ -659,9 +644,12 @@ window.calculateOptimalLineups = async () => {
 
     for (const s of scenarios) {
         let bCeil = -1;
-        for (let i=0; i<=100; i+=10) { 
-            const v = getSystemVolume(["None","None","None"], [], [i, 20, 80-i<0?0:80-i], s.ctx, s.bear, s.l);
-            if (v > bCeil) bCeil = v;
+        // Accurate baseline search (5% steps for speed)
+        for (let i=0; i<=100; i+=5) {
+            for (let c=0; c<=100-i; c+=5) {
+                const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, s.bear, s.l);
+                if (v > bCeil) bCeil = v;
+            }
         }
 
         let candidates = [];
@@ -690,7 +678,7 @@ window.calculateOptimalLineups = async () => {
             }
         }
 
-        candidates.sort((a, b) => b.score - a.score);
+        candidates.sort((a,b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
         
         const card = document.createElement('div');
@@ -700,7 +688,7 @@ window.calculateOptimalLineups = async () => {
         for (let rk = 0; rk < top3.length; rk++) {
             const team = top3[rk];
             let peakV = -1;
-            for (let fI=0; fI<=100; fI+=2) {
+            for (let fI=0; fI<=100; fI+=2) { // 2% deep dive for speed
                 for (let fC=0; fC<=100-fI; fC+=2) {
                     const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
                     if (v > peakV) peakV = v;
