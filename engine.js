@@ -375,25 +375,28 @@ function getHeroData(sideSetup) {
         if (index < 3) lineup[h.name].lead++; else lineup[h.name].joiner++;
     });
 
-    let passives = { list: [] }, actives = [];
+    let passives = [], actives = [];
     for (const name in lineup) {
+        const h = lineup[name];
         h.data.skills.forEach((s, si) => {
             const instances = h.lead + (si === 0 ? h.joiner : 0);
-            const x = s.values[(h.levels[`s${si+1}`] || 5) - 1];
+            if (instances === 0) return;
+
+            const lvl = h.levels[`s${si+1}`] || 5;
+            const x = s.values[lvl - 1];
             const p = s.getChance(x);
             const m = s.getMagnitude(x);
 
             const skillObj = { 
                 name: `${name} ${s.name}`, p, m, ids: s.ids, 
                 duration: s.duration || 1, instances,
-                uptime: (name === "Alcar" && si === 2) ? 1.0 : null // Alcar S3 Passive
+                isAlcarS3: (name === "Alcar" && si === 2),
+                isAlcarS1: (name === "Alcar" && si === 0)
             };
 
-            if (p >= 1.0 || (name === "Alcar" && si === 2)) {
-                passives.list.push(skillObj);
-            } else {
-                actives.push(skillObj);
-            }
+            // Treat Alcar S3 as Passive (100% uptime)
+            if (p >= 1.0 || skillObj.isAlcarS3) passives.push(skillObj);
+            else actives.push(skillObj);
         });
     }
     return { passives, actives };
