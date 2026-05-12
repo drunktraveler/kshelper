@@ -612,7 +612,7 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Global Optimum...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Account Ceiling...</div>`;
 
     const byType = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -620,6 +620,16 @@ window.calculateOptimalLineups = async () => {
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byType[t].length === 0) byType[t] = ["None"]; });
+
+    // --- STEP 1: CALCULATE BASELINE CEILING ---
+    // We find the best formation the user can run with NO heroes.
+    let baseCeiling = -1;
+    for (let i=0; i<=100; i+=2) {
+        for (let c=0; c<=100-i; c+=2) {
+            const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], "off", false);
+            if (v > baseCeiling) baseCeiling = v;
+        }
+    }
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
@@ -635,10 +645,19 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        const baseVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
-        let candidates = [];
+        // Correcting the scenario baseline for Bear Trap (Damage Only)
+        let sBase = baseCeiling;
+        if (s.bear) {
+            sBase = -1;
+            for (let i=0; i<=100; i+=2) {
+                for (let c=0; c<=100-i; c+=2) {
+                    const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, true);
+                    if (v > sBase) sBase = v;
+                }
+            }
+        }
 
-        // Phase 1: Team Search (Pivot Filter)
+        let candidates = [];
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
@@ -668,23 +687,21 @@ window.calculateOptimalLineups = async () => {
         const top3 = candidates.slice(0, 3);
         
         const card = document.createElement('div');
-        card.className = "glass-card p-6 border-l-4 border-blue-600 col-span-1 md:col-span-2 mb-6";
+        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
         let html = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
 
         for (let rank = 0; rank < top3.length; rank++) {
             const team = top3[rank];
-            let bestF = [50,20,30], peakV = -1;
-            
-            // PHASE 2: FINAL PRECISION SEARCH (1% Resolution for finalists)
-            for (let i=0; i<=100; i++) {
-                for (let c=0; c<=100-i; c++) {
-                    const f = [i, c, 100-i-c];
-                    const v = getSystemVolume(team.leads, team.joiners, f, s.ctx, s.bear);
-                    if (v > peakV) { peakV = v; bestF = f; }
+            let peakV = -1;
+            // Phase 2: Find this specific team's peak potential
+            for (let i=0; i<=100; i+=2) {
+                for (let c=0; c<=100-i; c+=2) {
+                    const v = getSystemVolume(team.leads, team.joiners, [i, c, 100-i-c], s.ctx, s.bear);
+                    if (v > peakV) peakV = v;
                 }
             }
 
-            const gain = peakV / baseVol;
+            const gain = peakV / sBase;
             const jNames = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
                 const count = team.joiners.filter(x=>x===n).length;
                 return `${n}${count > 1 ? ' x'+count : ''}`;
@@ -699,18 +716,12 @@ window.calculateOptimalLineups = async () => {
                     </div>
                     <div>
                         <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
-                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jNames || 'Solo Setup'}</div>
+                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${jNames || 'Solo Setup'}</div>
                     </div>
                 </div>
-                <div class="flex gap-10 text-right">
-                    <div>
-                        <div class="text-[8px] text-slate-600 font-black uppercase">Formation</div>
-                        <div class="text-xs font-black text-white">${bestF[0]}/${bestF[1]}/${bestF[2]}</div>
-                    </div>
-                    <div>
-                        <div class="text-[8px] text-slate-600 font-black uppercase">Account Gain</div>
-                        <div class="text-xs font-black text-emerald-400">${gain.toFixed(3)}x</div>
-                    </div>
+                <div class="text-right">
+                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Account Improvement</div>
+                    <div class="text-xl font-black text-emerald-400">${gain.toFixed(3)}x</div>
                 </div>
             </div>`;
         }
