@@ -517,11 +517,9 @@ function renderTernary(id, data, best, isBear) {
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
 // --- UPDATED SYSTEM VOLUME LOGIC ---
-function getSystemVolume(leads, joiners, formation, ctx, isBear) {
+function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
     const isCalibrated = !!rawStats;
-    
-    // Default reference if not calibrated
     const s = rawStats || { 
         inf_att: 1000, inf_hp: 500, inf_def: 1000, inf_leth: 500,
         cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
@@ -536,7 +534,9 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
 
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let m201 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m206 = 1.0;
-    let wAtk = 1.0, wHP = 1.0;
+    
+    // FOUR WIDGET MULTIPLIERS
+    let w = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
     const counts = {};
     leads.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
@@ -557,10 +557,9 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
             }
         }
 
-        if (leadNames.includes(name) && h.widget && h.widget.context === ctx) {
-            const pct = WIDGET_GROWTH[r.widget] || 0;
-            if (h.widget.stat === "attack") wAtk += pct;
-            if (h.widget.stat === "health") wHP += pct;
+        // GLOBAL WIDGET MULTIPLIERS (Skip for Solo Attack)
+        if (!isSoloAttack && leadNames.includes(name) && h.widget && h.widget.context === ctx) {
+            w[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
         }
 
         h.skills.forEach((skill, si) => {
@@ -568,21 +567,20 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
             if (instances <= 0) return;
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             if (x === undefined) return;
-            
-            const p = skill.getChance(x), m = skill.getMagnitude(x);
-            // BEAR CLAMP: Durations are 1 for Bear Trap (1-wave fight)
-            const effectiveDur = isBear ? 1 : (skill.duration || 1);
-            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, effectiveDur));
+            const p = skill.getChance(x);
+            // S3 permanent logic + EV for chance based
+            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
 
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                const rawMag = (Array.isArray(m) ? m[idx] : m);
-                ['inf', 'cav', 'arc'].forEach(u => {
-                    let targetVal = (typeof rawMag === 'object' && rawMag !== null) ? (rawMag[u] || 0) : rawMag;
+                const rawMag = (Array.isArray(skill.getMagnitude(x)) ? skill.getMagnitude(x)[idx] : skill.getMagnitude(x));
+
+                ['inf', 'cav', 'arc'].forEach(unit => {
+                    let targetVal = (typeof rawMag === 'object' && rawMag !== null) ? (rawMag[unit] || 0) : rawMag;
                     const finalMag = targetVal * instances * uptime;
-                    if (id === 101) m101[u] += finalMag;
-                    if (id === 102) m102[u] += finalMag;
-                    if (id === 201) m201[u] += finalMag;
+                    if (id === 101) m101[unit] += finalMag;
+                    if (id === 102) m102[unit] += finalMag;
+                    if (id === 201) m201[unit] += finalMag;
                     if (id === 206) m206 += finalMag;
                 });
             });
@@ -591,17 +589,18 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
     
-    // QUALITY FACTOR: Cavalry damage weighted at 1.6x to account for 80/20 bypass efficiency
-    const dmgInf = (Math.sqrt(f.i) * 597 * (1 + currentStats.inf.att/100) * wAtk * m101.inf * (1 + currentStats.inf.leth/100) * m102.inf);
-    const dmgCav = (Math.sqrt(f.c) * 1790 * (1 + currentStats.cav.att/100) * wAtk * m101.cav * (1 + currentStats.cav.leth/100) * m102.cav) * 1.6;
-    const dmgArc = (Math.sqrt(f.a) * 2387 * (1 + currentStats.arc.att/100) * wAtk * m101.arc * (1 + currentStats.arc.leth/100) * m102.arc);
-    const totalDmg = dmgInf + dmgCav + dmgArc;
+    // Damage with Global Attack & Global Lethality Widgets
+    const dInf = (Math.sqrt(f.i) * 597 * (1 + currentStats.inf.att/100) * w.attack * m101.inf * (1 + currentStats.inf.leth/100) * w.lethality * m102.inf);
+    const dCav = (Math.sqrt(f.c) * 1790 * (1 + currentStats.cav.att/100) * w.attack * m101.cav * (1 + currentStats.cav.leth/100) * w.lethality * m102.cav) * 1.6;
+    const dArc = (Math.sqrt(f.a) * 2387 * (1 + currentStats.arc.att/100) * w.attack * m101.arc * (1 + currentStats.arc.leth/100) * w.lethality * m102.arc);
+    const totalDmg = dInf + dCav + dArc;
 
     if (isBear) return totalDmg;
 
-    const tank = (f.i * 1790 * (1 + currentStats.inf.hp/100) * wHP * m201.inf) +
-                 (f.c * 597 * (1 + currentStats.cav.hp/100) * wHP * m201.cav) +
-                 (f.a * 448 * (1 + currentStats.arc.hp/100) * wHP * m201.arc);
+    // Tanking with Global Defense & Global HP Widgets
+    const tank = (f.i * 1790 * (1 + currentStats.inf.hp/100) * w.health * m201.inf) +
+                 (f.c * 597 * (1 + currentStats.cav.hp/100) * w.health * m201.cav) +
+                 (f.a * 448 * (1 + currentStats.arc.hp/100) * w.health * m201.arc);
 
     return totalDmg * tank * m206;
 }
