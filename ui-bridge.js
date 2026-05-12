@@ -612,7 +612,11 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Account Ceiling...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase">Solving Global Optimum...</div>`;
+
+    // 1. Define the Scientific Joiner Pool (Restricted)
+    const joinerWhiteList = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
+    const joinerPool = unlocked.filter(n => joinerWhiteList.includes(n));
 
     const byType = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -645,19 +649,10 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Correcting the scenario baseline for Bear Trap (Damage Only)
-        let sBase = baseCeiling;
-        if (s.bear) {
-            sBase = -1;
-            for (let i=0; i<=100; i+=2) {
-                for (let c=0; c<=100-i; c+=2) {
-                    const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, true);
-                    if (v > sBase) sBase = v;
-                }
-            }
-        }
-
+        const baseVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
         let candidates = [];
+
+        // Phase 1: Team Pivot Filter
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
@@ -668,7 +663,8 @@ window.calculateOptimalLineups = async () => {
                         if (s.rally || s.bear) {
                             for (let slot=0; slot<4; slot++) {
                                 let bj = "None", mv = -1;
-                                unlocked.forEach(cand => {
+                                // ONLY use the joinerPool here
+                                joinerPool.forEach(cand => {
                                     const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear);
                                     if (v > mv) { mv = v; bj = cand; }
                                 });
