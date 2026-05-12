@@ -532,12 +532,10 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // Strict ID Buckets: 1XX = Buffs, 2XX = Debuffs
-    let b = { 
-        101:{i:0,c:0,a:0}, 102:{i:0,c:0,a:0}, 
-        201:{i:0,c:0,a:0}, 202:{i:0,c:0,a:0}, 203:{i:0,c:0,a:0}, 
-        204:{i:0,c:0,a:0}, 205:{i:0,c:0,a:0}, 206:0 
-    };
+    // ID Buckets initialized to 0 (sum of magnitudes)
+    let b = { 101:{inf:0,cav:0,arc:0}, 102:{inf:0,cav:0,arc:0}, 201:{inf:0,cav:0,arc:0}, 
+              202:{inf:0,cav:0,arc:0}, 203:{inf:0,cav:0,arc:0}, 204:{inf:0,cav:0,arc:0}, 
+              205:{inf:0,cav:0,arc:0}, 206:0 };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
     const lineup = {}; 
@@ -545,7 +543,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     const totalLineup = {...lineup};
     joiners.forEach(n => { if(n!=="None") totalLineup[n] = (totalLineup[n]||0) + 1; });
 
-    // 1. STATS & WIDGETS (Leaders Only)
+    // 1. LEADERS: Star Stats + Widget Stats + Global Multipliers
     Object.keys(lineup).forEach(name => {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
@@ -563,7 +561,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         }
     });
 
-    // 2. SKILLS (5-Instance Logic: 1 Lead + 4 Joiners max)
+    // 2. SKILLS (5-Instance Logic)
     Object.keys(totalLineup).forEach(name => {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
         const lCount = lineup[name] || 0;
@@ -572,51 +570,47 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         h.skills.forEach((skill, si) => {
             const instances = lCount + (si === 0 ? jCount : 0);
             if (instances <= 0) return;
-            
-            const p = skill.getChance(skill.values[(r[`s${si+1}`]||5)-1]);
-            const mFull = skill.getMagnitude(skill.values[(r[`s${si+1}`]||5)-1]);
+            const x = skill.values[(r[`s${si+1}`] || 5) - 1];
+            if (x === undefined) return;
+
+            const p = skill.getChance(x), mFull = skill.getMagnitude(x);
+            // Alcar S3 permanent, others use probability-based uptime
             const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
             
             skill.ids.forEach((id, idx) => {
-                // BEAR TRAP CONSTRAINT: Ignore all Debuffs (2XX)
-                if (isBear && id >= 200) return;
+                if (isBear && id >= 200) return; // Ignore Debuffs in Bear
+                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
 
-                const mPart = Array.isArray(mFull) ? mFull[idx] : mFull;
                 ['inf', 'cav', 'arc'].forEach(u => {
-                    let val = (typeof mPart === 'object' && mPart !== null) ? (mPart[u] || 0) : mPart;
-                    if (id === 206) b[206] += val * instances * uptime;
-                    else if (b[id]) b[id][u[0]] += val * instances * uptime;
+                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                    const final = val * instances * uptime;
+                    if (id === 206) b[206] += final;
+                    else if (b[id]) b[id][u] += final;
                 });
             });
         });
     });
 
-    const f = { i: formation[0], c: formation[1], a: formation[2] };
+    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
     const getM = (id, u) => 1 + b[id][u];
 
-    // Offense Product: (Your Stats * Ally Buffs 1XX) * (Enemy Debuffs 2XX that increase your kills)
-    const dmg = (u, base, accA, accL) => {
-        const char = u[0];
-        return Math.sqrt(f[char]) * base * (1 + accA/100) * wM.attack * getM(101, char) * 
-               (1 + accL/100) * wM.lethality * getM(102, char) * 
-               getM(201, char) * getM(203, char); // 201/203 are Debuffs affecting your DMG
+    // DAMAGE (D): Stats * Ally Buffs (1XX) * Enemy Weakness (201/203)
+    const dmg = (u, baseAtk) => {
+        return Math.sqrt(f[u]) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, u) * 
+               (1 + curS[u].leth/100) * wM.lethality * getM(102, u) * 
+               getM(201, u) * getM(203, u);
     };
-    const totalD = dmg('inf', 597, curS.inf.att, curS.inf.leth) + 
-                   (dmg('cav', 1790, curS.cav.att, curS.cav.leth) * 1.6) + 
-                   dmg('arc', 2387, curS.arc.att, curS.arc.leth);
+    const totalD = dmg('inf', 597) + (dmg('cav', 1790) * 1.6) + dmg('arc', 2387);
 
     if (isBear) return totalD;
 
-    // Tanking Product: (Your Survival Stats) * (Enemy Debuffs 2XX that reduce their DMG)
-    const tank = (u, baseHP, accHP, baseDef, accDef) => {
-        const char = u[0];
-        return f[char] * baseHP * (1 + accHP/100) * wM.health * 
-               baseDef * (1 + accDef/100) * wM.defense * 
-               getM(202, char) * getM(204, char) * getM(205, char); // 202/204/205 reduce enemy DMG
+    // TANKING (T): Stats * Enemy Power Reduction (202/204/205/206)
+    const tank = (u, baseHP) => {
+        return f[u] * baseHP * (1 + curS[u].hp/100) * wM.health * 
+               10 * (1 + curS[u].def/100) * wM.defense * // Base Def = 10
+               getM(202, u) * getM(204, u) * getM(205, u);
     };
-    const totalT = tank('inf', 1790, curS.inf.hp, 10, curS.inf.def) + 
-                   tank('cav', 597, curS.cav.hp, 10, curS.cav.def) + 
-                   tank('arc', 448, curS.arc.hp, 10, curS.arc.def);
+    const totalT = tank('inf', 1790) + tank('cav', 597) + tank('arc', 448);
 
     return totalD * totalT * (1 + b[206]);
 }
@@ -627,10 +621,10 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Optimum...</div>`;
 
     const jList = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
-    const jPool = unlocked.filter(n => jList.includes(n)); // Joiners can be Leaders
+    const jPool = unlocked.filter(n => jList.includes(n));
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
@@ -653,11 +647,10 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Step 1: Scenario Baseline (Search for Best Formation with No Heroes)
-        let baseCeil = -1;
+        let bCeil = -1;
         for (let i=0; i<=100; i+=10) { 
             const v = getSystemVolume(["None","None","None"], [], [i, 20, 80-i<0?0:80-i], s.ctx, s.bear, s.l);
-            if (v > baseCeil) baseCeil = v;
+            if (v > bCeil) bCeil = v;
         }
 
         let candidates = [];
@@ -686,7 +679,7 @@ window.calculateOptimalLineups = async () => {
             }
         }
 
-        candidates.sort((a,b) => b.score - a.score);
+        candidates.sort((a, b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
         
         const card = document.createElement('div');
@@ -702,7 +695,6 @@ window.calculateOptimalLineups = async () => {
                     if (v > peakV) peakV = v;
                 }
             }
-
             const gain = peakV / bCeil;
             const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
                 const count = team.joiners.filter(x=>x===n).length;
