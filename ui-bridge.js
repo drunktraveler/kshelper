@@ -519,12 +519,21 @@ function renderTernary(id, data, best, isBear) {
 // --- UPDATED SYSTEM VOLUME LOGIC ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear) {
     const s = JSON.parse(localStorage.getItem('ks_naked_stats')) || { 
-        inf_att: 1000, inf_hp: 500, cav_att: 1000, cav_hp: 500, arc_att: 1000, arc_hp: 500 
+        inf_att: 1000, inf_hp: 500, inf_def: 1000, inf_leth: 500,
+        cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
+        arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
     };
     
+    // 1. Initialize Stat Buckets with Naked Stats
+    let currentStats = {
+        inf: { att: s.inf_att, leth: s.inf_leth, hp: s.inf_hp },
+        cav: { att: s.cav_att, leth: s.cav_leth, hp: s.cav_hp },
+        arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp }
+    };
+
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let m201 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m206 = 1.0;
-    let wAtk = 1.0, wHP = 1.0;
+    let widgetGlobalAtk = 1.0, widgetGlobalHP = 1.0;
 
     const counts = {};
     leads.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
@@ -532,32 +541,46 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
     joiners.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
 
     for (const name in counts) {
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10 };
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex: 30 };
         if (!h) continue;
 
-        if (leadNames.includes(name) && h.widget && h.widget.context === ctx) {
-            const wv = WIDGET_GROWTH[r.widget] || 0;
-            if (h.widget.stat === "attack") wAtk += wv;
-            if (h.widget.stat === "health") wHP += wv;
+        const typeKey = h.type.toLowerCase().slice(0, 3); // 'inf', 'cav', 'arc'
+
+        // A. Add Star Growth (Flat stats from template)
+        const starBonus = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
+        currentStats[typeKey].att += starBonus;
+
+        // B. Add Widget Flats (Leth/HP from widgets.js)
+        if (h.widget) {
+            const wTable = WIDGET_STATS[h.template] || [];
+            const flatVal = wTable[r.widget] || 0;
+            if (h.widget.stat === "lethality") currentStats[typeKey].leth += flatVal;
+            if (h.widget.stat === "health") currentStats[typeKey].hp += flatVal;
+            
+            // C. Global Widget % (Leads only)
+            if (leadNames.includes(name) && h.widget.context === ctx) {
+                const pct = WIDGET_GROWTH[r.widget] || 0;
+                if (h.widget.stat === "attack") widgetGlobalAtk += pct;
+                if (h.widget.stat === "health") widgetGlobalHP += pct;
+            }
         }
 
+        // D. Skills (Multipliers)
         h.skills.forEach((skill, si) => {
             const instances = (leadNames.includes(name) ? 1 : 0) + (si === 0 ? (counts[name] - (leadNames.includes(name) ? 1 : 0)) : 0);
             if (instances <= 0) return;
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             if (x === undefined) return;
             const p = skill.getChance(x), m = skill.getMagnitude(x);
-            // S3 permanent logic + EV for chance based
-            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (skill.uptime || (p >= 1.0 ? 1.0 : (1 - Math.pow(1 - p, skill.duration || 1))));
+            // Marlin/Jaeger Procs: Use EV
+            const uptime = (skill.uptime || (p >= 1.0 ? 1.0 : (1 - Math.pow(1 - p, skill.duration || 1))));
 
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
                 const rawMag = (Array.isArray(m) ? m[idx] : m);
-
                 ['inf', 'cav', 'arc'].forEach(unit => {
                     let targetVal = (typeof rawMag === 'object' && rawMag !== null) ? (rawMag[unit] || 0) : rawMag;
                     const finalMag = targetVal * instances * uptime;
-                    
                     if (id === 101) m101[unit] += finalMag;
                     if (id === 102) m102[unit] += finalMag;
                     if (id === 201) m201[unit] += finalMag;
@@ -568,15 +591,17 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear) {
     }
 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
-    const dmg = (Math.sqrt(f.i) * 597 * (1 + s.inf_att/100) * wAtk * m101.inf * m102.inf) +
-                (Math.sqrt(f.c) * 1790 * (1 + s.cav_att/100) * wAtk * m101.cav * m102.cav) +
-                (Math.sqrt(f.a) * 2387 * (1 + s.arc_att/100) * wAtk * m101.arc * m102.arc);
+    
+    // E. Total System Calculation
+    const dmg = (Math.sqrt(f.i) * 597 * (1 + currentStats.inf.att/100) * widgetGlobalAtk * m101.inf * (1 + currentStats.inf.leth/100) * m102.inf) +
+                (Math.sqrt(f.c) * 1790 * (1 + currentStats.cav.att/100) * widgetGlobalAtk * m101.cav * (1 + currentStats.cav.leth/100) * m102.cav) +
+                (Math.sqrt(f.a) * 2387 * (1 + currentStats.arc.att/100) * widgetGlobalAtk * m101.arc * (1 + currentStats.arc.leth/100) * m102.arc);
 
     if (isBear) return dmg;
 
-    const tank = (f.i * 1790 * (1 + s.inf_hp/100) * wHP * m201.inf) +
-                 (f.c * 597 * (1 + s.cav_hp/100) * wHP * m201.cav) +
-                 (f.a * 448 * (1 + s.arc_hp/100) * wHP * m201.arc);
+    const tank = (f.i * 1790 * (1 + currentStats.inf.hp/100) * widgetGlobalHP * m201.inf) +
+                 (f.c * 597 * (1 + currentStats.cav.hp/100) * widgetGlobalHP * m201.cav) +
+                 (f.a * 448 * (1 + currentStats.arc.hp/100) * widgetGlobalHP * m201.arc);
 
     return dmg * tank * m206;
 }
