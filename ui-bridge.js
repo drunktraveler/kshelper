@@ -517,7 +517,7 @@ function renderTernary(id, data, best, isBear) {
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
 // --- UPDATED SYSTEM VOLUME LOGIC ---
-function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
+function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
     const isCalibrated = !!rawStats;
     const s = rawStats || { 
@@ -525,7 +525,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
         cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
         arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
     };
-    
+
     let currentStats = {
         inf: { att: s.inf_att, leth: s.inf_leth, hp: s.inf_hp },
         cav: { att: s.cav_att, leth: s.cav_leth, hp: s.cav_hp },
@@ -534,9 +534,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
 
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let m201 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m206 = 1.0;
-    
-    // FOUR WIDGET MULTIPLIERS
-    let w = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
+    let wMult = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
     const counts = {};
     leads.forEach(n => { if(n !== "None") counts[n] = (counts[n] || 0) + 1; });
@@ -548,6 +546,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
         if (!h) continue;
         const typeKey = h.type.toLowerCase().slice(0, 3);
 
+        // 1. ADD FLAT GROWTH (If calibrated)
         if (isCalibrated) {
             currentStats[typeKey].att += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
             if (h.widget) {
@@ -557,27 +556,34 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
             }
         }
 
-        // GLOBAL WIDGET MULTIPLIERS (Skip for Solo Attack)
+        // 2. GLOBAL WIDGET MULTIPLIERS (Skip for Solo Attack)
+        const isSoloAttack = scenarioLabel === "Solo Attack";
         if (!isSoloAttack && leadNames.includes(name) && h.widget && h.widget.context === ctx) {
-            w[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+            wMult[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
         }
 
+        // 3. SKILL BUCKETS
         h.skills.forEach((skill, si) => {
             const instances = (leadNames.includes(name) ? 1 : 0) + (si === 0 ? (counts[name] - (leadNames.includes(name) ? 1 : 0)) : 0);
             if (instances <= 0) return;
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
             if (x === undefined) return;
+
             const p = skill.getChance(x);
-            // S3 permanent logic + EV for chance based
-            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
+            const rawMagFull = skill.getMagnitude(x);
+            const effectiveDur = isBear ? 1 : (skill.duration || 1);
+            
+            // Alcar S3 permanent logic + standard EV
+            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, effectiveDur));
 
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                const rawMag = (Array.isArray(skill.getMagnitude(x)) ? skill.getMagnitude(x)[idx] : skill.getMagnitude(x));
+                const rawMagPart = Array.isArray(rawMagFull) ? rawMagFull[idx] : rawMagFull;
 
                 ['inf', 'cav', 'arc'].forEach(unit => {
-                    let targetVal = (typeof rawMag === 'object' && rawMag !== null) ? (rawMag[unit] || 0) : rawMag;
+                    let targetVal = (typeof rawMagPart === 'object' && rawMagPart !== null) ? (rawMagPart[unit] || 0) : rawMagPart;
                     const finalMag = targetVal * instances * uptime;
+                    
                     if (id === 101) m101[unit] += finalMag;
                     if (id === 102) m102[unit] += finalMag;
                     if (id === 201) m201[unit] += finalMag;
@@ -589,31 +595,30 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, isSoloAttack) {
 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
     
-    // Damage with Global Attack & Global Lethality Widgets
-    const dInf = (Math.sqrt(f.i) * 597 * (1 + currentStats.inf.att/100) * w.attack * m101.inf * (1 + currentStats.inf.leth/100) * w.lethality * m102.inf);
-    const dCav = (Math.sqrt(f.c) * 1790 * (1 + currentStats.cav.att/100) * w.attack * m101.cav * (1 + currentStats.cav.leth/100) * w.lethality * m102.cav) * 1.6;
-    const dArc = (Math.sqrt(f.a) * 2387 * (1 + currentStats.arc.att/100) * w.attack * m101.arc * (1 + currentStats.arc.leth/100) * w.lethality * m102.arc);
+    // Damage Calc (Global Atk/Leth widgets included)
+    const dInf = (Math.sqrt(f.i) * 597 * (1 + currentStats.inf.att/100) * wMult.attack * m101.inf * (1 + currentStats.inf.leth/100) * wMult.lethality * m102.inf);
+    const dCav = (Math.sqrt(f.c) * 1790 * (1 + currentStats.cav.att/100) * wMult.attack * m101.cav * (1 + currentStats.cav.leth/100) * wMult.lethality * m102.cav) * 1.6;
+    const dArc = (Math.sqrt(f.a) * 2387 * (1 + currentStats.arc.att/100) * wMult.attack * m101.arc * (1 + currentStats.arc.leth/100) * wMult.lethality * m102.arc);
     const totalDmg = dInf + dCav + dArc;
 
     if (isBear) return totalDmg;
 
-    // Tanking with Global Defense & Global HP Widgets
-    const tank = (f.i * 1790 * (1 + currentStats.inf.hp/100) * w.health * m201.inf) +
-                 (f.c * 597 * (1 + currentStats.cav.hp/100) * w.health * m201.cav) +
-                 (f.a * 448 * (1 + currentStats.arc.hp/100) * w.health * m201.arc);
+    // Tanking Calc (Global Def/HP widgets included)
+    const tank = (f.i * 1790 * (1 + currentStats.inf.hp/100) * wMult.health * m201.inf) +
+                 (f.c * 597 * (1 + currentStats.cav.hp/100) * wMult.health * m201.cav) +
+                 (f.a * 448 * (1 + currentStats.arc.hp/100) * wMult.health * m201.arc);
 
     return totalDmg * tank * m206;
 }
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock at least 3 heroes first.");
+    if (unlocked.length < 3) return alert("Unlock 3+ heroes in Roster.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase">Solving Global Optimum...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase">Solving Global Ceiling...</div>`;
 
-    // 1. Define the Scientific Joiner Pool (Restricted)
     const joinerWhiteList = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
     const joinerPool = unlocked.filter(n => joinerWhiteList.includes(n));
 
@@ -623,16 +628,6 @@ window.calculateOptimalLineups = async () => {
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byType[t].length === 0) byType[t] = ["None"]; });
-
-    // --- STEP 1: CALCULATE BASELINE CEILING ---
-    // We find the best formation the user can run with NO heroes.
-    let baseCeiling = -1;
-    for (let i=0; i<=100; i+=2) {
-        for (let c=0; c<=100-i; c+=2) {
-            const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], "off", false);
-            if (v > baseCeiling) baseCeiling = v;
-        }
-    }
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
@@ -648,10 +643,17 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        const baseVol = getSystemVolume(["None","None","None"], [], [50, 20, 30], s.ctx, s.bear);
-        let candidates = [];
+        // Step 1: Calculate Scenario Baseline Ceiling (Best formation with No Heroes)
+        let baseCeiling = -1;
+        for (let i=0; i<=100; i+=2) {
+            for (let c=0; c<=100-i; c+=2) {
+                const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, s.bear, s.l);
+                if (v > baseCeiling) baseCeiling = v;
+            }
+        }
 
-        // Phase 1: Team Pivot Filter
+        let candidates = [];
+        // Step 2: Phase 1 Team Filter
         for (let i of byType.Inf) {
             for (let c of byType.Cav) {
                 for (let a of byType.Arc) {
@@ -662,15 +664,14 @@ window.calculateOptimalLineups = async () => {
                         if (s.rally || s.bear) {
                             for (let slot=0; slot<4; slot++) {
                                 let bj = "None", mv = -1;
-                                // ONLY use the joinerPool here
                                 joinerPool.forEach(cand => {
-                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear);
+                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
                                     if (v > mv) { mv = v; bj = cand; }
                                 });
                                 curJ.push(bj);
                             }
                         }
-                        const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear);
+                        const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
                         if (v > bestPivotV) { bestPivotV = v; bestJoiners = curJ; }
                     }
                     candidates.push({ leads, joiners: bestJoiners, score: bestPivotV });
@@ -682,21 +683,21 @@ window.calculateOptimalLineups = async () => {
         const top3 = candidates.slice(0, 3);
         
         const card = document.createElement('div');
-        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
+        card.className = "glass-card p-6 border-l-4 border-blue-600 col-span-1 md:col-span-2 mb-6";
         let html = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
 
         for (let rank = 0; rank < top3.length; rank++) {
             const team = top3[rank];
             let peakV = -1;
-            // Phase 2: Find this specific team's peak potential
-            for (let i=0; i<=100; i+=2) {
-                for (let c=0; c<=100-i; c+=2) {
-                    const v = getSystemVolume(team.leads, team.joiners, [i, c, 100-i-c], s.ctx, s.bear);
+            // Step 3: Phase 2 Formation Deep Dive (1% resolution)
+            for (let i=0; i<=100; i++) {
+                for (let c=0; c<=100-i; c++) {
+                    const v = getSystemVolume(team.leads, team.joiners, [i, c, 100-i-c], s.ctx, s.bear, s.l);
                     if (v > peakV) peakV = v;
                 }
             }
 
-            const gain = peakV / sBase;
+            const gain = peakV / baseCeiling;
             const jNames = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
                 const count = team.joiners.filter(x=>x===n).length;
                 return `${n}${count > 1 ? ' x'+count : ''}`;
@@ -711,7 +712,7 @@ window.calculateOptimalLineups = async () => {
                     </div>
                     <div>
                         <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
-                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${jNames || 'Solo Setup'}</div>
+                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jNames || 'Solo Setup'}</div>
                     </div>
                 </div>
                 <div class="text-right">
