@@ -35,6 +35,76 @@ window.init = () => {
     window.showTab('battle');
 };
 
+window.syncFormationUI = () => {
+    const sides = ['atk', 'def'];
+    const stats = ['att', 'def', 'leth', 'hp'];
+    const units = ['inf', 'cav', 'arc'];
+
+    sides.forEach(side => {
+        // 1. Sync Heroes
+        const heroCont = document.getElementById(`opt-${side}-heroes`);
+        if (heroCont) {
+            heroCont.innerHTML = '';
+            state[side].heroes.slice(0,3).forEach(h => {
+                const div = document.createElement('div');
+                div.className = `w-10 h-10 rounded-full border-2 ${side==='atk'?'border-emerald-500/30':'border-red-500/30'} bg-slate-900 overflow-hidden`;
+                div.innerHTML = h.name !== "None" ? `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover">` : '';
+                heroCont.appendChild(div);
+            });
+        }
+
+        // 2. Sync Stats (Mirroring the Sim Tab Stat Table)
+        const statGrid = document.getElementById(`opt-${side}-stats-grid`);
+        if (statGrid) {
+            statGrid.innerHTML = '';
+            units.forEach(u => {
+                stats.forEach(s => {
+                    const key = `${u}_${s}`;
+                    const val = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`)?.value || 1000;
+                    statGrid.innerHTML += `
+                        <div>
+                            <label class="text-[7px] text-slate-500 uppercase font-black block mb-1">${u} ${s}</label>
+                            <input type="number" value="${val}" oninput="window.globalStatUpdate('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
+                        </div>`;
+                });
+            });
+        }
+
+        // 3. Sync Tiers (Mirroring the first batch of the Sim Tab)
+        const tierGrid = document.getElementById(`opt-${side}-tiers`);
+        if (tierGrid) {
+            tierGrid.innerHTML = '';
+            units.forEach(u => {
+                const t = document.querySelector(`#${side}-batch-container .batch-tier-${u}`)?.value || 10;
+                const tg = document.querySelector(`#${side}-batch-container .batch-tg-${u}`)?.value || 3;
+                tierGrid.innerHTML += `
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[7px] text-slate-500 uppercase font-black">${u} tier/tg</label>
+                        <div class="flex gap-1">
+                            <select onchange="window.globalTierUpdate('${side}', '${u}', 'tier', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 font-bold text-slate-300 outline-none flex-grow">
+                                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v==t?'selected':''}>T${v}</option>`).join('')}
+                            </select>
+                            <select onchange="window.globalTierUpdate('${side}', '${u}', 'tg', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 font-bold text-slate-300 outline-none flex-grow">
+                                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v==tg?'selected':''}>TG${v}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>`;
+            });
+        }
+    });
+};
+
+// Global Handlers to keep both tabs in perfect sync
+window.globalStatUpdate = (side, key, val) => {
+    document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`).value = val;
+    window.syncFormationUI();
+};
+
+window.globalTierUpdate = (side, unit, type, val) => {
+    document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`).value = val;
+    window.syncFormationUI();
+};
+
 window.syncOptimizerUI = () => {
     const mySide = optRole;
     const oppSide = optRole === 'atk' ? 'def' : 'atk';
@@ -101,6 +171,7 @@ window.setOptRole = (role) => {
 };
 
 // --- 2. GLOBAL UI HANDLERS ---
+const originalShowTab = window.showTab;
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
@@ -110,6 +181,8 @@ window.showTab = (tab) => {
         const b = document.getElementById(btns[k]);
         if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
+    if (tab === 'formation') window.syncFormationUI();
+    originalShowTab(tab);
 };
 
 window.addBatch = (side, initial = false) => {
@@ -521,43 +594,40 @@ window.runOptimizer = async (mode) => {
         try {
             if (isBear) return runBearOptimization(resArea, scoreArea);
 
-            // 1. Gather My Setup and Opponent Setup (Pull from Mirror UI)
-            const mySide = optRole;
+            const setup = gatherSetup(); // Correctly pulls the synced stats/heroes/tiers
+            const mySide = optRole; 
             const oppSide = optRole === 'atk' ? 'def' : 'atk';
-            const simSetup = gatherSetup(); // Gets current hero levels/etc
 
-            // Tech Overrides from the Mirror UI
-            const myTech = {
-                atk: parseFloat(document.getElementById('opt-my-atk').value),
-                leth: parseFloat(document.getElementById('opt-my-leth').value),
-                tier: parseInt(document.getElementById('opt-my-tier').value)
-            };
-            const oppTech = {
-                atk: parseFloat(document.getElementById('opt-opp-atk').value),
-                leth: parseFloat(document.getElementById('opt-opp-leth').value),
-                tier: parseInt(document.getElementById('opt-opp-tier').value)
-            };
-
-            // Build Opponents List
             let opponents = [];
             if (mode === 'current') {
-                opponents.push(simSetup[oppSide]);
-            } else if (mode === 'custom') {
+                opponents.push(setup[oppSide]);
+            } else if (mode === 'custom' || mode === 'meta') {
                 const i = parseFloat(document.getElementById('custom-inf').value) || 33;
                 const c = parseFloat(document.getElementById('custom-cav').value) || 33;
                 const a = parseFloat(document.getElementById('custom-arc').value) || 34;
-                const tot = i + c + a;
-                const opp = JSON.parse(JSON.stringify(simSetup[oppSide]));
-                // Apply Tech Overrides to the Custom Opponent
-                Object.keys(opp.stats).forEach(k => opp.stats[k] = k.includes('att') ? oppTech.atk : (k.includes('leth') ? oppTech.leth : 1000));
-                opp.batches = [{ inf: (i/tot)*1000000, cav: (c/tot)*1000000, arc: (a/tot)*1000000, inf_tier: oppTech.tier, cav_tier: oppTech.tier, arc_tier: oppTech.tier, inf_tg:3, cav_tg:3, arc_tg:3 }];
-                opponents.push(opp);
-            } else if (mode === 'meta') {
-                for (let i=10; i<=80; i+=20) {
-                    for (let j=10; j<=80-i; j+=20) {
-                        const opp = JSON.parse(JSON.stringify(simSetup[oppSide]));
-                        opp.batches = [{ inf: (i/100)*1000000, cav: (j/100)*1000000, arc: (100-i-j)/100*1000000, inf_tier: 10, cav_tier: 10, arc_tier: 10, inf_tg:3, cav_tg:3, arc_tg:3 }];
-                        opponents.push(opp);
+                
+                // For meta/custom, we use the OPPONENT's heroes/stats currently in the sim
+                const baseOpp = JSON.parse(JSON.stringify(setup[oppSide]));
+                
+                if (mode === 'custom') {
+                    const total = i+c+a || 1;
+                    baseOpp.batches = [{
+                        inf: (i/total)*1000000, cav: (c/total)*1000000, arc: (a/total)*1000000,
+                        inf_tier: baseOpp.batches[0].inf_tier, cav_tier: baseOpp.batches[0].cav_tier, arc_tier: baseOpp.batches[0].arc_tier,
+                        inf_tg: baseOpp.batches[0].inf_tg, cav_tg: baseOpp.batches[0].cav_tg, arc_tg: baseOpp.batches[0].arc_tg
+                    }];
+                    opponents.push(baseOpp);
+                } else {
+                    // Meta: 66 variations of the opponent's current tech
+                    for(let mi=0; mi<=100; mi+=10) {
+                        for(let mj=0; mj<=100-mi; mj+=10) {
+                            const opp = JSON.parse(JSON.stringify(baseOpp));
+                            opp.batches = [{ 
+                                inf: mi*10000, cav: mj*10000, arc: (100-mi-mj)*10000,
+                                inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 
+                            }];
+                            opponents.push(opp);
+                        }
                     }
                 }
             }
@@ -565,38 +635,45 @@ window.runOptimizer = async (mode) => {
             let best = { form: [0,0,0], score: -Infinity, wins: 0, net: 0 };
             let dataPoints = { a:[], b:[], c:[], z:[] };
 
-            // 2% search steps (1,326 iterations)
+            // Start 5151 Sweep (Deterministic for stability)
             for (let i = 0; i <= 100; i += 2) {
                 for (let j = 0; j <= 100 - i; j += 2) {
                     let k = 100 - i - j;
-                    let wins = 0, net = 0;
+                    let wins = 0, totalNet = 0;
 
                     for (const opp of opponents) {
                         const testSetup = { atk: {}, def: {} };
-                        const myConfig = JSON.parse(JSON.stringify(simSetup[mySide]));
+                        const myTestConfig = JSON.parse(JSON.stringify(setup[mySide]));
+                        const myTotal = myTestConfig.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1000000;
                         
-                        // Apply Tech Overrides to Me
-                        Object.keys(myConfig.stats).forEach(key => myConfig.stats[key] = key.includes('att') ? myTech.atk : (key.includes('leth') ? myTech.leth : 1000));
-                        myConfig.batches = [{ inf: i*10000, cav: j*10000, arc: k*10000, inf_tier: myTech.tier, cav_tier: myTech.tier, arc_tier: myTech.tier, inf_tg:3, cav_tg:3, arc_tg:3 }];
-                        
-                        testSetup[mySide] = myConfig;
+                        myTestConfig.batches = [{
+                            inf: (i/100)*myTotal, cav: (j/100)*myTotal, arc: (k/100)*myTotal,
+                            inf_tier: myTestConfig.batches[0].inf_tier,
+                            cav_tier: myTestConfig.batches[0].cav_tier,
+                            arc_tier: myTestConfig.batches[0].arc_tier,
+                            inf_tg: myTestConfig.batches[0].inf_tg,
+                            cav_tg: myTestConfig.batches[0].cav_tg,
+                            arc_tg: myTestConfig.batches[0].arc_tg
+                        }];
+
+                        testSetup[mySide] = myTestConfig;
                         testSetup[oppSide] = opp;
 
                         const r = runCombatSim(testSetup, 'average', 'average', 1000, false, true);
                         const mS = sumTroops(mySide === 'atk' ? r.m_cur : r.e_cur);
                         const oS = sumTroops(mySide === 'atk' ? r.e_cur : r.m_cur);
                         if (mS > oS) wins++;
-                        net += (mS - oS);
+                        totalNet += (mS - oS);
                     }
 
-                    const avgNet = net / opponents.length;
-                    const combinedScore = (wins * 1e20) + avgNet; // Wins first, then survivors
+                    const avgNet = totalNet / opponents.length;
+                    const combinedScore = (wins * 1e20) + avgNet;
 
                     dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k);
                     dataPoints.z.push(avgNet);
 
                     if (combinedScore > best.score) {
-                        best = { form: [i,j,k], score: combinedScore, wins, net: avgNet };
+                        best = { form: [i, j, k], score: combinedScore, wins, net: avgNet };
                     }
                 }
             }
