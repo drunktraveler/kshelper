@@ -9,7 +9,8 @@ let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let optRole = 'atk'; 
-const sumTroops = (c) => Math.round((c.inf || 0) + (c.cav || 0) + (c.arc || 0));
+// Helper to sum objects
+const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -610,8 +611,6 @@ window.runOptimizer = async (mode) => {
         }
     }, 50);
 };
-// Helper to sum objects
-const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
