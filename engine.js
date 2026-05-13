@@ -21,21 +21,24 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    let wave = 0, triggers = { atk: {}, def: {} };
+    let wave = 0;
+    let triggers = { atk: {}, def: {} };
+    let troopTriggers = { atk: {}, def: {} };
     let activeBuffs = { atk: [], def: [] };
 
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
-        let waveMults = { atk: { self: {inf:1,cav:1,arc:1}, enemy: {inf:1,cav:1,arc:1} }, 
-                          def: { self: {inf:1,cav:1,arc:1}, enemy: {inf:1,cav:1,arc:1} } };
+        
+        // 1. WAVE BUCKETS
+        let waveMults = { atk: { self: {inf:1,cav:1,arc:1}, survival: {inf:1,cav:1,arc:1} }, 
+                          def: { self: {inf:1,cav:1,arc:1}, survival: {inf:1,cav:1,arc:1} } };
 
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
             let unitBuckets = {
-                inf: { 101:0, 102:0, 201:0, 202:0, 203:0, 204:0, 205:0, 206:0 },
-                cav: { 101:0, 102:0, 201:0, 202:0, 203:0, 204:0, 205:0, 206:0 },
-                arc: { 101:0, 102:0, 201:0, 202:0, 203:0, 204:0, 205:0, 206:0 }
+                inf: { 1:0, 2:0 }, cav: { 1:0, 2:0 }, arc: { 1:0, 2:0 } // 1: Buffs(1XX), 2: Survival(2XX)
             };
+            let global206 = 0;
 
             const currentActiveSkills = [...h.passives];
             if (isStochastic) {
@@ -44,7 +47,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     let procced = false;
                     if (act.isAlcarS1) { if (wave >= 5 && (wave % 5 === 0 || wave % 5 === 1)) procced = true; }
                     else { if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) procced = true; }
-                    
                     if (procced) {
                         triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
                         activeBuffs[side].push({ m: act.m, ids: act.ids, expires: wave + (isBear ? 1 : act.duration), inst: act.isAlcarS1 ? act.instances : 1 });
@@ -61,26 +63,28 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             currentActiveSkills.forEach(s => {
                 const up = s.uptime || 1.0;
                 s.ids.forEach((id, idx) => {
-                    if (isBear && id >= 200) return;
                     const rawM = Array.isArray(s.m) ? s.m[idx] : s.m;
                     ['inf', 'cav', 'arc'].forEach(u => {
                         const mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                        unitBuckets[u][id] += (mag * s.instances * up);
+                        const final = mag * s.instances * up;
+                        if (id === 206) global206 += final;
+                        else if (id < 200) unitBuckets[u][1] += final;
+                        else unitBuckets[u][2] += final;
                     });
                 });
             });
 
             ['inf', 'cav', 'arc'].forEach(u => {
-                const b = unitBuckets[u];
-                waveMults[side].self[u] = (1+b[101]) * (1+b[102]);
-                waveMults[side].enemy[u] = (1+b[201]) * (1+b[202]) * (1+b[203]) * (1+b[204]) * (1+b[205]) * (1+b[206]);
+                waveMults[side].self[u] = (1 + unitBuckets[u][1]);
+                waveMults[side].survival[u] = (1 + unitBuckets[u][2]) * (1 + global206);
             });
         });
 
-        // 3. DAMAGE CALCULATION
+        // 2. COMBAT RESOLUTION
         let pending = [];
-        const mf = (['inf', 'cav', 'arc'].find(u => m_cur[u] >= 1) || 'arc');
-        const ef = (['inf', 'cav', 'arc'].find(u => e_cur[u] >= 1) || 'arc');
+        const units = ['inf', 'cav', 'arc'];
+        const mf = units.find(u => m_cur[u] >= 1) || 'arc';
+        const ef = units.find(u => e_cur[u] >= 1) || 'arc';
 
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return;
@@ -89,9 +93,11 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const sS = setup[side], tS = setup[target];
             const tf = (side==='atk'?ef:mf);
 
-            ['inf', 'cav', 'arc'].forEach(u => {
+            units.forEach(u => {
                 if (sC[u] < 1) return;
-                const killMult = waveMults[side].self[u] / waveMults[target].enemy[tf];
+
+                // SCIENTIFIC FORMULA: My Offense / Target's Survival (2XX)
+                const killMult = waveMults[side].self[u] / waveMults[target].survival[tf];
 
                 const calcKills = (targetType, abilMod = 1.0) => {
                     const b = sP.avgBase[u], tb = tP.avgBase[targetType];
@@ -103,16 +109,23 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return (Math.sqrt(sC[u]) * sq_min * atk * leth * rps * abilMod * killMult) / (df * hp * 100);
                 };
 
+                // Troop Abilities
                 let abil = 1.0;
-                const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : p;
-                if (u==='arc') {
-                    abil *= 1.1; // T7 
-                    if (sP.weights[u].tg5 > 0) abil *= (1 + roll(0.3) * 0.5);
+                const roll = (p, name) => {
+                    const hit = isStochastic ? (Math.random() < p) : true;
+                    const val = isStochastic ? (hit ? 1 : 0) : p;
+                    if (hit) troopTriggers[side][name] = (troopTriggers[side][name] || 0) + 1;
+                    return val;
+                };
+
+                if (u === 'arc') {
+                    abil *= 1.1; // T7
+                    if (sP.weights.arc.tg5 > 0) abil *= (1 + roll(0.3, "Archer Crit (TG5)") * 0.5);
                 }
-                if (u==='cav' && sP.weights[u].tg5 > 0) abil *= (1 + roll(0.15));
-                if (tf==='inf') {
+                if (u === 'cav' && sP.weights.cav.tg5 > 0) abil *= (1 + roll(0.15, "Cavalry Flank (TG5)"));
+                if (tf === 'inf') {
                     abil *= 0.9; // T7
-                    if (tP.weights[tf].tg5 > 0) abil *= (1 - (roll(0.375) * 0.36));
+                    if (tP.weights.inf.tg5 > 0) abil *= (1 - (roll(0.375, "Infantry Shield (TG5)") * 0.36));
                 }
 
                 if (u === 'cav' && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
@@ -124,6 +137,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 }
             });
         });
+
         pending.forEach(p => p.dict[p.unit] = Math.max(0, p.dict[p.unit] - p.amt));
         if (isBear) break;
     }
@@ -131,21 +145,28 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const finalizeLogs = (side) => {
         let list = [];
         const hData = (side === 'atk' ? atkH : defH);
-        const manifest = {};
-        
-        // Combine Passives and Actives for the log display
+        const pData = (side === 'atk' ? atkP : defP);
+
+        // 1. Hero Logs
         [...hData.passives, ...hData.actives].forEach(act => {
             const isPassive = act.p >= 1.0 || act.isAlcarS3;
-            let val = "";
-            if (isPassive) {
-                const m = act.m;
-                val = (typeof m === 'object') ? `+${(m.inf*100).toFixed(1)}% (Targeted)` : `+${(m*100).toFixed(1)}%`;
-            } else {
-                val = isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${((Array.isArray(act.m)?act.m[0]:act.m) * (1-Math.pow(1-act.p, act.duration||1))*100).toFixed(1)}%`;
-            }
+            let val = isPassive ? 
+                (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}% (Inf)` : `+${(act.m*100).toFixed(0)}%`) :
+                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${((Array.isArray(act.m)?act.m[0]:act.m) * (1-Math.pow(1-act.p, act.duration||1))*100).toFixed(1)}%`);
             list.push({ name: act.name, val, isPassive });
         });
-        return { skills: list, troopEff: "" };
+
+        // 2. Troop Ability Logs (Dynamic insertion)
+        const t7 = [];
+        if (pData.weights.inf.t7 > 0) t7.push("Inf Bands (T7)");
+        if (pData.weights.cav.t7 > 0) t7.push("Cav Bypass (T7)");
+        if (pData.weights.arc.t7 > 0) t7.push("Arc Volley (T7)");
+
+        Object.entries(troopTriggers[side]).forEach(([name, count]) => {
+            list.push({ name, val: isStochastic ? `Triggers: ${count}` : "Active", isPassive: !isStochastic });
+        });
+
+        return { skills: list, troopEff: t7.join(' | ') };
     };
 
     return { 
