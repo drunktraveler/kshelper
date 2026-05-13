@@ -2,6 +2,7 @@ import { HEROES } from './heroes.js';
 import { runCombatSim, isAlive } from './engine.js';
 import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 import { WIDGET_STATS } from './widgets.js';
+import { UNITS } from './units.js'; 
 
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
@@ -476,52 +477,109 @@ window.runOptimizer = async (mode) => {
     
     resArea.innerText = "Analyzing...";
 
-    // Use setTimeout to allow the "Analyzing..." text to actually render before the loop
+    // setTimeout prevents UI freeze
     setTimeout(() => {
-        let bearConfig = { weights: {} };
-        ['inf', 'cav', 'arc'].forEach(u => {
-            const t = document.getElementById(`bear-${u}-tier`).value;
-            const tg = document.getElementById(`bear-${u}-tg`).value;
-            const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
-            
-            bearConfig[`${u}_base`] = UNITS[longU][t][tg];
-            bearConfig[`${u}_acc`] = {
-                att: parseFloat(document.getElementById(`bear-${u}-att`).value) || 0,
-                leth: parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0
-            };
-            bearConfig.weights[u] = {
-                t7: t >= 7 ? 1 : 0,
-                tg3: tg >= 3 ? 1 : 0,
-                tg5: tg >= 5 ? 1 : 0
-            };
-        });
-
-        // 1. PRE-CALCULATE UNIT MULTIPLIERS (Do this ONCE, not 5,151 times)
-        const unitPotentials = calculateBearPotentials(bearConfig);
-
-        let best = { form: [0,0,0], score: -1 };
-        let dataPoints = { a:[], b:[], c:[], z:[] };
-
-        // 2. ULTRA-FAST OPTIMIZATION LOOP
-        for (let i = 0; i <= 100; i++) {
-            for (let j = 0; j <= 100 - i; j++) {
-                let k = 100 - i - j;
+        try {
+            let bearConfig = { weights: {} };
+            ['inf', 'cav', 'arc'].forEach(u => {
+                const t = document.getElementById(`bear-${u}-tier`).value;
+                const tg = document.getElementById(`bear-${u}-tg`).value;
+                const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
                 
-                // Damage = sqrt(count) * unit_potential
-                const score = (Math.sqrt(i * 10000) * unitPotentials.inf) +
-                              (Math.sqrt(j * 10000) * unitPotentials.cav) +
-                              (Math.sqrt(k * 10000) * unitPotentials.arc);
-                
-                if (score > best.score) {
-                    best = { score, form: [i, j, k] };
+                // Pulling from UNITS table
+                bearConfig[`${u}_base`] = UNITS[longU][t][tg];
+                bearConfig[`${u}_acc`] = {
+                    att: parseFloat(document.getElementById(`bear-${u}-att`).value) || 0,
+                    leth: parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0
+                };
+                bearConfig.weights[u] = {
+                    tg3: tg >= 3 ? 1 : 0,
+                    tg5: tg >= 5 ? 1 : 0
+                };
+            });
+
+            // --- 1. PRE-CALCULATE UNIT POTENTIALS ---
+            let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
+            let wAtk = 1.0, wLeth = 1.0;
+
+            state.atk.heroes.forEach((h, idx) => {
+                if (h.name === "None") return;
+                const data = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
+                const isLead = idx < 3;
+
+                if (isLead && data.widget && data.widget.context === 'off') {
+                    const val = WIDGET_GROWTH[r.widget] || 0;
+                    if (data.widget.stat === "attack") wAtk += val;
+                    if (data.widget.stat === "lethality") wLeth += val;
                 }
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
-            }
-        }
 
-        renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
-        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-        scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+                data.skills.forEach((s, si) => {
+                    if (!isLead && si > 0) return; 
+                    const x = s.values[(r[`s${si+1}`] || 5) - 1];
+                    const p = s.getChance(x), mFull = s.getMagnitude(x);
+                    const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : p; 
+
+                    s.ids.forEach((id, idx) => {
+                        if (id >= 200) return; // Bear is immune to debuffs
+                        const m = Array.isArray(mFull) ? mFull[idx] : mFull;
+                        ['inf', 'cav', 'arc'].forEach(u => {
+                            let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                            if (id === 101) m101[u] += val * uptime;
+                            if (id === 102) m102[u] += val * uptime;
+                        });
+                    });
+                });
+            });
+
+            const potentials = {};
+            ['inf', 'cav', 'arc'].forEach(u => {
+                const base = bearConfig[`${u}_base`];
+                const acc = bearConfig[`${u}_acc`];
+                const w = bearConfig.weights[u];
+
+                let abil = 1.0;
+                if (u === 'arc') {
+                    const effP = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
+                    abil *= (1 + (effP * 0.5)); // Howling Wind
+                    abil *= 1.1; // Ranged Strike (Fixed RPS vs Inf Bear)
+                }
+                if (u === 'cav' && w.tg3 > 0) {
+                    const effP = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
+                    abil *= (1 + (effP * 1.0)); // Assault Lance
+                }
+
+                const totalAtk = base[0] * (1 + acc.att/100) * wAtk * m101[u];
+                const totalLeth = base[2] * (1 + acc.leth/100) * wLeth * m102[u];
+                // Math based on engine.js denominator: 10 Def * 8.33 HP * 1000
+                potentials[u] = (1000 * totalAtk * totalLeth * abil) / 8333.33; 
+            });
+
+            // --- 2. OPTIMIZATION LOOP ---
+            let best = { form: [0,0,0], score: -1 };
+            let dataPoints = { a:[], b:[], c:[], z:[] };
+
+            for (let i = 0; i <= 100; i++) {
+                for (let j = 0; j <= 100 - i; j++) {
+                    let k = 100 - i - j;
+                    const score = (Math.sqrt(i * 10000) * potentials.inf) +
+                                  (Math.sqrt(j * 10000) * potentials.cav) +
+                                  (Math.sqrt(k * 10000) * potentials.arc);
+                    
+                    if (score > best.score) {
+                        best = { score, form: [i, j, k] };
+                    }
+                    dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                }
+            }
+
+            renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
+            resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+            scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+
+        } catch (err) {
+            console.error(err);
+            resArea.innerText = "Error in Calculation";
+        }
     }, 50); 
 };
 
