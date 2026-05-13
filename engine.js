@@ -105,38 +105,38 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return isStochastic ? (hit ? 1 : 0) : p;
                 };
 
-                // A. Basic RPS (Always Unlocked)
+                // A. Basic RPS (Always Active)
                 if (u === 'inf' && tf === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
                 if (u === 'cav' && tf === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
                 if (u === 'arc' && tf === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
 
                 // B. T7+ Abilities
-                // Bands of Steel: Scaled Magnitude
+                // Bands of Steel: (Inf) Magnitude scaled by weight
                 if (tf === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
                     defMod *= (1 / (1 + (0.1 * tP.weights.inf.t7))); 
                     triggers[target]["Bands of Steel"] = true;
                 }
                 
-                // Volley: Scaled Magnitude
+                // Volley: (Arc) Magnitude scaled by weight
                 let volleyMod = 1.0;
                 if (u === 'arc' && sP.weights.arc.t7 > 0) {
-                    volleyMod = (1 + (roll(0.1, "Volley (x2 Dmg)") * sP.weights.arc.t7));
+                    volleyMod = (1 + (roll(0.1, "Volley") * sP.weights.arc.t7));
                 }
 
-                // C. TG3/TG5 Procs: Magnitude scaled by Weight, Probability is Max Present
+                // C. TG3/TG5 Procs: Magnitude scaled by Weight, Prob is Max Present
                 const w = sP.weights[u], tw = tP.weights[tf];
                 
                 if (u === 'arc' && w.tg3 > 0) {
                     const maxP = w.tg5 > 0 ? 0.3 : 0.2;
-                    offMod *= (1 + roll(maxP, "Howling Wind (+50%)") * (0.5 * w.tg3));
+                    offMod *= (1 + roll(maxP, "Howling Wind") * (0.5 * w.tg3));
                 }
                 if (u === 'cav' && w.tg3 > 0) {
                     const maxP = w.tg5 > 0 ? 0.15 : 0.1;
-                    offMod *= (1 + roll(maxP, "Assault Lance (x2 Dmg)") * (1.0 * w.tg3));
+                    offMod *= (1 + roll(maxP, "Assault Lance") * (1.0 * w.tg3));
                 }
                 if (tf === 'inf' && tw.tg3 > 0) {
                     const maxP = tw.tg5 > 0 ? 0.375 : 0.25;
-                    defMod *= (1 / (1 + roll(maxP, "Unyielding Shield (-36%)") * (0.36 * tw.tg3)));
+                    defMod *= (1 / (1 + roll(maxP, "Unyielding Shield") * (0.36 * tw.tg3)));
                 }
 
                 const finalKillMult = (waveMults[side].self[u] * offMod * volleyMod) / (waveMults[target].survival[tf] * defMod);
@@ -150,17 +150,17 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return (Math.sqrt(sC[u]) * sq_min * atk * leth * mult) / (df * hp * 100);
                 };
 
-                // D. Ambusher (Cavalry Bypass): Proportional Damage Shifting
+                // D. Ambusher (Cavalry Bypass): Unified Stack Movement
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
-                    const isBypass = roll(0.2, "Ambusher (Bypass)");
-                    const kills = calcKills(finalKillMult);
-                    const t7Weight = sP.weights.cav.t7;
+                    const isBypass = isStochastic ? (Math.random() < 0.2) : 0.2;
+                    if (isBypass && isStochastic) triggers[side]["Ambusher"] = (triggers[side]["Ambusher"] || 0) + 1;
                     
+                    const kills = calcKills(finalKillMult);
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        // If triggered, only the T7+ portion of the army damage shifts to backline
-                        const bypassAmt = kills * (isStochastic ? t7Weight : 0.2 * t7Weight);
-                        pending.push({dict: tC, unit: 'arc', amt: bypassAmt});
-                        pending.push({dict: tC, unit: tf, amt: kills - bypassAmt});
+                        // 100% of damage potential moves to backline on success
+                        // In Deterministic, 20% of kills go to Archers, 80% to frontline
+                        pending.push({dict: tC, unit: 'arc', amt: kills * (isStochastic ? 1 : 0.2)});
+                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: kills * 0.8});
                     } else {
                         pending.push({dict: tC, unit: tf, amt: kills});
                     }
@@ -184,13 +184,11 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             list.push({ name: act.name, val, isPassive });
         });
 
-        const chanceAbilities = ["Ambusher (Bypass)", "Volley (x2 Dmg)", "Unyielding Shield (-36%)", "Assault Lance (x2 Dmg)", "Howling Wind (+50%)"];
-        chanceAbilities.forEach(name => {
+        ["Ambusher", "Volley", "Unyielding Shield", "Assault Lance", "Howling Wind"].forEach(name => {
             if (triggers[side][name]) list.push({ name, val: isStochastic ? `Triggers: ${triggers[side][name]}` : "Scaled Magnitude", isPassive: false });
         });
 
-        const passiveAbilities = ["Master Brawler", "Charge", "Ranged Strike", "Bands of Steel"];
-        passiveAbilities.forEach(name => {
+        ["Master Brawler", "Charge", "Ranged Strike", "Bands of Steel"].forEach(name => {
             if (triggers[side][name]) list.push({ name, val: "Active", isPassive: true });
         });
 
