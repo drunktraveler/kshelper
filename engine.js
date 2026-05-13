@@ -10,7 +10,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const defP = isBear ? {
         counts: { inf: 1000000, cav: 0, arc: 0 },
         avgBase: { inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
-        weights: { inf: { t7: 1, tg3: 1, tg5: 1 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
+        weights: { inf: { t7: 0, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
 
     const atkH = getHeroData(setup.atk);
@@ -22,10 +22,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
     const getEffStr = (p) => {
-        const i = (p.weights.inf.tg3 * 100).toFixed(0);
-        const c = (p.weights.cav.tg3 * 100).toFixed(0);
-        const a = (p.weights.arc.tg3 * 100).toFixed(0);
-        return `Inf ${i}% | Cav ${c}% | Arc ${a}%`;
+        return `Inf ${(p.weights.inf.tg3 * 100).toFixed(0)}% | Cav ${(p.weights.cav.tg3 * 100).toFixed(0)}% | Arc ${(p.weights.arc.tg3 * 100).toFixed(0)}%`;
     };
 
     let wave = 0, triggers = { atk: {}, def: {} };
@@ -105,39 +102,27 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return isStochastic ? (hit ? 1 : 0) : p;
                 };
 
-                // A. Basic RPS (Always Active)
+                // A. Basic RPS - Recorded for BOTH sides
                 if (u === 'inf' && tf === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
                 if (u === 'cav' && tf === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
                 if (u === 'arc' && tf === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
 
-                // B. T7+ Abilities
-                // Bands of Steel: (Inf) Magnitude scaled by weight
+                // B. T7+ Passives
                 if (tf === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
                     defMod *= (1 / (1 + (0.1 * tP.weights.inf.t7))); 
                     triggers[target]["Bands of Steel"] = true;
                 }
                 
-                // Volley: (Arc) Magnitude scaled by weight
                 let volleyMod = 1.0;
                 if (u === 'arc' && sP.weights.arc.t7 > 0) {
                     volleyMod = (1 + (roll(0.1, "Volley") * sP.weights.arc.t7));
                 }
 
-                // C. TG3/TG5 Procs: Magnitude scaled by Weight, Prob is Max Present
+                // C. TG3/TG5 Procs
                 const w = sP.weights[u], tw = tP.weights[tf];
-                
-                if (u === 'arc' && w.tg3 > 0) {
-                    const maxP = w.tg5 > 0 ? 0.3 : 0.2;
-                    offMod *= (1 + roll(maxP, "Howling Wind") * (0.5 * w.tg3));
-                }
-                if (u === 'cav' && w.tg3 > 0) {
-                    const maxP = w.tg5 > 0 ? 0.15 : 0.1;
-                    offMod *= (1 + roll(maxP, "Assault Lance") * (1.0 * w.tg3));
-                }
-                if (tf === 'inf' && tw.tg3 > 0) {
-                    const maxP = tw.tg5 > 0 ? 0.375 : 0.25;
-                    defMod *= (1 / (1 + roll(maxP, "Unyielding Shield") * (0.36 * tw.tg3)));
-                }
+                if (u === 'arc' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * (0.5 * w.tg3));
+                if (u === 'cav' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * (1.0 * w.tg3));
+                if (tf === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * (0.36 * tw.tg3)));
 
                 const finalKillMult = (waveMults[side].self[u] * offMod * volleyMod) / (waveMults[target].survival[tf] * defMod);
 
@@ -150,15 +135,11 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return (Math.sqrt(sC[u]) * sq_min * atk * leth * mult) / (df * hp * 100);
                 };
 
-                // D. Ambusher (Cavalry Bypass): Unified Stack Movement
+                // D. Ambusher
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
-                    const isBypass = isStochastic ? (Math.random() < 0.2) : 0.2;
-                    if (isBypass && isStochastic) triggers[side]["Ambusher"] = (triggers[side]["Ambusher"] || 0) + 1;
-                    
+                    const isBypass = roll(0.2, "Ambusher");
                     const kills = calcKills(finalKillMult);
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        // 100% of damage potential moves to backline on success
-                        // In Deterministic, 20% of kills go to Archers, 80% to frontline
                         pending.push({dict: tC, unit: 'arc', amt: kills * (isStochastic ? 1 : 0.2)});
                         if (!isStochastic) pending.push({dict: tC, unit: tf, amt: kills * 0.8});
                     } else {
@@ -177,22 +158,35 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const finalizeLogs = (side) => {
         let list = [];
         const hData = (side === 'atk' ? atkH : defH);
+        const pData = (side === 'atk' ? atkP : defP);
+
+        // 1. Hero Logs
         [...hData.passives, ...hData.actives].forEach(act => {
-            const isPassive = act.p >= 1.0 || act.isAlcarS3;
-            let val = isPassive ? (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}%` : `+${(act.m*100).toFixed(0)}%`) :
-                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `EV Applied`);
-            list.push({ name: act.name, val, isPassive });
+            const isP = act.p >= 1.0 || act.isAlcarS3;
+            let val = isP ? (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}%` : `+${(act.m*100).toFixed(0)}%`) :
+                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Scaled EV`);
+            list.push({ name: act.name, val, isPassive: isP });
         });
 
+        // 2. Troop Chance-Based Logs
         ["Ambusher", "Volley", "Unyielding Shield", "Assault Lance", "Howling Wind"].forEach(name => {
-            if (triggers[side][name]) list.push({ name, val: isStochastic ? `Triggers: ${triggers[side][name]}` : "Scaled Magnitude", isPassive: false });
+            const exists = (name === "Ambusher" || name === "Assault Lance") ? pData.weights.cav.tg3 > 0 :
+                           (name === "Volley" || name === "Howling Wind") ? pData.weights.arc.tg3 > 0 :
+                           pData.weights.inf.tg3 > 0;
+            if (exists) {
+                list.push({ name, val: isStochastic ? `Triggers: ${triggers[side][name] || 0}` : "Scaled Magnitude", isPassive: false });
+            }
         });
 
-        ["Master Brawler", "Charge", "Ranged Strike", "Bands of Steel"].forEach(name => {
-            if (triggers[side][name]) list.push({ name, val: "Active", isPassive: true });
-        });
+        // 3. Consolidated Passives
+        const passives = [];
+        if (triggers[side]["Master Brawler"]) passives.push("Master Brawler");
+        if (triggers[side]["Charge"]) passives.push("Charge");
+        if (triggers[side]["Ranged Strike"]) passives.push("Ranged Strike");
+        if (triggers[side]["Bands of Steel"]) passives.push("Bands of Steel");
+        if (passives.length > 0) list.push({ name: "Troop Passives", val: passives.join(", "), isPassive: true });
 
-        return { skills: list, troopEff: getEffStr(side === 'atk' ? atkP : defP) };
+        return { skills: list, troopEff: getEffStr(pData) };
     };
 
     return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk'), def_logs: finalizeLogs('def'), totalDmg: isBear ? (1000000 - e_cur.inf) : 0 };
