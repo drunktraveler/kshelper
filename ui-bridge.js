@@ -34,6 +34,45 @@ window.init = () => {
     window.showTab('battle');
 };
 
+window.syncOptimizerUI = () => {
+    const mySide = optRole;
+    const oppSide = optRole === 'atk' ? 'def' : 'atk';
+
+    document.getElementById('opt-my-label').innerText = mySide.toUpperCase();
+    document.getElementById('opt-opp-label').innerText = oppSide.toUpperCase();
+
+    const renderMinis = (side, targetId) => {
+        const container = document.getElementById(targetId);
+        container.innerHTML = '';
+        state[side].heroes.slice(0,3).forEach(h => {
+            const div = document.createElement('div');
+            div.className = `w-8 h-8 rounded-full border border-slate-700 bg-slate-900 overflow-hidden relative`;
+            if (h.name !== "None") {
+                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover">`;
+            } else { div.innerHTML = `<span class="absolute inset-0 flex items-center justify-center text-[8px] text-slate-700">?</span>`; }
+            container.appendChild(div);
+        });
+    };
+
+    renderMinis(mySide, 'opt-my-heroes');
+    renderMinis(oppSide, 'opt-opp-heroes');
+    
+    // Sync initial stats from Battle Sim inputs
+    const myStats = Array.from(document.querySelectorAll(`input[data-side="${mySide}"]`));
+    const oppStats = Array.from(document.querySelectorAll(`input[data-side="${oppSide}"]`));
+    
+    // Using simple Atk/Leth averages for the mirror mirror
+    if (myStats.length) document.getElementById('opt-my-atk').value = myStats[0].value;
+    if (oppStats.length) document.getElementById('opt-opp-atk').value = oppStats[0].value;
+};
+
+// Update window.setOptRole to trigger sync
+const oldSetOptRole = window.setOptRole;
+window.setOptRole = (role) => {
+    oldSetOptRole(role);
+    window.syncOptimizerUI();
+};
+
 function buildStatTable() {
     const table = document.getElementById('stat-table');
     if(!table) return;
@@ -475,130 +514,102 @@ window.runOptimizer = async (mode) => {
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     
-    resArea.innerText = "Analyzing...";
+    resArea.innerText = "Simulating...";
 
-    // Give UI a chance to render "Analyzing..."
     setTimeout(async () => {
         try {
-            if (isBear) {
-                // ... (Keep the high-precision Bear logic from previous step) ...
-                return runBearOptimization(resArea, scoreArea);
-            }
+            if (isBear) return runBearOptimization(resArea, scoreArea);
 
-            // --- PVP FORMATION OPTIMIZATION ---
-            const myRole = optRole; // 'atk' or 'def'
-            const oppRole = myRole === 'atk' ? 'def' : 'atk';
-            const setup = gatherSetup(); // Gets all current stats/heroes/tiers from UI
-            
+            // 1. Gather My Setup and Opponent Setup (Pull from Mirror UI)
+            const mySide = optRole;
+            const oppSide = optRole === 'atk' ? 'def' : 'atk';
+            const simSetup = gatherSetup(); // Gets current hero levels/etc
+
+            // Tech Overrides from the Mirror UI
+            const myTech = {
+                atk: parseFloat(document.getElementById('opt-my-atk').value),
+                leth: parseFloat(document.getElementById('opt-my-leth').value),
+                tier: parseInt(document.getElementById('opt-my-tier').value)
+            };
+            const oppTech = {
+                atk: parseFloat(document.getElementById('opt-opp-atk').value),
+                leth: parseFloat(document.getElementById('opt-opp-leth').value),
+                tier: parseInt(document.getElementById('opt-opp-tier').value)
+            };
+
+            // Build Opponents List
             let opponents = [];
-            let isMeta = mode === 'meta';
-
             if (mode === 'current') {
-                // 1. VS BATTLE SIM: Use the specific opponent defined in the other tab
-                opponents.push(setup[oppRole]);
+                opponents.push(simSetup[oppSide]);
             } else if (mode === 'custom') {
-                // 2. VS CUSTOM: Fixed % formation, equal stats/tier to mine
-                const i = parseFloat(document.getElementById('custom-inf').value) || 0;
-                const c = parseFloat(document.getElementById('custom-cav').value) || 0;
-                const a = parseFloat(document.getElementById('custom-arc').value) || 0;
-                const total = i + c + a || 100;
-                
-                const customOpp = JSON.parse(JSON.stringify(setup[myRole])); // Copy my tech
-                customOpp.batches = [{
-                    inf: (i/total) * 1000000, cav: (c/total) * 1000000, arc: (a/total) * 1000000,
-                    inf_tier: setup[myRole].batches[0].inf_tier,
-                    cav_tier: setup[myRole].batches[0].cav_tier,
-                    arc_tier: setup[myRole].batches[0].arc_tier,
-                    inf_tg: setup[myRole].batches[0].inf_tg,
-                    cav_tg: setup[myRole].batches[0].cav_tg,
-                    arc_tg: setup[myRole].batches[0].arc_tg
-                }];
-                opponents.push(customOpp);
+                const i = parseFloat(document.getElementById('custom-inf').value) || 33;
+                const c = parseFloat(document.getElementById('custom-cav').value) || 33;
+                const a = parseFloat(document.getElementById('custom-arc').value) || 34;
+                const tot = i + c + a;
+                const opp = JSON.parse(JSON.stringify(simSetup[oppSide]));
+                // Apply Tech Overrides to the Custom Opponent
+                Object.keys(opp.stats).forEach(k => opp.stats[k] = k.includes('att') ? oppTech.atk : (k.includes('leth') ? oppTech.leth : 1000));
+                opp.batches = [{ inf: (i/tot)*1000000, cav: (c/tot)*1000000, arc: (a/tot)*1000000, inf_tier: oppTech.tier, cav_tier: oppTech.tier, arc_tier: oppTech.tier, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                opponents.push(opp);
             } else if (mode === 'meta') {
-                // 3. VS META: 66 iterations (10% steps)
-                for (let i = 0; i <= 100; i += 10) {
-                    for (let j = 0; j <= 100 - i; j += 10) {
-                        let k = 100 - i - j;
-                        const metaOpp = JSON.parse(JSON.stringify(setup[myRole]));
-                        metaOpp.batches = [{
-                            inf: (i/100) * 1000000, cav: (j/100) * 1000000, arc: (k/100) * 1000000,
-                            inf_tier: 10, cav_tier: 10, arc_tier: 10, inf_tg: 3, cav_tg: 3, arc_tg: 3
-                        }];
-                        opponents.push(metaOpp);
+                for (let i=10; i<=80; i+=20) {
+                    for (let j=10; j<=80-i; j+=20) {
+                        const opp = JSON.parse(JSON.stringify(simSetup[oppSide]));
+                        opp.batches = [{ inf: (i/100)*1000000, cav: (j/100)*1000000, arc: (100-i-j)/100*1000000, inf_tier: 10, cav_tier: 10, arc_tier: 10, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                        opponents.push(opp);
                     }
                 }
             }
 
-            let best = { form: [0, 0, 0], winRate: 0, netSurvivors: -Infinity, score: -Infinity };
-            let dataPoints = { a: [], b: [], c: [], z: [] };
+            let best = { form: [0,0,0], score: -Infinity, wins: 0, net: 0 };
+            let dataPoints = { a:[], b:[], c:[], z:[] };
 
-            // Start 5151 Search
-            for (let i = 0; i <= 100; i += 2) { // 2% steps for PVP sweep speed
+            // 2% search steps (1,326 iterations)
+            for (let i = 0; i <= 100; i += 2) {
                 for (let j = 0; j <= 100 - i; j += 2) {
                     let k = 100 - i - j;
-                    let wins = 0;
-                    let totalNet = 0;
+                    let wins = 0, net = 0;
 
-                    // Test this formation against all selected opponents
-                    for (let opp of opponents) {
+                    for (const opp of opponents) {
                         const testSetup = { atk: {}, def: {} };
-                        const myTestConfig = JSON.parse(JSON.stringify(setup[myRole]));
+                        const myConfig = JSON.parse(JSON.stringify(simSetup[mySide]));
                         
-                        // Set my test formation
-                        const myTotal = myTestConfig.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1000000;
-                        myTestConfig.batches = [{
-                            inf: (i/100) * myTotal, cav: (j/100) * myTotal, arc: (k/100) * myTotal,
-                            inf_tier: myTestConfig.batches[0].inf_tier,
-                            cav_tier: myTestConfig.batches[0].cav_tier,
-                            arc_tier: myTestConfig.batches[0].arc_tier,
-                            inf_tg: myTestConfig.batches[0].inf_tg,
-                            cav_tg: myTestConfig.batches[0].cav_tg,
-                            arc_tg: myTestConfig.batches[0].arc_tg
-                        }];
+                        // Apply Tech Overrides to Me
+                        Object.keys(myConfig.stats).forEach(key => myConfig.stats[key] = key.includes('att') ? myTech.atk : (key.includes('leth') ? myTech.leth : 1000));
+                        myConfig.batches = [{ inf: i*10000, cav: j*10000, arc: k*10000, inf_tier: myTech.tier, cav_tier: myTech.tier, arc_tier: myTech.tier, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                        
+                        testSetup[mySide] = myConfig;
+                        testSetup[oppSide] = opp;
 
-                        testSetup[myRole] = myTestConfig;
-                        testSetup[oppRole] = opp;
-
-                        // RUN ACTUAL SIM (Deterministic)
                         const r = runCombatSim(testSetup, 'average', 'average', 1000, false, true);
-                        const mySurv = sumTroops(myRole === 'atk' ? r.m_cur : r.e_cur);
-                        const oppSurv = sumTroops(myRole === 'atk' ? r.e_cur : r.m_cur);
-                        
-                        if (mySurv > oppSurv) wins++;
-                        totalNet += (mySurv - oppSurv);
+                        const mS = sumTroops(mySide === 'atk' ? r.m_cur : r.e_cur);
+                        const oS = sumTroops(mySide === 'atk' ? r.e_cur : r.m_cur);
+                        if (mS > oS) wins++;
+                        net += (mS - oS);
                     }
 
-                    // Score calculation: Primary = Wins, Secondary = Survivors
-                    const avgNet = totalNet / opponents.length;
-                    const winRate = (wins / opponents.length) * 100;
-                    const combinedScore = (wins * 1e15) + avgNet;
+                    const avgNet = net / opponents.length;
+                    const combinedScore = (wins * 1e20) + avgNet; // Wins first, then survivors
 
                     dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k);
-                    dataPoints.z.push(isMeta ? winRate : avgNet);
+                    dataPoints.z.push(avgNet);
 
                     if (combinedScore > best.score) {
-                        best = { form: [i, j, k], winRate, netSurvivors: avgNet, score: combinedScore };
+                        best = { form: [i,j,k], score: combinedScore, wins, net: avgNet };
                     }
                 }
             }
 
             renderTernary('ternary-plot', dataPoints, best, false);
             resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-            
-            if (isMeta) {
-                scoreArea.innerHTML = `Meta Winrate: <span class="text-emerald-400 font-bold">${best.winRate.toFixed(1)}%</span><br><span class="text-[9px] text-slate-500 uppercase font-bold">Avg Net: ${Math.round(best.netSurvivors).toLocaleString()}</span>`;
-            } else {
-                const prefix = best.netSurvivors >= 0 ? "Survivors" : "Enemy Survivors";
-                scoreArea.innerHTML = `${prefix}: <span class="text-blue-400 font-bold">${Math.abs(Math.round(best.netSurvivors)).toLocaleString()}</span>`;
-            }
+            scoreArea.innerHTML = `Winrate: ${(best.wins/opponents.length*100).toFixed(0)}% | Net: ${Math.round(best.net).toLocaleString()}`;
 
         } catch (err) {
             console.error(err);
-            resArea.innerText = "Sim Sweep Failed";
+            resArea.innerText = "Error";
         }
     }, 50);
 };
-
 // Helper to sum objects
 const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
