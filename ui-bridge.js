@@ -385,91 +385,136 @@ window.handleSimulation = async () => {
     document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
 };
 
-window.runOptimizer = (mode) => {
-    const isBear = mode === 'bear', setup = gatherSetup();
+function totalInstances(heroes, name) { return heroes.filter(h => h.name === name).length; }
+function isLead(heroes, name) { return heroes.slice(0,3).some(h => h.name === name); }
+
+function getBearSpecificVolume(heroes, formation, bearConfig) {
+    // bearConfig contains: { inf_base, cav_base, arc_base, inf_acc, cav_acc, arc_acc, weights }
+    
+    let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
+    let wAtk = 1.0, wLeth = 1.0;
+
+    const lineup = {}; 
+    heroes.forEach((h, idx) => { if(h.name !== "None") lineup[h.name] = (lineup[h.name] || 0) + 1; });
+    const leadNames = Object.keys(lineup);
+    
+    // Process All 7 Heroes (Leads All, Joiners S1)
+    // Note: Bear Tab uses currently selected ATK heroes
+    state.atk.heroes.forEach((h, idx) => {
+        if (h.name === "None") return;
+        const data = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
+        const isLead = idx < 3;
+
+        // Offense Widgets (Leads Only)
+        if (isLead && data.widget && data.widget.context === 'off') {
+            const val = WIDGET_GROWTH[r.widget] || 0;
+            if (data.widget.stat === "attack") wAtk += val;
+            if (data.widget.stat === "lethality") wLeth += val;
+        }
+
+        // Skills (Only 1XX)
+        data.skills.forEach((s, si) => {
+            if (!isLead && si > 0) return; // Joiners S1 only
+            
+            const x = s.values[(r[`s${si+1}`] || 5) - 1];
+            const p = s.getChance(x), mFull = s.getMagnitude(x);
+            // S3 permanent for Alcar, otherwise 1-wave uptime
+            const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : p; 
+
+            s.ids.forEach((id, idx) => {
+                if (id >= 200) return; // Immune to debuffs
+                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
+                ['inf', 'cav', 'arc'].forEach(u => {
+                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                    if (id === 101) m101[u] += val * uptime;
+                    if (id === 102) m102[u] += val * uptime;
+                });
+            });
+        });
+    });
+
+    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
+    let totalDmg = 0;
+
+    ['inf', 'cav', 'arc'].forEach(u => {
+        if (f[u] <= 0) return;
+        
+        // 1. Base Stats from bearConfig (UNITS table)
+        const base = bearConfig[`${u}_base`];
+        const acc = bearConfig[`${u}_acc`];
+        const w = bearConfig.weights[u];
+
+        // 2. Ability EV
+        let abil = 1.0;
+        if (u === 'arc') {
+            const effP = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
+            abil *= (1 + (effP * 0.5)); // Howling Wind
+            abil *= 1.1; // Ranged Strike (Always on vs Bear)
+        }
+        if (u === 'cav' && w.tg3 > 0) {
+            const effP = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
+            abil *= (1 + (effP * 1.0)); // Assault Lance
+        }
+
+        // 3. Final Multipliers
+        const totalAtk = base[0] * (1 + acc.att/100) * wAtk * m101[u];
+        const totalLeth = base[2] * (1 + acc.leth/100) * wLeth * m102[u];
+
+        // 4. Engine Formula
+        // sqrt(count) * 1000 * Atk * Leth * RPS(1.0) * Abil / (10 * 83.3333 * 100)
+        const d = (Math.sqrt(f[u] * 10000) * 1000 * totalAtk * totalLeth * abil) / 83333.3;
+        totalDmg += d;
+    });
+
+    return totalDmg;
+}
+
+window.runOptimizer = async (mode) => {
+    const isBear = mode === 'bear';
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     
-    let dataPoints = { a:[], b:[], c:[], z:[] }, best = { form:[0,0,0], score:-Infinity, winRate: 0, net: 0 };
-    let opponents = [];
+    resArea.innerText = "Recalculating...";
 
-    const userSide = optRole === 'atk' ? setup.atk : setup.def;
-    const userTotal = userSide.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1;
-    const oppSide = optRole === 'atk' ? setup.def : setup.atk;
-    const oppTotal = oppSide.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1;
-
-    let bearStats = {}, bearTiers = {};
+    let bearConfig = { weights: {} };
     if (isBear) {
-        opponents.push({inf:1, cav:0, arc:0}); 
-        bearStats = { 
-            inf_att: parseFloat(document.getElementById('bear-inf-att').value), inf_leth: parseFloat(document.getElementById('bear-inf-leth').value), 
-            cav_att: parseFloat(document.getElementById('bear-cav-att').value), cav_leth: parseFloat(document.getElementById('bear-cav-leth').value), 
-            arc_att: parseFloat(document.getElementById('bear-arc-att').value), arc_leth: parseFloat(document.getElementById('bear-arc-leth').value) 
-        };
-        bearTiers = {
-            inf: parseInt(document.getElementById('bear-inf-tier').value), inf_tg: parseInt(document.getElementById('bear-inf-tg').value),
-            cav: parseInt(document.getElementById('bear-cav-tier').value), cav_tg: parseInt(document.getElementById('bear-cav-tg').value),
-            arc: parseInt(document.getElementById('bear-arc-tier').value), arc_tg: parseInt(document.getElementById('bear-arc-tg').value)
-        };
-    } else if (mode === 'current') {
-        const d = oppSide.batches.reduce((s,b) => ({inf:s.inf+b.inf, cav:s.cav+b.cav, arc:s.arc+b.arc}), {inf:0,cav:0,arc:0});
-        opponents.push({inf: d.inf/oppTotal, cav: d.cav/oppTotal, arc: d.arc/oppTotal});
-    } else if (mode === 'custom') {
-        const i = parseFloat(document.getElementById('custom-inf').value)||0, c = parseFloat(document.getElementById('custom-cav').value)||0, a = parseFloat(document.getElementById('custom-arc').value)||0;
-        const t = i+c+a || 1; opponents.push({inf:i/t, cav:c/t, arc:a/t});
-    } else {
-        // Meta Opponents: 10% steps (66 variants) to maintain performance while maximizing user precision
-        for(let i=0; i<=100; i+=10) for(let j=0; j<=100-i; j+=10) opponents.push({inf:i/100, cav:j/100, arc:(100-i-j)/100});
+        ['inf', 'cav', 'arc'].forEach(u => {
+            const t = document.getElementById(`bear-${u}-tier`).value;
+            const tg = document.getElementById(`bear-${u}-tg`).value;
+            const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
+            
+            bearConfig[`${u}_base`] = UNITS[longU][t][tg];
+            bearConfig[`${u}_acc`] = {
+                att: parseFloat(document.getElementById(`bear-${u}-att`).value) || 0,
+                leth: parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0
+            };
+            bearConfig.weights[u] = {
+                t7: t >= 7 ? 1 : 0,
+                tg3: tg >= 3 ? 1 : 0,
+                tg5: tg >= 5 ? 1 : 0
+            };
+        });
     }
 
-    // EXHAUSTIVE SEARCH: 1% steps = 5151 iterations
+    let best = { form: [0,0,0], score: -1 };
+    let dataPoints = { a:[], b:[], c:[], z:[] };
+
+    // 1% Search for Precision
     for (let i=0; i<=100; i++) {
         for (let j=0; j<=100-i; j++) {
-            let k=100-i-j, wins = 0, totalMargin = 0;
+            let k = 100-i-j;
+            const score = isBear ? getBearSpecificVolume(state.atk.heroes, [i, j, k], bearConfig) : 0;
             
-            opponents.forEach(opp => {
-                let s = JSON.parse(JSON.stringify(setup));
-                const varBatch = {
-                    inf_tier: isBear ? bearTiers.inf : userSide.batches[0].inf_tier, 
-                    inf_tg: isBear ? bearTiers.inf_tg : userSide.batches[0].inf_tg, 
-                    inf: (i/100) * userTotal,
-                    cav_tier: isBear ? bearTiers.cav : userSide.batches[0].cav_tier, 
-                    cav_tg: isBear ? bearTiers.cav_tg : userSide.batches[0].cav_tg, 
-                    cav: (j/100) * userTotal,
-                    arc_tier: isBear ? bearTiers.arc : userSide.batches[0].arc_tier, 
-                    arc_tg: isBear ? bearTiers.arc_tg : userSide.batches[0].arc_tg, 
-                    arc: (k/100) * userTotal
-                };
-
-                const fixBatch = {
-                    inf_tier: oppSide.batches[0].inf_tier, inf_tg: oppSide.batches[0].inf_tg, inf: opp.inf * oppTotal,
-                    cav_tier: oppSide.batches[0].cav_tier, cav_tg: oppSide.batches[0].cav_tg, cav: opp.cav * oppTotal,
-                    arc_tier: oppSide.batches[0].arc_tier, arc_tg: oppSide.batches[0].arc_tg, arc: opp.arc * oppTotal
-                };
-
-                if (optRole === 'atk') { 
-                    s.atk.batches = [varBatch]; s.def.batches = isBear ? s.def.batches : [fixBatch];
-                    if(isBear) s.atk.stats = bearStats;
-                } else { 
-                    s.def.batches = [varBatch]; s.atk.batches = [fixBatch];
-                }
-                
-                const r = runCombatSim(s, 'average', 'average', isBear ? 1 : 1000, isBear, true);
-                const val = isBear ? r.totalDmg : (optRole === 'atk' ? sumTroops(r.m_cur) - sumTroops(r.e_cur) : sumTroops(r.e_cur) - sumTroops(r.m_cur));
-                if (!isBear && val > 0) wins++; totalMargin += val;
-            });
-
-            const finalScore = isBear ? totalMargin : (wins * 1e20) + totalMargin;
-            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(isBear ? totalMargin : wins);
-            
-            if (finalScore > best.score) {
-                best = { score: finalScore, form: [i,j,k], winRate: (wins/opponents.length)*100, net: totalMargin/opponents.length };
+            if (score > best.score) {
+                best = { score, form: [i, j, k] };
             }
+            dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
         }
     }
+
     renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
     resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-    scoreArea.innerHTML = isBear ? `Full Range Precision Analysis Complete` : `Meta Coverage: ${best.winRate.toFixed(1)}% | Avg Margin: <span class="${best.net > 0 ? 'text-emerald-400' : 'text-red-400'} font-bold">${Math.round(best.net).toLocaleString()}</span>`;
+    scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
 };
 
 function renderTernary(id, data, best, isBear) {
