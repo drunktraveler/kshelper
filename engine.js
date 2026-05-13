@@ -21,8 +21,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    const getEffStr = (p) => `Inf ${(p.weights.inf.tg3 * 100).toFixed(0)}% | Cav ${(p.weights.cav.tg3 * 100).toFixed(0)}% | Arc ${(p.weights.arc.tg3 * 100).toFixed(0)}%`;
-
     let wave = 0, triggers = { atk: {}, def: {} };
     let activeBuffs = { atk: [], def: [] };
 
@@ -79,17 +77,16 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
 
         let pending = [];
-        const units = ['inf', 'cav', 'arc'];
-        const mf = units.find(u => m_cur[u] >= 1) || 'arc';
-        const ef = units.find(u => e_cur[u] >= 1) || 'arc';
+        const mf = (['inf', 'cav', 'arc'].find(u => m_cur[u] >= 1) || 'arc');
+        const ef = (['inf', 'cav', 'arc'].find(u => e_cur[u] >= 1) || 'arc');
 
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return;
-            const sP = (side==='atk'?atkP:defP), tP = (side==='atk'?defP:atkP);
-            const sC = (side==='atk'?m_cur:e_cur), tC = (side==='atk'?e_cur:m_cur);
-            const sS = setup[side], tS = setup[target], tf = (side==='atk'?ef:mf);
+            const sP = (side === 'atk' ? atkP : defP), tP = (side === 'atk' ? defP : atkP);
+            const sC = (side === 'atk' ? m_cur : e_cur), tC = (side === 'atk' ? e_cur : m_cur);
+            const sS = setup[side], tS = setup[target], tf = (side === 'atk' ? ef : mf);
 
-            units.forEach(u => {
+            ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] < 1) return;
 
                 const roll = (p, name) => {
@@ -100,27 +97,19 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
                 const calcKillsForTarget = (targetUnit) => {
                     let offMod = 1.0; let defMod = 1.0;
-
-                    // A. RPS & Passive Checks based on REAL targetUnit (Frontline or Bypass)
                     if (u === 'inf' && targetUnit === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
                     if (u === 'cav' && targetUnit === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
                     if (u === 'arc' && targetUnit === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
-
                     if (targetUnit === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
-                        defMod *= (1 / 1.1); // Bands of Steel
-                        triggers[target]["Bands of Steel"] = true;
+                        defMod *= (1 / 1.1); triggers[target]["Bands of Steel"] = true;
                     }
-
-                    // B. T7/TG Procs
                     if (u === 'arc' && sP.weights.arc.t7 > 0) offMod *= (1 + roll(0.1, "Volley") * sP.weights.arc.t7);
-                    
                     const w = sP.weights[u], tw = tP.weights[targetUnit];
                     if (u === 'arc' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * (0.5 * w.tg3));
                     if (u === 'cav' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * (1.0 * w.tg3));
                     if (targetUnit === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * (0.36 * tw.tg3)));
 
                     const finalKillMult = (waveMults[side].self[u] * offMod) / (waveMults[target].survival[targetUnit] * defMod);
-                    
                     const b = sP.avgBase[u], tb = tP.avgBase[targetUnit];
                     const atk = b.atk * (1 + sS.stats[u+'_att']/100);
                     const leth = b.leth * (1 + sS.stats[u+'_leth']/100);
@@ -129,17 +118,12 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return (Math.sqrt(sC[u]) * sq_min * atk * leth * finalKillMult) / (df * hp * 100);
                 };
 
-                // D. Ambusher (Bypass) Logic
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const isBypass = isStochastic ? (Math.random() < 0.2) : 0.2;
                     if (isBypass && isStochastic) triggers[side]["Ambusher"] = (triggers[side]["Ambusher"] || 0) + 1;
-                    
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        const bypassKills = calcKillsForTarget('arc');
-                        const frontlineKills = calcKillsForTarget(tf);
-                        
-                        pending.push({dict: tC, unit: 'arc', amt: bypassKills * (isStochastic ? 1 : 0.2)});
-                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: frontlineKills * 0.8});
+                        pending.push({dict: tC, unit: 'arc', amt: calcKillsForTarget('arc') * (isStochastic ? 1 : 0.2)});
+                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf) * 0.8});
                     } else {
                         pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf)});
                     }
@@ -162,7 +146,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         [...hData.passives, ...hData.actives].forEach(act => {
             const isP = act.p >= 1.0 || act.isAlcarS3;
             let val = isP ? (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}%` : `+${(act.m*100).toFixed(0)}%`) :
-                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `EV Applied`);
+                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${((Array.isArray(act.m)?act.m[0]:act.m) * (1-Math.pow(1-act.p, act.duration||1))*100).toFixed(1)}%`);
             list.push({ name: act.name, val, isPassive: isP });
         });
 
@@ -181,16 +165,16 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
 
         const passives = [];
-        // CHECK ARCHER LOG: Frontline or Bypass check
-        const hitArchers = (oppP.counts.arc > 0 && (mf === 'arc' || pData.weights.cav.t7 > 0));
         if (pData.counts.inf > 0 && oppP.counts.cav > 0) passives.push("Master Brawler (+10%)");
-        if (pData.counts.cav > 0 && hitArchers) passives.push("Charge (+10%)");
+        if (pData.counts.cav > 0 && (oppP.counts.arc > 0)) passives.push("Charge (+10%)");
         if (pData.counts.arc > 0 && oppP.counts.inf > 0) passives.push("Ranged Strike (+10%)");
         if (pData.counts.inf > 0 && oppP.counts.cav > 0 && pData.weights.inf.t7 > 0) passives.push("Bands of Steel (+10% Def)");
-        
         if (passives.length > 0) list.push({ name: "Troop Passives", val: passives.join(", "), isPassive: true });
 
-        return { skills: list, troopEff: getEffStr(pData) };
+        const iE = (pData.weights.inf.tg3 * 100).toFixed(0);
+        const cE = (pData.weights.cav.tg3 * 100).toFixed(0);
+        const aE = (pData.weights.arc.tg3 * 100).toFixed(0);
+        return { skills: list, troopEff: `Inf ${iE}% | Cav ${cE}% | Arc ${aE}%` };
     };
 
     return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk'), def_logs: finalizeLogs('def'), totalDmg: isBear ? (1000000 - e_cur.inf) : 0 };
