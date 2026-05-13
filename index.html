@@ -111,6 +111,35 @@
 
         <!-- Formation Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <!-- My Tech Mirror -->
+    <div class="bg-slate-950/40 p-4 rounded-2xl border border-slate-800">
+        <div class="flex justify-between items-center mb-3">
+            <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest">My Technology</span>
+            <span id="opt-my-label" class="text-[9px] font-bold text-slate-500">ATTACKER</span>
+        </div>
+        <div id="opt-my-heroes" class="flex gap-2 mb-4"></div>
+        <div class="grid grid-cols-3 gap-2">
+            <div><label class="text-[8px] text-slate-500 uppercase block ml-1">Atk %</label><input type="number" id="opt-my-atk" class="input-dark !py-1 text-[10px]" value="1000"></div>
+            <div><label class="text-[8px] text-slate-500 uppercase block ml-1">Leth %</label><input type="number" id="opt-my-leth" class="input-dark !py-1 text-[10px]" value="500"></div>
+            <div class="flex items-end"><select id="opt-my-tier" class="input-dark !py-1 text-[10px]"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select></div>
+        </div>
+    </div>
+
+    <!-- Opponent Tech Mirror -->
+    <div class="bg-slate-950/40 p-4 rounded-2xl border border-slate-800">
+        <div class="flex justify-between items-center mb-3">
+            <span class="text-[10px] font-black text-red-400 uppercase tracking-widest">Opponent Technology</span>
+            <span id="opt-opp-label" class="text-[9px] font-bold text-slate-500">DEFENDER</span>
+        </div>
+        <div id="opt-opp-heroes" class="flex gap-2 mb-4"></div>
+        <div class="grid grid-cols-3 gap-2">
+            <div><label class="text-[8px] text-slate-500 uppercase block ml-1">Atk %</label><input type="number" id="opt-opp-atk" class="input-dark !py-1 text-[10px]" value="1000"></div>
+            <div><label class="text-[8px] text-slate-500 uppercase block ml-1">Leth %</label><input type="number" id="opt-opp-leth" class="input-dark !py-1 text-[10px]" value="500"></div>
+            <div class="flex items-end"><select id="opt-opp-tier" class="input-dark !py-1 text-[10px]"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select></div>
+        </div>
+    </div>
+</div>
         <div class="glass-card p-8">
     <div class="flex justify-between items-center mb-6">
         <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
