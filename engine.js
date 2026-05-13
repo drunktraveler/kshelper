@@ -78,7 +78,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             });
         });
 
-        // 2. COMBAT RESOLUTION
         let pending = [];
         const units = ['inf', 'cav', 'arc'];
         const mf = units.find(u => m_cur[u] >= 1) || 'arc';
@@ -93,53 +92,59 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             units.forEach(u => {
                 if (sC[u] < 1) return;
 
-                let offMod = 1.0; let defMod = 1.0; 
                 const roll = (p, name) => {
                     const hit = isStochastic ? (Math.random() < p) : true;
                     if (hit && isStochastic) triggers[side][name] = (triggers[side][name] || 0) + 1;
                     return isStochastic ? (hit ? 1 : 0) : p;
                 };
 
-                // A. Basic RPS - Damage Multipliers
-                if (u === 'inf' && tf === 'cav') offMod *= 1.1; 
-                if (u === 'cav' && tf === 'arc') offMod *= 1.1;
-                if (u === 'arc' && tf === 'inf') offMod *= 1.1;
+                const calcKillsForTarget = (targetUnit) => {
+                    let offMod = 1.0; let defMod = 1.0;
 
-                // B. T7+ Abilities
-                if (tf === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) defMod *= (1 / (1 + (0.1 * tP.weights.inf.t7))); 
-                
-                let volleyMod = 1.0;
-                if (u === 'arc' && sP.weights.arc.t7 > 0) volleyMod = (1 + (roll(0.1, "Volley") * sP.weights.arc.t7));
+                    // A. RPS & Passive Checks based on REAL targetUnit (Frontline or Bypass)
+                    if (u === 'inf' && targetUnit === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
+                    if (u === 'cav' && targetUnit === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
+                    if (u === 'arc' && targetUnit === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
 
-                // C. TG3/TG5 Procs
-                const w = sP.weights[u], tw = tP.weights[tf];
-                if (u === 'arc' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * (0.5 * w.tg3));
-                if (u === 'cav' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * (1.0 * w.tg3));
-                if (tf === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * (0.36 * tw.tg3)));
+                    if (targetUnit === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
+                        defMod *= (1 / 1.1); // Bands of Steel
+                        triggers[target]["Bands of Steel"] = true;
+                    }
 
-                const finalKillMult = (waveMults[side].self[u] * offMod * volleyMod) / (waveMults[target].survival[tf] * defMod);
+                    // B. T7/TG Procs
+                    if (u === 'arc' && sP.weights.arc.t7 > 0) offMod *= (1 + roll(0.1, "Volley") * sP.weights.arc.t7);
+                    
+                    const w = sP.weights[u], tw = tP.weights[targetUnit];
+                    if (u === 'arc' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * (0.5 * w.tg3));
+                    if (u === 'cav' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * (1.0 * w.tg3));
+                    if (targetUnit === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * (0.36 * tw.tg3)));
 
-                const calcKills = (mult) => {
-                    const b = sP.avgBase[u], tb = tP.avgBase[tf];
+                    const finalKillMult = (waveMults[side].self[u] * offMod) / (waveMults[target].survival[targetUnit] * defMod);
+                    
+                    const b = sP.avgBase[u], tb = tP.avgBase[targetUnit];
                     const atk = b.atk * (1 + sS.stats[u+'_att']/100);
                     const leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                    const df = tb.def * (1 + tS.stats[tf+'_def']/100);
-                    const hp = tb.hp * (1 + tS.stats[tf+'_hp']/100);
-                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * mult) / (df * hp * 100);
+                    const df = tb.def * (1 + tS.stats[targetUnit+'_def']/100);
+                    const hp = tb.hp * (1 + tS.stats[targetUnit+'_hp']/100);
+                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * finalKillMult) / (df * hp * 100);
                 };
 
-                // D. Ambusher (Bypass)
+                // D. Ambusher (Bypass) Logic
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
-                    const isBypass = roll(0.2, "Ambusher");
-                    const kills = calcKills(finalKillMult);
+                    const isBypass = isStochastic ? (Math.random() < 0.2) : 0.2;
+                    if (isBypass && isStochastic) triggers[side]["Ambusher"] = (triggers[side]["Ambusher"] || 0) + 1;
+                    
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        pending.push({dict: tC, unit: 'arc', amt: kills * (isStochastic ? 1 : 0.2)});
-                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: kills * 0.8});
+                        const bypassKills = calcKillsForTarget('arc');
+                        const frontlineKills = calcKillsForTarget(tf);
+                        
+                        pending.push({dict: tC, unit: 'arc', amt: bypassKills * (isStochastic ? 1 : 0.2)});
+                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: frontlineKills * 0.8});
                     } else {
-                        pending.push({dict: tC, unit: tf, amt: kills});
+                        pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf)});
                     }
                 } else {
-                    pending.push({dict: tC, unit: tf, amt: calcKills(finalKillMult)});
+                    pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf)});
                 }
             });
         });
@@ -154,34 +159,32 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         const pData = (side === 'atk' ? atkP : defP);
         const oppP = (side === 'atk' ? defP : atkP);
 
-        // 1. Hero Logs
         [...hData.passives, ...hData.actives].forEach(act => {
             const isP = act.p >= 1.0 || act.isAlcarS3;
             let val = isP ? (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}%` : `+${(act.m*100).toFixed(0)}%`) :
-                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${((Array.isArray(act.m)?act.m[0]:act.m) * (1-Math.pow(1-act.p, act.duration||1))*100).toFixed(1)}%`);
+                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `EV Applied`);
             list.push({ name: act.name, val, isPassive: isP });
         });
 
-        // 2. Chance-Based Troop Abilities (Trigger Counts or EV)
-        const troopAbils = [
+        const chanceAbils = [
             { n: "Ambusher", w: pData.weights.cav.t7, p: 0.2, m: 1.0 },
             { n: "Volley", w: pData.weights.arc.t7, p: 0.1, m: 1.0 },
             { n: "Unyielding Shield", w: pData.weights.inf.tg3, p: (pData.weights.inf.tg5 > 0 ? 0.375 : 0.25), m: 0.36 },
             { n: "Assault Lance", w: pData.weights.cav.tg3, p: (pData.weights.cav.tg5 > 0 ? 0.15 : 0.1), m: 1.0 },
             { n: "Howling Wind", w: pData.weights.arc.tg3, p: (pData.weights.arc.tg5 > 0 ? 0.3 : 0.2), m: 0.5 }
         ];
-
-        troopAbils.forEach(a => {
+        chanceAbils.forEach(a => {
             if (a.w > 0) {
                 const label = isStochastic ? `Triggers: ${triggers[side][a.n] || 0}` : `Eff: +${(a.p * a.m * a.w * 100).toFixed(1)}%`;
                 list.push({ name: a.n, val: label, isPassive: false });
             }
         });
 
-        // 3. Consolidated Always-Active Passives (RPS + T7 Bands)
         const passives = [];
+        // CHECK ARCHER LOG: Frontline or Bypass check
+        const hitArchers = (oppP.counts.arc > 0 && (mf === 'arc' || pData.weights.cav.t7 > 0));
         if (pData.counts.inf > 0 && oppP.counts.cav > 0) passives.push("Master Brawler (+10%)");
-        if (pData.counts.cav > 0 && oppP.counts.arc > 0) passives.push("Charge (+10%)");
+        if (pData.counts.cav > 0 && hitArchers) passives.push("Charge (+10%)");
         if (pData.counts.arc > 0 && oppP.counts.inf > 0) passives.push("Ranged Strike (+10%)");
         if (pData.counts.inf > 0 && oppP.counts.cav > 0 && pData.weights.inf.t7 > 0) passives.push("Bands of Steel (+10% Def)");
         
