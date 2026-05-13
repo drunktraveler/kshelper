@@ -105,29 +105,28 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return isStochastic ? (hit ? 1 : 0) : p;
                 };
 
-                // A. Basic RPS (Master Brawler, Charge, Ranged Strike)
+                // A. Basic RPS (Always Unlocked)
                 if (u === 'inf' && tf === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
                 if (u === 'cav' && tf === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
                 if (u === 'arc' && tf === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
 
                 // B. T7+ Abilities
-                // Bands of Steel: 10% Defense bonus against Cavalry
+                // Bands of Steel: Scaled Magnitude
                 if (tf === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
                     defMod *= (1 / (1 + (0.1 * tP.weights.inf.t7))); 
                     triggers[target]["Bands of Steel"] = true;
                 }
                 
-                // Volley: 10% chance to attack twice (Magnitude scaled by T7 weight)
+                // Volley: Scaled Magnitude
                 let volleyMod = 1.0;
                 if (u === 'arc' && sP.weights.arc.t7 > 0) {
                     volleyMod = (1 + (roll(0.1, "Volley (x2 Dmg)") * sP.weights.arc.t7));
                 }
 
-                // C. TG3/TG5 Procs - Scale Magnitude, keep Probability at Max Tier
+                // C. TG3/TG5 Procs: Magnitude scaled by Weight, Probability is Max Present
                 const w = sP.weights[u], tw = tP.weights[tf];
                 
                 if (u === 'arc' && w.tg3 > 0) {
-                    // Probability is the higher of TG3/TG5; effect is the weighted average
                     const maxP = w.tg5 > 0 ? 0.3 : 0.2;
                     offMod *= (1 + roll(maxP, "Howling Wind (+50%)") * (0.5 * w.tg3));
                 }
@@ -151,16 +150,17 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     return (Math.sqrt(sC[u]) * sq_min * atk * leth * mult) / (df * hp * 100);
                 };
 
-                // D. Ambusher (Cavalry Bypass) - Magnitude scaled by T7 weight
+                // D. Ambusher (Cavalry Bypass): Proportional Damage Shifting
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const isBypass = roll(0.2, "Ambusher (Bypass)");
                     const kills = calcKills(finalKillMult);
-                    const effWeight = sP.weights.cav.t7;
+                    const t7Weight = sP.weights.cav.t7;
                     
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        // Only the T7 portion bypasses
-                        pending.push({dict: tC, unit: 'arc', amt: kills * (isStochastic ? effWeight : 0.2 * effWeight)});
-                        pending.push({dict: tC, unit: tf, amt: kills * (isStochastic ? (1 - effWeight) : (1 - 0.2 * effWeight))});
+                        // If triggered, only the T7+ portion of the army damage shifts to backline
+                        const bypassAmt = kills * (isStochastic ? t7Weight : 0.2 * t7Weight);
+                        pending.push({dict: tC, unit: 'arc', amt: bypassAmt});
+                        pending.push({dict: tC, unit: tf, amt: kills - bypassAmt});
                     } else {
                         pending.push({dict: tC, unit: tf, amt: kills});
                     }
@@ -189,7 +189,8 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             if (triggers[side][name]) list.push({ name, val: isStochastic ? `Triggers: ${triggers[side][name]}` : "Scaled Magnitude", isPassive: false });
         });
 
-        ["Master Brawler", "Charge", "Ranged Strike", "Bands of Steel"].forEach(name => {
+        const passiveAbilities = ["Master Brawler", "Charge", "Ranged Strike", "Bands of Steel"];
+        passiveAbilities.forEach(name => {
             if (triggers[side][name]) list.push({ name, val: "Active", isPassive: true });
         });
 
