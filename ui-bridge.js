@@ -477,138 +477,103 @@ window.runOptimizer = async (mode) => {
     
     resArea.innerText = "Analyzing...";
 
-    // setTimeout prevents UI freeze
-    setTimeout(() => {
+    setTimeout(async () => {
         try {
-            let bearConfig = { weights: {} };
-            ['inf', 'cav', 'arc'].forEach(u => {
-                const t = document.getElementById(`bear-${u}-tier`).value;
-                const tg = document.getElementById(`bear-${u}-tg`).value;
-                const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
-                
-                // Pulling from UNITS table
-                bearConfig[`${u}_base`] = UNITS[longU][t][tg];
-                bearConfig[`${u}_acc`] = {
-                    att: parseFloat(document.getElementById(`bear-${u}-att`).value) || 0,
-                    leth: parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0
-                };
-                bearConfig.weights[u] = {
-                    tg3: tg >= 3 ? 1 : 0,
-                    tg5: tg >= 5 ? 1 : 0
-                };
-            });
-
-            // --- 1. PRE-CALCULATE UNIT POTENTIALS ---
-            let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
-            let wAtk = 1.0, wLeth = 1.0;
-
-            state.atk.heroes.forEach((h, idx) => {
-                if (h.name === "None") return;
-                const data = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
-                const isLead = idx < 3;
-
-                if (isLead && data.widget && data.widget.context === 'off') {
-                    const val = WIDGET_GROWTH[r.widget] || 0;
-                    if (data.widget.stat === "attack") wAtk += val;
-                    if (data.widget.stat === "lethality") wLeth += val;
-                }
-
-                data.skills.forEach((s, si) => {
-                    if (!isLead && si > 0) return; 
-                    const x = s.values[(r[`s${si+1}`] || 5) - 1];
-                    const p = s.getChance(x), mFull = s.getMagnitude(x);
-                    const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : p; 
-
-                    s.ids.forEach((id, idx) => {
-                        if (id >= 200) return; // Bear is immune to debuffs
-                        const m = Array.isArray(mFull) ? mFull[idx] : mFull;
-                        ['inf', 'cav', 'arc'].forEach(u => {
-                            let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
-                            if (id === 101) m101[u] += val * uptime;
-                            if (id === 102) m102[u] += val * uptime;
-                        });
-                    });
-                });
-            });
-
-            const potentials = {};
-            ['inf', 'cav', 'arc'].forEach(u => {
-                const base = bearConfig[`${u}_base`];
-                const acc = bearConfig[`${u}_acc`];
-                const w = bearConfig.weights[u];
-
-                let abil = 1.0;
-                if (u === 'arc') {
-                    const effP = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
-                    abil *= (1 + (effP * 0.5)); // Howling Wind
-                    abil *= 1.1; // Ranged Strike (Fixed RPS vs Inf Bear)
-                }
-                if (u === 'cav' && w.tg3 > 0) {
-                    const effP = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
-                    abil *= (1 + (effP * 1.0)); // Assault Lance
-                }
-
-                const totalAtk = base[0] * (1 + acc.att/100) * wAtk * m101[u];
-                const totalLeth = base[2] * (1 + acc.leth/100) * wLeth * m102[u];
-                // Math based on engine.js denominator: 10 Def * 8.33 HP * 1000
-                potentials[u] = (1000 * totalAtk * totalLeth * abil) / 8333.33; 
-            });
-
-            // --- 2. OPTIMIZATION LOOP ---
-            let best = { form: [0,0,0], score: -1 };
             let dataPoints = { a:[], b:[], c:[], z:[] };
+            let best = { form: [0,0,0], score: -Infinity };
 
-            for (let i = 0; i <= 100; i++) {
-                for (let j = 0; j <= 100 - i; j++) {
-                    let k = 100 - i - j;
-                    const score = (Math.sqrt(i * 10000) * potentials.inf) +
-                                  (Math.sqrt(j * 10000) * potentials.cav) +
-                                  (Math.sqrt(k * 10000) * potentials.arc);
-                    
-                    if (score > best.score) {
-                        best = { score, form: [i, j, k] };
+            if (isBear) {
+                // --- 1. BEAR TRAP OPTIMIZATION (Damage Focus) ---
+                let bearConfig = { weights: {} };
+                ['inf', 'cav', 'arc'].forEach(u => {
+                    const t = document.getElementById(`bear-${u}-tier`).value;
+                    const tg = document.getElementById(`bear-${u}-tg`).value;
+                    bearConfig[`${u}_base`] = UNITS[u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry')][t][tg];
+                    bearConfig[`${u}_acc`] = {
+                        att: parseFloat(document.getElementById(`bear-${u}-att`).value) || 0,
+                        leth: parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0
+                    };
+                    bearConfig.weights[u] = { tg3: tg >= 3 ? 1 : 0, tg5: tg >= 5 ? 1 : 0 };
+                });
+
+                const potentials = calculateBearPotentials(bearConfig);
+
+                for (let i = 0; i <= 100; i++) {
+                    for (let j = 0; j <= 100 - i; j++) {
+                        let k = 100 - i - j;
+                        const score = (Math.sqrt(i * 10000) * potentials.inf) +
+                                      (Math.sqrt(j * 10000) * potentials.cav) +
+                                      (Math.sqrt(k * 10000) * potentials.arc);
+                        if (score > best.score) best = { score, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
                     }
-                    dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
                 }
+                scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+
+            } else {
+                // --- 2. FORMATION OPTIMIZATION (PVP / Survival Focus) ---
+                // Identify who "I" am and who the "Target" is from the Sim Tab
+                const mySide = optRole; // 'atk' or 'def'
+                const oppSide = optRole === 'atk' ? 'def' : 'atk';
+                
+                // Get my leads and joiners from the Sim state
+                const myLeads = state[mySide].heroes.slice(0,3).map(h => h.name);
+                const myJoiners = state[mySide].heroes.slice(3).map(h => h.name);
+                const ctx = mySide === 'atk' ? 'off' : 'def';
+
+                // Establish Baseline Ceiling (Best I can do with no heroes)
+                let baseCeiling = -1;
+                for (let i=0; i<=100; i+=10) {
+                    const v = getSystemVolume(["None","None","None"], [], [i, 20, 80-i<0?0:80-i], ctx, false, "Solo Attack");
+                    if (v > baseCeiling) baseCeiling = v;
+                }
+
+                // Search all 5151 formations (2% steps for UI performance)
+                for (let i = 0; i <= 100; i += 2) {
+                    for (let j = 0; j <= 100 - i; j += 2) {
+                        let k = 100 - i - j;
+                        const score = getSystemVolume(myLeads, myJoiners, [i, j, k], ctx, false, "Rally");
+                        
+                        if (score > best.score) best = { score, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                    }
+                }
+                const gain = best.score / baseCeiling;
+                scoreArea.innerHTML = `Ceiling Gain: <span class="text-blue-400 font-bold">${gain.toFixed(3)}x</span>`;
             }
 
             renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
             resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-            scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
 
         } catch (err) {
             console.error(err);
-            resArea.innerText = "Error in Calculation";
+            resArea.innerText = "Optimization Failed";
         }
-    }, 50); 
+    }, 50);
 };
 
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let wAtk = 1.0, wLeth = 1.0;
 
-    // Process currently selected ATK heroes
     state.atk.heroes.forEach((h, idx) => {
         if (h.name === "None") return;
-        const data = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
+        const d = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
         const isLead = idx < 3;
 
-        if (isLead && data.widget && data.widget.context === 'off') {
+        if (isLead && d.widget && d.widget.context === 'off') {
             const val = WIDGET_GROWTH[r.widget] || 0;
-            if (data.widget.stat === "attack") wAtk += val;
-            if (data.widget.stat === "lethality") wLeth += val;
+            if (d.widget.stat === "attack") wAtk += val;
+            if (d.widget.stat === "lethality") wLeth += val;
         }
 
-        data.skills.forEach((s, si) => {
-            if (!isLead && si > 0) return; // Joiners S1 only
+        d.skills.forEach((s, si) => {
+            if (!isLead && si > 0) return;
             const x = s.values[(r[`s${si+1}`] || 5) - 1];
-            const p = s.getChance(x), mFull = s.getMagnitude(x);
-            // S3 permanent for Alcar, otherwise 1-wave uptime (p)
-            const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : p; 
-
+            const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : s.getChance(x);
             s.ids.forEach((id, idx) => {
                 if (id >= 200) return;
-                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
+                const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idx] : s.getMagnitude(x);
                 ['inf', 'cav', 'arc'].forEach(u => {
                     let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
                     if (id === 101) m101[u] += val * uptime;
@@ -618,31 +583,17 @@ function calculateBearPotentials(config) {
         });
     });
 
-    const potentials = {};
+    const out = {};
     ['inf', 'cav', 'arc'].forEach(u => {
-        const base = config[`${u}_base`];
-        const acc = config[`${u}_acc`];
-        const w = config.weights[u];
-
         let abil = 1.0;
-        if (u === 'arc') {
-            const effP = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
-            abil *= (1 + (effP * 0.5)); // Howling Wind
-            abil *= 1.1; // Ranged Strike (Always active vs Bear)
-        }
-        if (u === 'cav' && w.tg3 > 0) {
-            const effP = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
-            abil *= (1 + (effP * 1.0)); // Assault Lance
-        }
-
-        const totalAtk = base[0] * (1 + acc.att/100) * wAtk * m101[u];
-        const totalLeth = base[2] * (1 + acc.leth/100) * wLeth * m102[u];
-
-        // Resulting damage factor per square-root troop
-        potentials[u] = (1000 * totalAtk * totalLeth * abil) / 83333.3;
+        if (u === 'arc') abil *= (1 + ((config.weights.arc.tg5 ? 0.3 : (config.weights.arc.tg3 ? 0.2 : 0)) * 0.5)) * 1.1;
+        if (u === 'cav') abil *= (1 + ((config.weights.cav.tg5 ? 0.15 : (config.weights.cav.tg3 ? 0.1 : 0)) * 1.0));
+        
+        const tA = config[`${u}_base`][0] * (1 + config[`${u}_acc`].att/100) * wAtk * m101[u];
+        const tL = config[`${u}_base`][2] * (1 + config[`${u}_acc`].leth/100) * wLeth * m102[u];
+        out[u] = (1000 * tA * tL * abil) / 8333.33;
     });
-
-    return potentials;
+    return out;
 }
 
 function renderTernary(id, data, best, isBear) {
