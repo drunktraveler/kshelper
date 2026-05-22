@@ -588,102 +588,131 @@ window.runOptimizer = async (mode) => {
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     
-    resArea.innerText = "Simulating...";
+    if (!resArea) return;
+    resArea.innerText = "Analyzing...";
 
+    // Give UI thread air to render "Analyzing..."
     setTimeout(async () => {
         try {
-            if (isBear) return runBearOptimization(resArea, scoreArea);
+            let dataPoints = { a: [], b: [], c: [], z: [] };
+            let best = { form: [0, 0, 0], score: -Infinity };
 
-            const setup = gatherSetup(); // Correctly pulls the synced stats/heroes/tiers
-            const mySide = optRole; 
-            const oppSide = optRole === 'atk' ? 'def' : 'atk';
+            if (isBear) {
+                // --- 1. BEAR TRAP SCIENTIFIC LOGIC ---
+                let potentials = { inf: 0, cav: 0, arc: 0 };
+                let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
+                let wAtk = 1.0, wLeth = 1.0;
 
-            let opponents = [];
-            if (mode === 'current') {
-                opponents.push(setup[oppSide]);
-            } else if (mode === 'custom' || mode === 'meta') {
-                const i = parseFloat(document.getElementById('custom-inf').value) || 33;
-                const c = parseFloat(document.getElementById('custom-cav').value) || 33;
-                const a = parseFloat(document.getElementById('custom-arc').value) || 34;
-                
-                // For meta/custom, we use the OPPONENT's heroes/stats currently in the sim
-                const baseOpp = JSON.parse(JSON.stringify(setup[oppSide]));
-                
-                if (mode === 'custom') {
-                    const total = i+c+a || 1;
-                    baseOpp.batches = [{
-                        inf: (i/total)*1000000, cav: (c/total)*1000000, arc: (a/total)*1000000,
-                        inf_tier: baseOpp.batches[0].inf_tier, cav_tier: baseOpp.batches[0].cav_tier, arc_tier: baseOpp.batches[0].arc_tier,
-                        inf_tg: baseOpp.batches[0].inf_tg, cav_tg: baseOpp.batches[0].cav_tg, arc_tg: baseOpp.batches[0].arc_tg
-                    }];
-                    opponents.push(baseOpp);
-                } else {
-                    // Meta: 66 variations of the opponent's current tech
-                    for(let mi=0; mi<=100; mi+=10) {
-                        for(let mj=0; mj<=100-mi; mj+=10) {
-                            const opp = JSON.parse(JSON.stringify(baseOpp));
-                            opp.batches = [{ 
-                                inf: mi*10000, cav: mj*10000, arc: (100-mi-mj)*10000,
-                                inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 
-                            }];
-                            opponents.push(opp);
-                        }
+                // A. Process Current Attacker Heroes (State from Sim Tab)
+                state.atk.heroes.forEach((h, idx) => {
+                    if (h.name === "None" || !HEROES[h.name]) return;
+                    const d = HEROES[h.name], r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
+                    const isLead = idx < 3;
+
+                    if (isLead && d.widget && d.widget.context === 'off') {
+                        const val = WIDGET_GROWTH[r.widget] || 0;
+                        if (d.widget.stat === "attack") wAtk += val;
+                        if (d.widget.stat === "lethality") wLeth += val;
+                    }
+
+                    d.skills.forEach((s, si) => {
+                        if (!isLead && si > 0) return; // Joiners S1 only
+                        const x = s.values[(r[`s${si + 1}`] || 5) - 1];
+                        const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : s.getChance(x);
+                        
+                        s.ids.forEach((id, idxM) => {
+                            if (id >= 200) return; // Debuffs ignored
+                            const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idxM] : s.getMagnitude(x);
+                            ['inf', 'cav', 'arc'].forEach(u => {
+                                let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                                if (id === 101) m101[u] += val * uptime;
+                                if (id === 102) m102[u] += val * uptime;
+                            });
+                        });
+                    });
+                });
+
+                // B. Calculate Base Unit Potentials
+                ['inf', 'cav', 'arc'].forEach(u => {
+                    const t = parseInt(document.getElementById(`bear-${u}-tier`).value);
+                    const tg = parseInt(document.getElementById(`bear-${u}-tg`).value);
+                    const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
+                    
+                    const base = UNITS[longU][t][tg];
+                    const accAtt = parseFloat(document.getElementById(`bear-${u}-att`).value) || 0;
+                    const accLeth = parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0;
+                    
+                    let abil = 1.0;
+                    if (u === 'arc') {
+                        const effP = (tg >= 5 ? 0.3 : (tg >= 3 ? 0.2 : 0));
+                        abil *= (1 + (effP * 0.5)) * 1.1; // Incl. Ranged Strike
+                    }
+                    if (u === 'cav' && tg >= 3) {
+                        const effP = (tg >= 5 ? 0.15 : 0.1);
+                        abil *= (1 + (effP * 1.0));
+                    }
+
+                    const tA = base[0] * (1 + accAtt / 100) * wAtk * m101[u];
+                    const tL = base[2] * (1 + accLeth / 100) * wLeth * m102[u];
+                    potentials[u] = (1000 * tA * tL * abil) / 8333.33;
+                });
+
+                // C. Formation Search
+                for (let i = 0; i <= 100; i++) {
+                    for (let j = 0; j <= 100 - i; j++) {
+                        let k = 100 - i - j;
+                        const score = (Math.sqrt(i * 10000) * potentials.inf) +
+                                      (Math.sqrt(j * 10000) * potentials.cav) +
+                                      (Math.sqrt(k * 10000) * potentials.arc);
+                        if (score > best.score) best = { score, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
                     }
                 }
-            }
+                scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
 
-            let best = { form: [0,0,0], score: -Infinity, wins: 0, net: 0 };
-            let dataPoints = { a:[], b:[], c:[], z:[] };
+            } else {
+                // --- 2. PVP FORMATION LOGIC (Simulation Sweep) ---
+                const mySide = optRole;
+                const oppSide = mySide === 'atk' ? 'def' : 'atk';
+                const setup = gatherSetup();
 
-            // Start 5151 Sweep (Deterministic for stability)
-            for (let i = 0; i <= 100; i += 2) {
-                for (let j = 0; j <= 100 - i; j += 2) {
-                    let k = 100 - i - j;
-                    let wins = 0, totalNet = 0;
+                // Simple representative opponent (Standard Meta)
+                const opp = JSON.parse(JSON.stringify(setup[oppSide]));
+                if (mode === 'custom') {
+                    const i = parseFloat(document.getElementById('custom-inf').value) || 33;
+                    const c = parseFloat(document.getElementById('custom-cav').value) || 33;
+                    const a = parseFloat(document.getElementById('custom-arc').value) || 34;
+                    const tot = i + c + a || 1;
+                    opp.batches = [{ inf: (i/tot)*1000000, cav: (c/tot)*1000000, arc: (a/tot)*1000000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                }
 
-                    for (const opp of opponents) {
+                for (let i = 0; i <= 100; i += 2) {
+                    for (let j = 0; j <= 100 - i; j += 2) {
+                        let k = 100 - i - j;
                         const testSetup = { atk: {}, def: {} };
-                        const myTestConfig = JSON.parse(JSON.stringify(setup[mySide]));
-                        const myTotal = myTestConfig.batches.reduce((s, b) => s + (b.inf + b.cav + b.arc), 0) || 1000000;
+                        const myConfig = JSON.parse(JSON.stringify(setup[mySide]));
+                        myConfig.batches = [{ inf: i*10000, cav: j*10000, arc: k*10000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
                         
-                        myTestConfig.batches = [{
-                            inf: (i/100)*myTotal, cav: (j/100)*myTotal, arc: (k/100)*myTotal,
-                            inf_tier: myTestConfig.batches[0].inf_tier,
-                            cav_tier: myTestConfig.batches[0].cav_tier,
-                            arc_tier: myTestConfig.batches[0].arc_tier,
-                            inf_tg: myTestConfig.batches[0].inf_tg,
-                            cav_tg: myTestConfig.batches[0].cav_tg,
-                            arc_tg: myTestConfig.batches[0].arc_tg
-                        }];
-
-                        testSetup[mySide] = myTestConfig;
+                        testSetup[mySide] = myConfig;
                         testSetup[oppSide] = opp;
 
                         const r = runCombatSim(testSetup, 'average', 'average', 1000, false, true);
-                        const mS = sumTroops(mySide === 'atk' ? r.m_cur : r.e_cur);
-                        const oS = sumTroops(mySide === 'atk' ? r.e_cur : r.m_cur);
-                        if (mS > oS) wins++;
-                        totalNet += (mS - oS);
-                    }
+                        const mS = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc);
+                        const oS = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc);
+                        const res = mS - oS;
 
-                    const avgNet = totalNet / opponents.length;
-                    const combinedScore = (wins * 1e20) + avgNet;
-
-                    dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k);
-                    dataPoints.z.push(avgNet);
-
-                    if (combinedScore > best.score) {
-                        best = { form: [i, j, k], score: combinedScore, wins, net: avgNet };
+                        if (res > best.score) best = { score: res, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(res);
                     }
                 }
+                scoreArea.innerHTML = `Survival Margin: <span class="text-blue-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
             }
 
-            renderTernary('ternary-plot', dataPoints, best, false);
+            renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
             resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-            scoreArea.innerHTML = `Winrate: ${(best.wins/opponents.length*100).toFixed(0)}% | Net: ${Math.round(best.net).toLocaleString()}`;
 
         } catch (err) {
-            console.error(err);
+            console.error("Optimizer Crash:", err);
             resArea.innerText = "Error";
         }
     }, 50);
