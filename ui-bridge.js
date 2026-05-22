@@ -822,10 +822,8 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    let b = { 
-        101:{i:0,c:0,a:0}, 102:{i:0,c:0,a:0}, 201:{i:0,c:0,a:0}, 202:{i:0,c:0,a:0}, 
-        203:{i:0,c:0,a:0}, 204:{i:0,c:0,a:0}, 205:{i:0,c:0,a:0}, 206:0 
-    };
+    let b = { 101:{i:0,c:0,a:0}, 102:{i:0,c:0,a:0}, 201:{i:0,c:0,a:0}, 202:{i:0,c:0,a:0}, 
+              203:{i:0,c:0,a:0}, 204:{i:0,c:0,a:0}, 205:{i:0,c:0,a:0}, 206:0 };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
     const lineup = {}; 
@@ -833,9 +831,11 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     const totalLineup = {...lineup};
     joiners.forEach(n => { if(n!=="None") totalLineup[n] = (totalLineup[n]||0) + 1; });
 
-    // 1. STATS & WIDGETS (Leaders Only)
+    // 1. LEADERS: Stats + Widgets + Global Mults
     Object.keys(lineup).forEach(name => {
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
+        const h = HEROES[name];
+        // Leaders must have roster data to provide star/widget stats
+        const r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
         if (isCalibrated) {
             const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
@@ -851,26 +851,31 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         }
     });
 
-    // 2. SKILL PROCESSING
+    // 2. SKILL PROCESSING: Independent Multipliers
     Object.keys(totalLineup).forEach(name => {
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
-        const leadCount = lineup[name] || 0;
-        const joinCount = totalLineup[name] - leadCount;
+        const h = HEROES[name];
+        // FALLBACK: If joiner is not unlocked, assume Skill Level 5
+        const r = roster[name] || { s1:5, s2:5, s3:5 };
+        const lCount = lineup[name] || 0;
+        const jCount = totalLineup[name] - lCount;
 
         h.skills.forEach((skill, si) => {
-            const instances = leadCount + (si === 0 ? joinCount : 0);
+            const instances = lCount + (si === 0 ? jCount : 0);
             if (instances <= 0) return;
             const x = skill.values[(r[`s${si+1}`] || 5) - 1];
+            if (x === undefined) return;
+
             const p = skill.getChance(x), mFull = skill.getMagnitude(x);
             const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
             
             skill.ids.forEach((id, idx) => {
                 if (isBear && id >= 200) return;
-                const mPart = Array.isArray(mFull) ? mFull[idx] : mFull;
+                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
                 ['inf', 'cav', 'arc'].forEach(u => {
-                    let val = (typeof mPart === 'object' && mPart !== null) ? (mPart[u] || 0) : mPart;
-                    if (id === 206) b[206] += val * instances * uptime;
-                    else if (b[id]) b[id][u[0]] += val * instances * uptime;
+                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                    const final = val * instances * uptime;
+                    if (id === 206) b[206] += final;
+                    else if (b[id]) b[id][u[0]] += final;
                 });
             });
         });
@@ -903,14 +908,21 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock 3+ heroes.");
+    if (unlocked.length < 3) return alert("Unlock 3+ heroes in Roster.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
     resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
 
-    const jList = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
-    const jPool = unlocked.filter(n => jList.includes(n));
+    // JOINER POOL: decouples from the 'unlocked' filter as per your request
+    const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
+
+    const byT = { 
+        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
+        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
+        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
+    };
+    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
@@ -953,6 +965,7 @@ window.calculateOptimalLineups = async () => {
                         if (s.rally || s.bear) {
                             for (let slot=0; slot<4; slot++) {
                                 let bj = "None", mv = -1;
+                                // jPool is now the full static list
                                 jPool.forEach(cand => {
                                     const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
                                     if (v > mv) { mv = v; bj = cand; }
