@@ -822,20 +822,23 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    let b = { 101:{i:0,c:0,a:0}, 102:{i:0,c:0,a:0}, 201:{i:0,c:0,a:0}, 202:{i:0,c:0,a:0}, 
-              203:{i:0,c:0,a:0}, 204:{i:0,c:0,a:0}, 205:{i:0,c:0,a:0}, 206:0 };
+    // Multiplicative ID Buckets: 1XX = Buffs, 2XX = Survival Debuffs
+    let b = { 
+        101: {i:0,c:0,a:0}, 102: {i:0,c:0,a:0}, 
+        201: {i:0,c:0,a:0}, 202: {i:0,c:0,a:0}, 203: {i:0,c:0,a:0}, 
+        204: {i:0,c:0,a:0}, 205: {i:0,c:0,a:0}, 206: 0 
+    };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const lineup = {}; 
-    leads.forEach(n => { if(n!=="None") lineup[n] = (lineup[n]||0) + 1; });
-    const totalLineup = {...lineup};
-    joiners.forEach(n => { if(n!=="None") totalLineup[n] = (totalLineup[n]||0) + 1; });
+    // Grouping for the 5-Instance Rule
+    const leadsInLineup = {}; 
+    leads.forEach(n => { if(n !== "None") leadsInLineup[n] = (leadsInLineup[n] || 0) + 1; });
+    const totalLineup = { ...leadsInLineup };
+    joiners.forEach(n => { if(n !== "None") totalLineup[n] = (totalLineup[n] || 0) + 1; });
 
-    // 1. LEADERS: Stats + Widgets + Global Mults
-    Object.keys(lineup).forEach(name => {
-        const h = HEROES[name];
-        // Leaders must have roster data to provide star/widget stats
-        const r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
+    // 1. LEADERS: Apply Star Stats, Widget Flats, and Global Multipliers
+    Object.keys(leadsInLineup).forEach(name => {
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
         if (isCalibrated) {
             const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
@@ -853,23 +856,27 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
     // 2. SKILL PROCESSING: Independent Multipliers
     Object.keys(totalLineup).forEach(name => {
-        const h = HEROES[name];
-        // FALLBACK: If joiner is not unlocked, assume Skill Level 5
-        const r = roster[name] || { s1:5, s2:5, s3:5 };
-        const lCount = lineup[name] || 0;
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
+        const lCount = leadsInLineup[name] || 0;
         const jCount = totalLineup[name] - lCount;
 
         h.skills.forEach((skill, si) => {
-            const instances = lCount + (si === 0 ? jCount : 0);
-            if (instances <= 0) return;
-            const x = skill.values[(r[`s${si+1}`] || 5) - 1];
+            const isLeadSlot = lCount > 0;
+            const isJoinerSlot = si === 0 && jCount > 0;
+            if (!isLeadSlot && !isJoinerSlot) return;
+
+            // Leaders use Roster levels; Joiners always use Forced Level 5
+            const lvl = isLeadSlot ? (r[`s${si+1}`] || 5) : 5;
+            const x = skill.values[lvl - 1];
             if (x === undefined) return;
 
             const p = skill.getChance(x), mFull = skill.getMagnitude(x);
+            // S3 permanent for Alcar, otherwise standard EV
             const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
-            
+            const instances = lCount + (si === 0 ? jCount : 0);
+
             skill.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return;
+                if (isBear && id >= 200) return; // Bear is immune to all 2XX
                 const m = Array.isArray(mFull) ? mFull[idx] : mFull;
                 ['inf', 'cav', 'arc'].forEach(u => {
                     let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
@@ -882,22 +889,23 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     });
 
     const f = { i: formation[0], c: formation[1], a: formation[2] };
-    const getM = (id, uChar) => 1 + b[id][uChar];
+    const getM = (id, char) => 1 + b[id][char];
 
     // Offense (D): (Stats * Ally Buffs)
     const dmg = (u, baseAtk) => {
         const c = u[0];
-        return Math.sqrt(f[c]) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, c) * 
+        return Math.sqrt(f[c] * 10000) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, c) * 
                (1 + curS[u].leth/100) * wM.lethality * getM(102, c);
     };
-    const totalD = dmg('inf', 597) + (dmg('cav', 1790) * 1.6) + dmg('arc', 2387);
+    // 1.6x Quality Factor for Cavalry Bypass in PVP Volume
+    const totalD = dmg('inf', 597) + (dmg('cav', 1790) * (isBear ? 1.0 : 1.6)) + dmg('arc', 2387);
 
     if (isBear) return totalD;
 
-    // Tanking (T): (Your Stats) * (ALL 2XX Multipliers)
+    // Tanking (T): (Stats) * (ALL 2XX Multipliers)
     const tank = (u, baseHP) => {
         const c = u[0];
-        return f[c] * baseHP * (1 + curS[u].hp/100) * wM.health * 
+        return f[c] * 100 * baseHP * (1 + curS[u].hp/100) * wM.health * 
                10 * (1 + curS[u].def/100) * wM.defense *
                getM(201, c) * getM(202, c) * getM(203, c) * getM(204, c) * getM(205, c);
     };
@@ -914,7 +922,7 @@ window.calculateOptimalLineups = async () => {
     resArea.classList.remove('hidden');
     resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
 
-    // JOINER POOL: decouples from the 'unlocked' filter as per your request
+    // JOINER POOL: Whitelist specialists, always available at Max S1
     const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
 
     const byT = { 
@@ -934,27 +942,21 @@ window.calculateOptimalLineups = async () => {
 
     const pivots = [[50,20,30], [60,40,0], [33,33,34], [70,10,20], [10,10,80], [30,60,10], [50,50,0]];
 
-    const byT = { 
-        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
-        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
-        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
-    };
-    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
-
     await new Promise(r => setTimeout(r, 100));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
+        // Step 1: Calculate Scenario-Specific Naked Baseline Ceiling
         let bCeil = -1;
-        // Accurate baseline search (5% steps for speed)
-        for (let i=0; i<=100; i+=5) {
-            for (let c=0; c<=100-i; c+=5) {
+        for (let i=0; i<=100; i+=10) {
+            for (let c=0; c<=100-i; c+=10) {
                 const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, s.bear, s.l);
                 if (v > bCeil) bCeil = v;
             }
         }
 
         let candidates = [];
+        // Step 2: Phase 1 Team Pivot Filter
         for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
@@ -965,7 +967,6 @@ window.calculateOptimalLineups = async () => {
                         if (s.rally || s.bear) {
                             for (let slot=0; slot<4; slot++) {
                                 let bj = "None", mv = -1;
-                                // jPool is now the full static list
                                 jPool.forEach(cand => {
                                     const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
                                     if (v > mv) { mv = v; bj = cand; }
@@ -991,12 +992,14 @@ window.calculateOptimalLineups = async () => {
         for (let rk = 0; rk < top3.length; rk++) {
             const team = top3[rk];
             let peakV = -1;
-            for (let fI=0; fI<=100; fI+=2) { // 2% deep dive for speed
+            // Step 3: Phase 2 Formation Deep Dive (2% resolution for speed/stability)
+            for (let fI=0; fI<=100; fI+=2) {
                 for (let fC=0; fC<=100-fI; fC+=2) {
                     const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
                     if (v > peakV) peakV = v;
                 }
             }
+
             const gain = peakV / bCeil;
             const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
                 const count = team.joiners.filter(x=>x===n).length;
@@ -1011,7 +1014,7 @@ window.calculateOptimalLineups = async () => {
                         ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
                     </div>
                     <div>
-                        <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.join(' / ')}</div>
+                        <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
                         <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jN || 'Solo Setup'}</div>
                     </div>
                 </div>
