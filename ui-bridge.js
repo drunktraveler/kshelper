@@ -923,7 +923,7 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
 
     // JOINER POOL: Whitelist specialists, always available at Max S1
-    const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul", "Alcar", "Margot", "Rosa"];
+    const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul"];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
