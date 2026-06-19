@@ -38,6 +38,54 @@ window.init = () => {
     window.showTab('battle');
 };
 
+// --- HELPER: GATHER SETUP FOR ENGINE ---
+function getLiveSetup(side, formationOverride = null) {
+    // 1. Get Stats from Sim Tab
+    const stats = {};
+    ['inf', 'cav', 'arc'].forEach(u => {
+        ['att', 'def', 'leth', 'hp'].forEach(s => {
+            const el = document.querySelector(`input[data-side="${side}"][data-stat="${u}_${s}"]`);
+            stats[`${u}_${s}`] = parseFloat(el?.value) || 1000;
+        });
+    });
+
+    // 2. Get Tiers and Counts
+    // For optimization, we treat the army as one large batch
+    let totalCount = 0;
+    document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
+        totalCount += (parseFloat(row.querySelector('.batch-inf').value) || 0) +
+                      (parseFloat(row.querySelector('.batch-cav').value) || 0) +
+                      (parseFloat(row.querySelector('.batch-arc').value) || 0);
+    });
+    if (totalCount === 0) totalCount = 1000000;
+
+    let f = formationOverride;
+    if (!f) {
+        let i=0, c=0, a=0;
+        document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
+            i += parseFloat(row.querySelector('.batch-inf').value) || 0;
+            c += parseFloat(row.querySelector('.batch-cav').value) || 0;
+            a += parseFloat(row.querySelector('.batch-arc').value) || 0;
+        });
+        const t = i+c+a || 1;
+        f = [(i/t)*100, (c/t)*100, (a/t)*100];
+    }
+
+    const batch = {
+        inf: (f[0]/100) * totalCount,
+        cav: (f[1]/100) * totalCount,
+        arc: (f[2]/100) * totalCount,
+        inf_tier: parseInt(document.querySelector(`#${side}-batch-container .batch-tier-inf`)?.value) || 10,
+        inf_tg: parseInt(document.querySelector(`#${side}-batch-container .batch-tg-inf`)?.value) || 3,
+        cav_tier: parseInt(document.querySelector(`#${side}-batch-container .batch-tier-cav`)?.value) || 10,
+        cav_tg: parseInt(document.querySelector(`#${side}-batch-container .batch-tg-cav`)?.value) || 3,
+        arc_tier: parseInt(document.querySelector(`#${side}-batch-container .batch-tier-arc`)?.value) || 10,
+        arc_tg: parseInt(document.querySelector(`#${side}-batch-container .batch-tg-arc`)?.value) || 3
+    };
+
+    return { heroes: state[side].heroes, stats, batches: [batch] };
+}
+
 // --- NAVIGATION ---
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
@@ -92,15 +140,14 @@ window.updateSharedTier = (side, unit, type, val, origin) => {
     if (target && target.value !== val) target.value = val;
 };
 
-// --- CORE SYNC ENGINE (No Destructive Re-rendering) ---
+// --- SYNC IMPROVEMENTS ---
 window.updateSharedStat = (side, key, val, origin) => {
-    // 1. Update internal state if needed (optional, we mostly pull from DOM)
-    // 2. Find the "other" input and update it
+    // 1. Update the mirror input
     const targetSelector = origin === 'sim' ? `.opt-${side}-${key}` : `input[data-side="${side}"][data-stat="${key}"]`;
     const target = document.querySelector(targetSelector);
     if (target && target.value !== val) target.value = val;
 
-    // 3. Update Colors in Battle Sim
+    // 2. If typing in sim, update color logic
     const simInput = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
     if (simInput) window.updateStatColors(simInput);
 };
@@ -642,13 +689,15 @@ function getBearSpecificVolume(heroes, formation, bearConfig) {
     return totalDmg;
 }
 
+// --- CORE OPTIMIZER ---
 window.runOptimizer = async (mode) => {
     const isBear = mode === 'bear';
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     
-    resArea.innerText = "Analyzing...";
+    resArea.innerText = "Simulating Battles...";
 
+    // Give UI thread a moment to show the message
     setTimeout(() => {
         let dataPoints = { a: [], b: [], c: [], z: [] };
         let best = { form: [0, 0, 0], score: -Infinity };
@@ -656,50 +705,66 @@ window.runOptimizer = async (mode) => {
         const mySide = isBear ? 'atk' : optRole;
         const oppSide = mySide === 'atk' ? 'def' : 'atk';
 
-        // Scrape static opponent formation from Sim tab
-        let oppFormation = [33, 33, 34];
+        // 1. Prepare Opposition Archetypes
+        let oppArchetypes = [];
         if (mode === 'current') {
-            let i=0, c=0, a=0;
-            document.querySelectorAll(`#${oppSide}-batch-container > div`).forEach(row => {
-                i += parseFloat(row.querySelector('.batch-inf').value) || 0;
-                c += parseFloat(row.querySelector('.batch-cav').value) || 0;
-                a += parseFloat(row.querySelector('.batch-arc').value) || 0;
-            });
-            const tot = i+c+a || 1;
-            oppFormation = [(i/tot)*100, (c/tot)*100, (a/tot)*100];
+            oppArchetypes.push(getLiveSetup(oppSide)); // Exact Sim setup
+        } else if (mode === 'meta') {
+            const metaForms = [[50,20,30], [10,10,80], [60,10,30], [33,33,34], [50,0,50], [60,40,0], [10,80,10]];
+            metaForms.forEach(f => oppArchetypes.push(getLiveSetup(oppSide, f)));
+        } else if (mode === 'custom') {
+            const customF = [
+                parseFloat(document.getElementById('custom-inf').value) || 33,
+                parseFloat(document.getElementById('custom-cav').value) || 33,
+                parseFloat(document.getElementById('custom-arc').value) || 34
+            ];
+            oppArchetypes.push(getLiveSetup(oppSide, customF));
         }
 
-        // Optimization Loop
+        // 2. Simulation Loop (2% steps = 1,326 Simulations)
         for (let i = 0; i <= 100; i += 2) {
             for (let j = 0; j <= 100 - i; j += 2) {
                 let k = 100 - i - j;
-                let currentForm = [i, j, k];
+                const mySetup = getLiveSetup(mySide, [i, j, k]);
                 
-                let score;
-                if (isBear) {
-                    // Pass Bear heroes directly
-                    score = getSystemVolume(state.bear.heroes, [], currentForm, 'off', true, "Bear", null);
-                } else {
-                    // PVP: Pass live state hero objects AND the sideContext ('atk' or 'def')
-                    const myLeads = state[mySide].heroes.slice(0,3);
-                    const myJoins = state[mySide].heroes.slice(3);
-                    const oppLeads = state[oppSide].heroes.slice(0,3);
-                    const oppJoins = state[oppSide].heroes.slice(3);
-
-                    const myVol = getSystemVolume(myLeads, myJoins, currentForm, mySide === 'atk' ? 'off' : 'def', false, "PVP", mySide);
-                    const oppVol = getSystemVolume(oppLeads, oppJoins, oppFormation, oppSide === 'atk' ? 'off' : 'def', false, "PVP", oppSide);
+                let totalScore = 0;
+                oppArchetypes.forEach(oppSetup => {
+                    // Force deterministic simulation
+                    const simSetup = { atk: (mySide === 'atk' ? mySetup : oppSetup), def: (mySide === 'def' ? mySetup : oppSetup) };
+                    const result = runCombatSim(simSetup, 'average', 'average', 1000, isBear, true);
                     
-                    score = myVol / oppVol;
-                }
+                    if (isBear) {
+                        totalScore += result.totalDmg;
+                    } else {
+                        const myS = (mySide === 'atk' ? result.m_cur : result.e_cur);
+                        const oppS = (mySide === 'atk' ? result.e_cur : result.m_cur);
+                        const myTotal = (myS.inf + myS.cav + myS.arc);
+                        const oppTotal = (oppS.inf + oppS.cav + oppS.arc);
+                        
+                        // Score = Win Bonus + Survival Margin
+                        if (myTotal > oppTotal) totalScore += 10000000; 
+                        totalScore += (myTotal - oppTotal);
+                    }
+                });
 
-                if (score > best.score) best = { score, form: currentForm };
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                const finalScore = totalScore / oppArchetypes.length;
+                if (finalScore > best.score) best = { score: finalScore, form: [i, j, k] };
+                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(finalScore);
             }
         }
 
         renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
         resArea.innerText = best.form.join(' / ');
-        if (!isBear) scoreArea.innerHTML = `Volume Advantage: <span class="text-blue-400 font-bold">${best.score.toFixed(3)}x</span>`;
+        
+        if (isBear) {
+            scoreArea.innerHTML = `Sim Damage: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        } else {
+            const winRate = mode === 'meta' ? Math.floor(best.score / 10000000) : (best.score > 0 ? 1 : 0);
+            const margin = best.score % 10000000;
+            scoreArea.innerHTML = mode === 'meta' 
+                ? `Meta Wins: ${winRate}/7 | Margin: ${Math.round(margin).toLocaleString()}`
+                : `Net Survivors: <span class="text-blue-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        }
     }, 50);
 };
 
