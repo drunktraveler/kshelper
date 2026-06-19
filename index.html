@@ -267,21 +267,18 @@
                                     <select class="rep-hero input-dark !py-1 text-[10px] flex-grow"><option>None</option></select>
                                 </div>
                             </div>
-                            <div>
-                                <label class="text-[9px] text-slate-600 block uppercase mb-1">Context</label>
-                                <select id="report-ctx" class="input-dark !py-1 text-[10px]"><option value="off">Attack</option><option value="def">Defense</option></select>
-                            </div>
+                            <div class="col-span-full">
+    <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Report Battle Type</label>
+    <select id="report-type" class="input-dark !py-1 text-[10px]">
+        <option value="rally">Rally (Offense + Widgets)</option>
+        <option value="garrison">Garrison (Defense + Widgets)</option>
+        <option value="solo">Solo / No Widgets</option>
+    </select>
+</div>
                             <button onclick="window.reverseEngineerAccount()" class="bg-blue-900/50 border border-blue-500/30 text-blue-400 px-6 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition-all">Calibrate</button>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4 p-4 bg-slate-900/50 rounded-xl border border-slate-800">
-    <div class="col-span-2">
-        <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Report Context</label>
-        <select id="report-mode" class="input-dark !py-1 text-[10px]">
-            <option value="solo">Solo Attack</option>
-            <option value="rally" selected>Rally / Garrison</option>
-        </select>
-    </div>
     <div>
         <label class="text-[9px] text-slate-500 uppercase font-black block mb-1">Temp Att%</label>
         <select id="temp-buff-att" class="input-dark !py-1 text-[10px]"><option value="0">0%</option><option value="10">10%</option><option value="20">20%</option></select>
