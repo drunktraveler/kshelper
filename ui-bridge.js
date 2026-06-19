@@ -653,35 +653,23 @@ window.runOptimizer = async (mode) => {
         let dataPoints = { a: [], b: [], c: [], z: [] };
         let best = { form: [0, 0, 0], score: -Infinity };
 
-        // Configuration for the side we are NOT optimizing (the static opponent)
         const mySide = isBear ? 'atk' : optRole;
         const oppSide = mySide === 'atk' ? 'def' : 'atk';
 
-        // 1. Gather Opponent Data
-        const oppHeroes = state[oppSide].heroes.map(h => h.name);
-        const oppJoiners = (oppSide === 'atk' ? state.atk.heroes : state.def.heroes).slice(3).map(h => h.name);
-        
+        // Scrape static opponent formation from Sim tab
         let oppFormation = [33, 33, 34];
         if (mode === 'current') {
-            // Pull actual troop counts from the Battle Sim tab
             let i=0, c=0, a=0;
             document.querySelectorAll(`#${oppSide}-batch-container > div`).forEach(row => {
                 i += parseFloat(row.querySelector('.batch-inf').value) || 0;
                 c += parseFloat(row.querySelector('.batch-cav').value) || 0;
                 a += parseFloat(row.querySelector('.batch-arc').value) || 0;
             });
-            const total = i+c+a || 1;
-            oppFormation = [(i/total)*100, (c/total)*100, (a/total)*100];
-        } else if (mode === 'custom') {
-            oppFormation = [
-                parseFloat(document.getElementById('custom-inf').value) || 33,
-                parseFloat(document.getElementById('custom-cav').value) || 33,
-                parseFloat(document.getElementById('custom-arc').value) || 34
-            ];
+            const tot = i+c+a || 1;
+            oppFormation = [(i/tot)*100, (c/tot)*100, (a/tot)*100];
         }
 
-        // 2. Optimization Loop
-        // We sweep our formation against the static opponent
+        // Optimization Loop
         for (let i = 0; i <= 100; i += 2) {
             for (let j = 0; j <= 100 - i; j += 2) {
                 let k = 100 - i - j;
@@ -689,13 +677,18 @@ window.runOptimizer = async (mode) => {
                 
                 let score;
                 if (isBear) {
-                    score = getSystemVolume(state.bear.heroes.map(h=>h.name), [], currentForm, 'off', true, "Bear");
+                    // Pass Bear heroes directly
+                    score = getSystemVolume(state.bear.heroes, [], currentForm, 'off', true, "Bear", null);
                 } else {
-                    // PVP Logic: How does our Power Volume compare to the static opponent?
-                    const myVol = getSystemVolume(state[mySide].heroes.slice(0,3).map(h=>h.name), state[mySide].heroes.slice(3).map(h=>h.name), currentForm, mySide === 'atk' ? 'off' : 'def', false, "PVP");
-                    const oppVol = getSystemVolume(state[oppSide].heroes.slice(0,3).map(h=>h.name), state[oppSide].heroes.slice(3).map(h=>h.name), oppFormation, oppSide === 'atk' ? 'off' : 'def', false, "PVP");
+                    // PVP: Pass live state hero objects AND the sideContext ('atk' or 'def')
+                    const myLeads = state[mySide].heroes.slice(0,3);
+                    const myJoins = state[mySide].heroes.slice(3);
+                    const oppLeads = state[oppSide].heroes.slice(0,3);
+                    const oppJoins = state[oppSide].heroes.slice(3);
+
+                    const myVol = getSystemVolume(myLeads, myJoins, currentForm, mySide === 'atk' ? 'off' : 'def', false, "PVP", mySide);
+                    const oppVol = getSystemVolume(oppLeads, oppJoins, oppFormation, oppSide === 'atk' ? 'off' : 'def', false, "PVP", oppSide);
                     
-                    // The score is our survival/damage margin
                     score = myVol / oppVol;
                 }
 
@@ -706,15 +699,20 @@ window.runOptimizer = async (mode) => {
 
         renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
         resArea.innerText = best.form.join(' / ');
-        
-        if (isBear) {
-            scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
-        } else {
-            scoreArea.innerHTML = `Volume Advantage: <span class="text-blue-400 font-bold">${best.score.toFixed(3)}x</span>`;
-        }
+        if (!isBear) scoreArea.innerHTML = `Volume Advantage: <span class="text-blue-400 font-bold">${best.score.toFixed(3)}x</span>`;
     }, 50);
 };
 
+// Ensure globalSync triggers the optimizer so UI changes shift the heatmap instantly
+window.globalSync = () => {
+    window.updateGrids(); 
+    window.updateFormation('atk'); 
+    window.updateFormation('def');
+    window.syncFormationUI();
+    if (document.getElementById('optimizer-screen').classList.contains('hidden') === false) {
+        window.runOptimizer('current');
+    }
+};
 
 // --- BEAR OPTIMIZER ---
 function calculateBearDamage(config, formation) {
@@ -901,67 +899,78 @@ function renderTernary(id, data, best, isBear) {
 }
 
 // --- UPDATED SYSTEM VOLUME LOGIC (Reflecting periodic and troop specific) ---
-function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) {
+function getSystemVolume(leadHeroes, joinerHeroes, formation, ctx, isBear, scenarioLabel, sideContext = null) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
     const isCalibrated = !!rawStats;
-    const s = rawStats || { 
-        inf_att: 1000, inf_hp: 500, inf_def: 1000, inf_leth: 500,
-        cav_att: 1000, cav_hp: 500, cav_def: 1000, cav_leth: 500,
-        arc_att: 1000, arc_hp: 500, arc_def: 1000, arc_leth: 500
-    };
+    const fallback = rawStats || { inf_att:1000, inf_hp:500, inf_def:1000, inf_leth:500, cav_att:1000, cav_hp:500, cav_def:1000, cav_leth:500, arc_att:1000, arc_hp:500, arc_def:1000, arc_leth:500 };
 
     let curS = {
-        inf: { att: s.inf_att, leth: s.inf_leth, hp: s.inf_hp, def: s.inf_def },
-        cav: { att: s.cav_att, leth: s.cav_leth, hp: s.cav_hp, def: s.cav_def },
-        arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
+        inf: { att: fallback.inf_att, leth: fallback.inf_leth, hp: fallback.inf_hp, def: fallback.inf_def },
+        cav: { att: fallback.cav_att, leth: fallback.cav_leth, hp: fallback.cav_hp, def: fallback.cav_def },
+        arc: { att: fallback.arc_att, leth: fallback.arc_leth, hp: fallback.arc_hp, def: fallback.arc_def }
     };
 
+    // If we are evaluating a live UI tab ('atk' or 'def'), override fallback stats with live UI inputs
+    if (sideContext && (sideContext === 'atk' || sideContext === 'def')) {
+        ['inf', 'cav', 'arc'].forEach(u => {
+            ['att', 'def', 'leth', 'hp'].forEach(s => {
+                const inputEl = document.querySelector(`input[data-side="${sideContext}"][data-stat="${u}_${s}"]`);
+                if (inputEl) curS[u][s] = parseFloat(inputEl.value) || 0;
+            });
+        });
+    }
+
+    // Initialize Multiplier Buckets
     const createB = () => ({ 101:0, 102:0, 103:0, 104:0, 105:0, 106:0, 201:0, 202:0, 203:0, 204:0, 205:0, 250:0 });
     let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const processHero = (name, isLead) => {
-        if (name === "None" || !HEROES[name]) return;
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-        
+    // Process Hero Object (Reads live modal levels instead of global roster if available)
+    const processHero = (heroInput, isLead) => {
+        // Handle both raw string names (from Best Heroes tab) and state objects (from Sim/Formations tabs)
+        const name = typeof heroInput === 'string' ? heroInput : heroInput?.name;
+        if (!name || name === "None" || !HEROES[name]) return;
+
+        const h = HEROES[name];
+        const globalRoster = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
+        // Use live state levels if provided, otherwise fall back to global roster
+        const levels = typeof heroInput === 'object' ? { s1: heroInput.s1, s2: heroInput.s2, s3: heroInput.s3, widget: heroInput.widgetLv || globalRoster.widget, starIndex: heroInput.starIndex || globalRoster.starIndex } : globalRoster;
+
         if (isLead) {
             const tk = h.type.toLowerCase().slice(0, 3);
-            if (isCalibrated) {
-                // FIXED: GROWTH_TEMPLATES and WIDGET_STATS (Flats) are ALWAYS ON
-                const growth = (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+            if (isCalibrated && !sideContext) {
+                // Only add growth template flats if we are using naked account stats
+                const growth = GROWTH_TEMPLATES[h.template][levels.starIndex] || 0;
                 curS[tk].att += growth; curS[tk].def += growth;
-                
                 if (h.widget) {
                     const flats = WIDGET_STATS[h.template] || [];
-                    const fVal = flats[r.widget] || 0;
+                    const fVal = flats[levels.widget] || 0;
                     if (h.widget.stat === "lethality") curS[tk].leth += fVal;
                     if (h.widget.stat === "health") curS[tk].hp += fVal;
-                    // Add protection for widgets that might have attack/defense flats
                     if (h.widget.stat === "attack") curS[tk].att += fVal;
                     if (h.widget.stat === "defense") curS[tk].def += fVal;
                 }
             }
-            // FIXED: WIDGET_GROWTH (The 15% Multiplier) is Context Gated
-            if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear")) {
+            if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear") || scenarioLabel.includes("PVP")) {
                 if (h.widget && h.widget.context === ctx) {
-                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+                    wM[h.widget.stat] += (WIDGET_GROWTH[levels.widget] || 0);
                 }
             }
         }
 
         h.skills.forEach((skill, si) => {
             if (!isLead && si > 0) return;
-            const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
+            const lvl = isLead ? (levels[`s${si+1}`] || 5) : (levels.s1 || 5);
+            const x = skill.values[lvl - 1];
             
-            // FIXED: Duration 1 for Bear Trap
             const dur = isBear ? 1 : (skill.duration || 1);
-            let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : (skill.getChance(x));
+            let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : skill.getChance(x);
             if (dur > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, dur);
 
             const mFull = skill.getMagnitude(x);
-            skill.ids.forEach((id, idx) => {
-                const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-                (skill.units || ["inf", "cav", "arc"]).forEach(u => {
+            (skill.units || ["inf", "cav", "arc"]).forEach(u => {
+                skill.ids.forEach((id, idx) => {
+                    const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
                     let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
                     b[u][id] += (mag * uptime);
                 });
@@ -969,17 +978,32 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         });
     };
 
-    leads.forEach(l => processHero(l, true));
-    joiners.forEach(j => processHero(j, false));
+    leadHeroes.forEach(l => processHero(l, true));
+    joinerHeroes.forEach(j => processHero(j, false));
 
     const f = [formation[0], formation[1], formation[2]];
+    const longUnits = ['infantry', 'cavalry', 'archers'];
+
+    // Dynamic Base Stat Scraper (Reads live DOM Tiers/TG if sideContext is provided)
+    const getBaseStat = (u, statIndex) => {
+        let t = 10, tg = 3;
+        if (sideContext && (sideContext === 'atk' || sideContext === 'def')) {
+            const tierEl = document.querySelector(`#${sideContext}-batch-container .batch-tier-${u}`);
+            const tgEl = document.querySelector(`#${sideContext}-batch-container .batch-tg-${u}`);
+            if (tierEl) t = parseInt(tierEl.value) || 10;
+            if (tgEl) tg = parseInt(tgEl.value) || 3;
+        }
+        const uIdx = ['inf', 'cav', 'arc'].indexOf(u);
+        return UNITS[longUnits[uIdx]][t][tg][statIndex];
+    };
+
     const getOff = (u, idx) => {
         const stats = curS[u];
         const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
-        const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
+        const baseAtk = getBaseStat(u, 0);
+        const baseLeth = getBaseStat(u, 2);
         
-        // Damage = sqrt(count) * BaseAtk * Stats * Multipliers
-        return Math.sqrt(f[idx] * 1000000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
+        return Math.sqrt(f[idx] * 1000000) * baseAtk * (1 + stats.att/100) * wM.attack * baseLeth * (1 + stats.leth/100) * wM.lethality * mult;
     };
     
     const totalD = getOff('inf', 0) + getOff('cav', 1) + getOff('arc', 2);
@@ -987,10 +1011,12 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
     const getSurv = (u, idx) => {
         const stats = curS[u];
-        const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
+        const baseHP = getBaseStat(u, 3);
+        const baseDef = getBaseStat(u, 1);
         const dodgeMult = 1 / (1 - Math.min(0.9, b[u][250]));
         const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
-        return (f[idx] * 1000000) * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
+        
+        return (f[idx] * 1000000) * baseHP * (1 + stats.hp/100) * wM.health * baseDef * (1 + stats.def/100) * wM.defense * mult;
     };
 
     return totalD * (getSurv('inf', 0) + getSurv('cav', 1) + getSurv('arc', 2));
