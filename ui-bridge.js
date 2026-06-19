@@ -4,6 +4,9 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 import { WIDGET_STATS } from './widgets.js';
 import { UNITS } from './units.js'; 
 
+// --- HELPERS ---
+const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
+
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
@@ -32,7 +35,7 @@ window.init = () => {
     buildStatTable();
     window.addBatch('atk', true); 
     window.addBatch('def', true);
-    window.updateGrids(); 
+    window.globalSync(); 
     renderRosterUI(); 
     if(nakedStats) renderNakedStats();
     window.showTab('battle');
@@ -65,7 +68,6 @@ window.openHeroModal = (side, index) => {
 
 window.syncFormationUI = () => {
     ['atk', 'def'].forEach(side => {
-        // 1. Sync Numeric Stats from Battle Sim Table to Formations Tab
         const statGrid = document.getElementById(`opt-${side}-stats-grid`);
         if (statGrid) {
             statGrid.innerHTML = '';
@@ -73,34 +75,17 @@ window.syncFormationUI = () => {
                 ['att', 'def', 'leth', 'hp'].forEach(s => {
                     const key = `${u}_${s}`;
                     const val = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`)?.value || 1000;
-                    statGrid.innerHTML += `
-                        <div>
-                            <label class="text-[7px] text-slate-500 uppercase font-black block">${u} ${s}</label>
-                            <input type="number" value="${val}" oninput="window.updateSharedStat('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
-                        </div>`;
+                    statGrid.innerHTML += `<div><label class="text-[7px] text-slate-500 font-black block">${u} ${s}</label><input type="number" value="${val}" oninput="window.updateSharedStat('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]"></div>`;
                 });
             });
         }
-
-        // 2. Sync Tiers/TG from the first batch of Battle Sim to Formations Tab
         const tierGrid = document.getElementById(`opt-${side}-tiers`);
         if (tierGrid) {
             tierGrid.innerHTML = '';
             ['inf', 'cav', 'arc'].forEach(u => {
                 const t = document.querySelector(`#${side}-batch-container .batch-tier-${u}`)?.value || 10;
                 const tg = document.querySelector(`#${side}-batch-container .batch-tg-${u}`)?.value || 3;
-                tierGrid.innerHTML += `
-                    <div class="flex flex-col gap-1">
-                        <label class="text-[7px] text-slate-500 uppercase font-black">${u} T/TG</label>
-                        <div class="flex gap-1">
-                            <select onchange="window.updateSharedTier('${side}', '${u}', 'tier', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">
-                                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v==t?'selected':''}>T${v}</option>`).join('')}
-                            </select>
-                            <select onchange="window.updateSharedTier('${side}', '${u}', 'tg', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">
-                                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v==tg?'selected':''}>TG${v}</option>`).join('')}
-                            </select>
-                        </div>
-                    </div>`;
+                tierGrid.innerHTML += `<div class="flex flex-col gap-1"><label class="text-[7px] text-slate-500 uppercase font-black">${u} T/TG</label><div class="flex gap-1"><select onchange="window.updateSharedTier('${side}','${u}','tier',this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v==t?'selected':''}>T${v}</option>`).join('')}</select><select onchange="window.updateSharedTier('${side}','${u}','tg',this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v==tg?'selected':''}>TG${v}</option>`).join('')}</select></div></div>`;
             });
         }
     });
@@ -115,19 +100,16 @@ window.updateSharedTier = (side, unit, type, val) => {
 // --- SHARED INPUT HANDLERS ---
 window.updateSharedStat = (side, key, val) => {
     const el = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
-    if (el) {
-        el.value = val;
-        window.updateStatColors(el);
-    }
+    if (el) { el.value = val; window.updateStatColors(el); }
     window.syncFormationUI();
 };
 
-// --- SYNC ENGINE: Keeps Battle Sim & Formations tabs identical ---
+// --- GLOBAL SYNC ENGINE ---
 window.globalSync = () => {
-    window.updateGrids(); // Updates hero circles in both tabs
+    window.updateGrids(); 
     window.updateFormation('atk'); 
     window.updateFormation('def');
-    window.syncFormationUI(); // Updates the mini-stats and tiers in the Formations tab
+    window.syncFormationUI();
 };
 
 // Global Handlers to keep both tabs in perfect sync
@@ -249,13 +231,16 @@ window.updateFormation = (side) => {
         c += parseFloat(row.querySelector('.batch-cav').value) || 0;
         a += parseFloat(row.querySelector('.batch-arc').value) || 0;
     });
-    const total = i+c+a; const bar = document.getElementById(`${side}-f-bar`);
-    if (total > 0 && bar) {
-        bar.children[0].style.width = (i/total*100)+'%'; bar.children[1].style.width = (c/total*100)+'%'; bar.children[2].style.width = (a/total*100)+'%';
-        document.getElementById(`${side}-inf-pct`).innerText = Math.round(i/total*100)+'%';
-        document.getElementById(`${side}-cav-pct`).innerText = Math.round(c/total*100)+'%';
-        document.getElementById(`${side}-arc-pct`).innerText = Math.round(a/total*100)+'%';
-    }
+    const total = i+c+a || 1;
+    const bars = document.querySelectorAll(`.${side}-f-bar`); // Update bar in both tabs
+    bars.forEach(bar => {
+        bar.children[0].style.width = (i/total*100)+'%';
+        bar.children[1].style.width = (c/total*100)+'%';
+        bar.children[2].style.width = (a/total*100)+'%';
+    });
+    document.querySelectorAll(`.${side}-inf-pct`).forEach(el => el.innerText = Math.round(i/total*100)+'%');
+    document.querySelectorAll(`.${side}-cav-pct`).forEach(el => el.innerText = Math.round(c/total*100)+'%');
+    document.querySelectorAll(`.${side}-arc-pct`).forEach(el => el.innerText = Math.round(a/total*100)+'%');
 };
 
 window.updateStatColors = (el) => {
@@ -333,29 +318,35 @@ function renderSkillsInModal(name, index, side) {
 }
 
 // --- UPDATE MODAL SAVE ---
-const originalSaveHeroConfig = window.saveHeroConfig;
 window.saveHeroConfig = () => {
-    originalSaveHeroConfig(); // Save the data
-    window.globalSync();      // Sync all tabs
+    const name = document.getElementById('hero-select').value;
+    state[activeSlot.side].heroes[activeSlot.index] = { 
+        name, ...modalTemp, 
+        starIndex: roster[name]?.starIndex || 30, 
+        widgetLv: roster[name]?.widget || 10 
+    };
+    window.globalSync(); 
+    document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
-const originalUpdateGrids = window.updateGrids;
 window.updateGrids = () => {
     ['atk','def','bear'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`);
-        if(!container) return;
-        container.innerHTML = '';
-        state[side].heroes.forEach((h, i) => {
-            const div = document.createElement('div');
-            const isLead = (side === 'bear' || i < 3);
-            div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
-            if (h.name !== 'None') {
-                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
-            } else {
-                div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
-            }
-            div.onclick = () => window.openHeroModal(side, i);
-            container.appendChild(div);
+        // Use querySelectorAll to update hero grids in ALL tabs (Battle Sim and Formations)
+        const containers = document.querySelectorAll(`.${side}-hero-grid`);
+        containers.forEach(container => {
+            container.innerHTML = '';
+            state[side].heroes.forEach((h, i) => {
+                const div = document.createElement('div');
+                const isLead = (side === 'bear' || i < 3);
+                div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
+                if (h.name !== 'None') {
+                    div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
+                } else {
+                    div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
+                }
+                div.onclick = () => window.openHeroModal(side, i);
+                container.appendChild(div);
+            });
         });
     });
 };
