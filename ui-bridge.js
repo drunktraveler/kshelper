@@ -898,31 +898,36 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
     const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
     
+     // OFFENSE CALCULATION
     const getOff = (u) => {
         const stats = curS[u];
-        // Multiplicative between different ID buckets
+        // Multiplicative layers
         const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
-        // The Offense Volume: sqrt(Count) * Atk * Leth * AccountWidget * Multipliers
-        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
+        
+        // SCIENTIFIC BASE STATS (Crucial: Archers deal 4x Infantry damage)
+        const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
+        const unitBaseLeth = 10; 
+
+        return Math.sqrt(formation[['inf','cav','arc'].indexOf(u)] * 10000) * 
+               unitBaseAtk * (1 + stats.att/100) * wM.attack * 
+               unitBaseLeth * (1 + stats.leth/100) * wM.lethality * mult;
     };
-    
-    // Total Damage Output per Wave
-    const totalD = getOff('inf') + getOff('cav') + getOff('arc');
 
-    // In Bear Trap, target is pure damage output
-    if (isBear) return totalD;
+    const totalOffense = getOff('inf') + getOff('cav') + getOff('arc');
 
+    // BEAR TRAP: RETURN OFFENSE ONLY
+    if (isBear || scenarioLabel.includes("Bear")) return totalOffense;
+
+    // PVP: RETURN OFFENSE * SURVIVAL
     const getSurv = (u) => {
         const stats = curS[u];
-        // Dodge (ID 250) lifespan multiplier: 1 / (1 - Prob)
-        const dodgeLifespanMult = 1 / (1 - Math.min(0.9, b[u][250]));
-        const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeLifespanMult;
-        // The Survival Volume: Count * HP * Def * AccountWidget * Multipliers
-        return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
+        const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
+        const dodgeMult = 1 / (1 - Math.min(0.8, b[u][250]));
+        const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
+        return formation[['inf','cav','arc'].indexOf(u)] * unitBaseHP * (1 + stats.hp/100) * wM.health * mult;
     };
 
-    // PvP Target: Total damage capacity (Damage * Survival)
-    return totalD * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
+    return totalOffense * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
 }
 
 window.calculateOptimalLineups = async () => {
