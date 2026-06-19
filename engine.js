@@ -21,19 +21,18 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
     const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
 
-    let wave = 0, triggers = { atk: {}, def: {} };
-    let activeBuffs = { atk: [], def: [] };
+    let wave = 0, triggers = { atk: {}, def: {} }, activeBuffs = { atk: [], def: [] };
 
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
         
-        // 1. WAVE SNAPSHOT: Both sides fire based on counts AT START of wave (Prevents Mirror Bias)
-        const atkSnapshot = { ...m_cur };
-        const defSnapshot = { ...e_cur };
+        // 1. SNAPSHOTS: Damage for BOTH sides is calculated using counts at the start of the wave.
+        const atkSnap = { ...m_cur }, defSnap = { ...e_cur };
+        let pendingDamage = { atk: { inf:0, cav:0, arc:0 }, def: { inf:0, cav:0, arc:0 } };
 
         let waveMults = {
-            atk: { inf: { off: 1, surv: 1, dodge: 0 }, cav: { off: 1, surv: 1, dodge: 0 }, arc: { off: 1, surv: 1, dodge: 0 } },
-            def: { inf: { off: 1, surv: 1, dodge: 0 }, cav: { off: 1, surv: 1, dodge: 0 }, arc: { off: 1, surv: 1, dodge: 0 } }
+            atk: { inf:{off:1,surv:1,dodge:0}, cav:{off:1,surv:1,dodge:0}, arc:{off:1,surv:1,dodge:0} },
+            def: { inf:{off:1,surv:1,dodge:0}, cav:{off:1,surv:1,dodge:0}, arc:{off:1,surv:1,dodge:0} }
         };
 
         ['atk', 'def'].forEach(side => {
@@ -81,72 +80,78 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             });
         });
 
-        let pending = [];
-        const mf = (['inf', 'cav', 'arc'].find(u => atkSnapshot[u] >= 1) || 'arc');
-        const ef = (['inf', 'cav', 'arc'].find(u => defSnapshot[u] >= 1) || 'arc');
+        // Target Logic Snapshots
+        const mf = (['inf', 'cav', 'arc'].find(u => atkSnap[u] >= 1) || 'arc');
+        const ef = (['inf', 'cav', 'arc'].find(u => defSnap[u] >= 1) || 'arc');
 
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return;
             const sP = (side === 'atk' ? atkP : defP), tP = (side === 'atk' ? defP : atkP);
-            const sSnapshot = (side === 'atk' ? atkSnapshot : defSnapshot);
-            const tSnapshot = (side === 'atk' ? defSnapshot : atkSnapshot);
-            const sS = setup[side], tS = setup[target];
-            const targetFrontline = (side === 'atk' ? ef : mf);
+            const sSnap = (side === 'atk' ? atkSnap : defSnap), tSnap = (side === 'atk' ? defSnap : atkSnap);
+            const sS = setup[side], tS = setup[target], tf = (side === 'atk' ? ef : mf);
 
             ['inf', 'cav', 'arc'].forEach(u => {
-                if (sSnapshot[u] < 1) return;
+                if (sSnap[u] < 1) return;
 
-                const roll = (p, name) => {
-                    const hit = isStochastic ? (Math.random() < p) : true;
-                    if (hit && isStochastic) triggers[side][name] = (triggers[side][name] || 0) + 1;
-                    return isStochastic ? (hit ? 1 : 0) : p;
-                };
+                const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : p;
 
-                const calcKills = (tUnit, countMult = 1.0) => {
+                const calcKills = (tUnit, scalar = 1.0) => {
                     let offMod = 1.0, defMod = 1.0;
+                    
+                    // 1. Rock Paper Scissors (Passive)
                     if (u === 'inf' && tUnit === 'cav') offMod *= 1.1;
                     if (u === 'cav' && tUnit === 'arc') offMod *= 1.1;
                     if (u === 'arc' && tUnit === 'inf') offMod *= 1.1;
 
-                    // ABILITIES (T7+ and TG3+)
+                    // 2. Weighted Abilities
                     const w = sP.weights[u], tw = tP.weights[tUnit];
-                    // Volley (Archer T7+)
-                    if (u === 'arc' && w.t7 > 0) offMod *= (1 + (roll(0.1, "Volley") * w.t7));
-                    // Howling Wind (Archer TG3+)
-                    if (u === 'arc' && w.tg3 > 0) offMod *= (1 + (roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * 0.5 * w.tg3));
-                    // Assault Lance (Cavalry TG3+)
-                    if (u === 'cav' && w.tg3 > 0) offMod *= (1 + (roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * 1.0 * w.tg3));
-                    // Unyielding Shield (Infantry TG3+)
-                    if (tUnit === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + (roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * 0.36 * tw.tg3)));
-                    // Bands of Steel (Infantry T7+ vs Cav)
-                    if (tUnit === 'inf' && u === 'cav' && tw.t7 > 0) defMod *= (1 / 1.1);
-
-                    const b = sP.avgBase[u], tb = tP.avgBase[tUnit];
-                    const finalMult = (waveMults[side][u].off * offMod) / (waveMults[target][tUnit].surv * defMod);
-                    const dodgeReduction = isStochastic ? 1.0 : (1 - waveMults[target][tUnit].dodge);
-
-                    const k = (Math.sqrt(sSnapshot[u]) * sq_min * (b.atk * (1 + sS.stats[u+'_att']/100)) * (b.leth * (1 + sS.stats[u+'_leth']/100)) * finalMult * dodgeReduction) / 
-                               ((tb.def * (1 + tS.stats[tUnit+'_def']/100)) * (tb.hp * (1 + tS.stats[tUnit+'_hp']/100)) * 100);
                     
-                    return k * countMult;
+                    // T7+ Thresholds
+                    if (u === 'arc') offMod *= (1 + (roll(0.1) * 1.0 * w.t7)); // Volley
+                    if (tUnit === 'inf' && u === 'cav') defMod *= (1 / (1 + (0.1 * tw.t7))); // Bands of Steel vs Cav
+                    
+                    // TG3+ & TG5+ Weighted Logic
+                    if (u === 'arc') {
+                        const chance = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
+                        offMod *= (1 + (roll(chance) * 0.5)); // Howling Wind
+                    }
+                    if (u === 'cav') {
+                        const chance = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
+                        offMod *= (1 + (roll(chance) * 1.0)); // Assault Lance
+                    }
+                    if (tUnit === 'inf') {
+                        const chance = (0.375 * tw.tg5) + (0.25 * (tw.tg3 - tw.tg5));
+                        defMod *= (1 / (1 + (roll(chance) * 0.36))); // Unyielding Shield
+                    }
+
+                    const bStats = sP.avgBase[u], tStats = tP.avgBase[tUnit];
+                    const finalMult = (waveMults[side][u].off * offMod) / (waveMults[target][tUnit].surv * defMod);
+                    const dodgeRed = isStochastic ? 1.0 : (1 - waveMults[target][tUnit].dodge);
+
+                    const kills = (Math.sqrt(sSnap[u]) * sq_min * (bStats.atk * (1 + sS.stats[u+'_att']/100)) * (bStats.leth * (1 + sS.stats[u+'_leth']/100)) * finalMult * dodgeRed) / 
+                                  ((tStats.def * (1 + tS.stats[tUnit+'_def']/100)) * (tStats.hp * (1 + tS.stats[tUnit+'_hp']/100)) * 100);
+                    
+                    return kills * scalar;
                 };
 
-                // Bypass Check (Cav Ambusher)
-                if (u === 'cav' && sP.weights.cav.t7 > 0 && tSnapshot['arc'] >= 1 && targetFrontline !== 'arc' && !isBear) {
-                    const isBypass = roll(0.2, "Ambusher");
+                // Bypass Ambusher Check
+                if (u === 'cav' && sP.weights.cav.t7 > 0 && tSnap['arc'] >= 1 && tf !== 'arc' && !isBear) {
+                    const bypassChance = 0.2 * sP.weights.cav.t7;
+                    const isBypass = roll(bypassChance);
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        pending.push({side: target, unit: 'arc', amt: calcKills('arc', isStochastic ? 1 : 0.2)});
-                        if (!isStochastic) pending.push({side: target, unit: targetFrontline, amt: calcKills(targetFrontline, 0.8)});
-                    } else pending.push({side: target, unit: targetFrontline, amt: calcKills(targetFrontline)});
-                } else pending.push({side: target, unit: targetFrontline, amt: calcKills(targetFrontline)});
+                        pendingDamage[target]['arc'] += calcKills('arc', isStochastic ? 1 : bypassChance);
+                        if (!isStochastic) pendingDamage[target][tf] += calcKills(tf, 1 - bypassChance);
+                    } else pendingDamage[target][tf] += calcKills(tf);
+                } else pendingDamage[target][tf] += calcKills(tf);
             });
         });
 
-        // 2. APPLY PENDING DAMAGE (End of Wave)
-        pending.forEach(p => {
-            const pool = (p.side === 'atk' ? m_cur : e_cur);
-            pool[p.unit] = Math.max(0, pool[p.unit] - p.amt);
+        // 2. APPLY DAMAGE (Mirror match now ends in tie due to simultaneous update)
+        ['inf', 'cav', 'arc'].forEach(u => {
+            m_cur[u] = Math.max(0, m_cur[u] - pendingDamage.atk[u]);
+            e_cur[u] = Math.max(0, e_cur[u] - pendingDamage.def[u]);
         });
+
         if (isBear) break;
     }
 
@@ -155,7 +160,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
              def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) };
 }
 
-
 function applyToBucket(buckets, skill, uptime) {
     const affectedUnits = skill.units || ["inf", "cav", "arc"];
     skill.ids.forEach((id, idx) => {
@@ -163,7 +167,6 @@ function applyToBucket(buckets, skill, uptime) {
         affectedUnits.forEach(u => {
             let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
             let final = mag * skill.instances * uptime;
-
             if (id === 101 || id === 201) buckets[u][id] += final;
             else if (id === 250) buckets[u][id] += final;
             else buckets[u][id] *= (1 + final);
