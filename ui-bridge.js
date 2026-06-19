@@ -842,11 +842,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // Initialize Buckets
-    const createB = () => ({ 
-        101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0, 
-        201: 0, 202: 0, 203: 0, 204: 0, 205: 0, 250: 0 
-    });
+    const createB = () => ({ 101:0, 102:0, 103:0, 104:0, 105:0, 106:0, 201:0, 202:0, 203:0, 204:0, 205:0, 250:0 });
     let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
@@ -857,36 +853,48 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         if (isLead) {
             const tk = h.type.toLowerCase().slice(0, 3);
             if (isCalibrated) {
+                // FIXED: Star Stats and Widget Flats are ALWAYS applied
                 curS[tk].att += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
                 curS[tk].def += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+                
                 if (h.widget) {
-                    const wT = WIDGET_STATS[h.template] || [];
-                    if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
-                    if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
+                    const templateFlats = WIDGET_STATS[h.template] || [];
+                    const flatVal = templateFlats[r.widget] || 0;
+                    if (h.widget.stat === "lethality") curS[tk].leth += flatVal;
+                    if (h.widget.stat === "health") curS[tk].hp += flatVal;
+                    // Note: Templates that provide Attack/Defense flats should be added here too if applicable
+                    if (h.widget.stat === "attack") curS[tk].att += flatVal;
+                    if (h.widget.stat === "defense") curS[tk].def += flatVal;
                 }
             }
-            // Apply Widget Multipliers if context matches
+            // FIXED: Only the 15% Multiplier (WIDGET_GROWTH) is context-gated
             if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
                 wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
             }
         }
 
         h.skills.forEach((skill, si) => {
-            if (!isLead && si > 0) return; // Joiners S1 only
+            if (!isLead && si > 0) return;
             const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
             
-            // Expected Value Uptime
-            let uptime = skill.interval ? (skill.duration / skill.interval) : (skill.getChance(x));
-            if (skill.duration > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, skill.duration);
+            // FIXED: Bear Trap forces duration to 1
+            const effectiveDuration = isBear ? 1 : (skill.duration || 1);
+            let uptime;
+            
+            if (skill.interval) {
+                // Periodic is Duration / Interval (e.g. 2/5 = 0.4)
+                uptime = Math.min(1.0, effectiveDuration / skill.interval);
+            } else {
+                // Standard Probability EV: 1 - (1 - p)^Duration
+                const p = skill.getChance(x);
+                uptime = 1 - Math.pow(1 - p, effectiveDuration);
+            }
 
             const mFull = skill.getMagnitude(x);
-            const affectedUnits = skill.units || ["inf", "cav", "arc"];
-            
             skill.ids.forEach((id, idx) => {
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-                affectedUnits.forEach(u => {
+                (skill.units || ["inf", "cav", "arc"]).forEach(u => {
                     let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    // Skill ID Stacking: All magnitudes within the same ID are additive
                     b[u][id] += (mag * uptime);
                 });
             });
@@ -898,36 +906,25 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
     const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
     
-     // OFFENSE CALCULATION
     const getOff = (u) => {
         const stats = curS[u];
-        // Multiplicative layers
         const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
-        
-        // SCIENTIFIC BASE STATS (Crucial: Archers deal 4x Infantry damage)
         const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
-        const unitBaseLeth = 10; 
-
-        return Math.sqrt(formation[['inf','cav','arc'].indexOf(u)] * 10000) * 
-               unitBaseAtk * (1 + stats.att/100) * wM.attack * 
-               unitBaseLeth * (1 + stats.leth/100) * wM.lethality * mult;
+        return Math.sqrt(f[u] * 10000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
     };
+    
+    const totalD = getOff('inf') + getOff('cav') + getOff('arc');
+    if (isBear) return totalD;
 
-    const totalOffense = getOff('inf') + getOff('cav') + getOff('arc');
-
-    // BEAR TRAP: RETURN OFFENSE ONLY
-    if (isBear || scenarioLabel.includes("Bear")) return totalOffense;
-
-    // PVP: RETURN OFFENSE * SURVIVAL
     const getSurv = (u) => {
         const stats = curS[u];
         const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
-        const dodgeMult = 1 / (1 - Math.min(0.8, b[u][250]));
+        const dodgeMult = 1 / (1 - Math.min(0.9, b[u][250]));
         const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
-        return formation[['inf','cav','arc'].indexOf(u)] * unitBaseHP * (1 + stats.hp/100) * wM.health * mult;
+        return f[u] * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
     };
 
-    return totalOffense * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
+    return totalD * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
 }
 
 window.calculateOptimalLineups = async () => {
