@@ -853,23 +853,25 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         if (isLead) {
             const tk = h.type.toLowerCase().slice(0, 3);
             if (isCalibrated) {
-                // FIXED: Star Stats and Widget Flats are ALWAYS applied
-                curS[tk].att += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
-                curS[tk].def += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+                // FIXED: GROWTH_TEMPLATES and WIDGET_STATS (Flats) are ALWAYS ON
+                const growth = (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+                curS[tk].att += growth; curS[tk].def += growth;
                 
                 if (h.widget) {
-                    const templateFlats = WIDGET_STATS[h.template] || [];
-                    const flatVal = templateFlats[r.widget] || 0;
-                    if (h.widget.stat === "lethality") curS[tk].leth += flatVal;
-                    if (h.widget.stat === "health") curS[tk].hp += flatVal;
-                    // Note: Templates that provide Attack/Defense flats should be added here too if applicable
-                    if (h.widget.stat === "attack") curS[tk].att += flatVal;
-                    if (h.widget.stat === "defense") curS[tk].def += flatVal;
+                    const flats = WIDGET_STATS[h.template] || [];
+                    const fVal = flats[r.widget] || 0;
+                    if (h.widget.stat === "lethality") curS[tk].leth += fVal;
+                    if (h.widget.stat === "health") curS[tk].hp += fVal;
+                    // Add protection for widgets that might have attack/defense flats
+                    if (h.widget.stat === "attack") curS[tk].att += fVal;
+                    if (h.widget.stat === "defense") curS[tk].def += fVal;
                 }
             }
-            // FIXED: Only the 15% Multiplier (WIDGET_GROWTH) is context-gated
-            if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
-                wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+            // FIXED: WIDGET_GROWTH (The 15% Multiplier) is Context Gated
+            if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear")) {
+                if (h.widget && h.widget.context === ctx) {
+                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+                }
             }
         }
 
@@ -877,18 +879,10 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
             if (!isLead && si > 0) return;
             const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
             
-            // FIXED: Bear Trap forces duration to 1
-            const effectiveDuration = isBear ? 1 : (skill.duration || 1);
-            let uptime;
-            
-            if (skill.interval) {
-                // Periodic is Duration / Interval (e.g. 2/5 = 0.4)
-                uptime = Math.min(1.0, effectiveDuration / skill.interval);
-            } else {
-                // Standard Probability EV: 1 - (1 - p)^Duration
-                const p = skill.getChance(x);
-                uptime = 1 - Math.pow(1 - p, effectiveDuration);
-            }
+            // FIXED: Duration 1 for Bear Trap
+            const dur = isBear ? 1 : (skill.duration || 1);
+            let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : (skill.getChance(x));
+            if (dur > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, dur);
 
             const mFull = skill.getMagnitude(x);
             skill.ids.forEach((id, idx) => {
@@ -904,28 +898,30 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     leads.forEach(l => processHero(l, true));
     joiners.forEach(j => processHero(j, false));
 
-    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
-    
-    const getOff = (u) => {
+    const f = [formation[0], formation[1], formation[2]];
+    const getOff = (u, idx) => {
         const stats = curS[u];
         const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
         const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
-        return Math.sqrt(f[u] * 10000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
+        
+        // Damage = sqrt(count) * BaseAtk * Stats * Multipliers
+        return Math.sqrt(f[idx] * 1000000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
     };
     
-    const totalD = getOff('inf') + getOff('cav') + getOff('arc');
+    const totalD = getOff('inf', 0) + getOff('cav', 1) + getOff('arc', 2);
     if (isBear) return totalD;
 
-    const getSurv = (u) => {
+    const getSurv = (u, idx) => {
         const stats = curS[u];
         const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
         const dodgeMult = 1 / (1 - Math.min(0.9, b[u][250]));
         const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
-        return f[u] * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
+        return (f[idx] * 1000000) * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
     };
 
-    return totalD * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
+    return totalD * (getSurv('inf', 0) + getSurv('cav', 1) + getSurv('arc', 2));
 }
+
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
@@ -937,7 +933,7 @@ window.calculateOptimalLineups = async () => {
 
     // Whitelist and Pivots
     const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80], [5,5,90];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -976,25 +972,23 @@ window.calculateOptimalLineups = async () => {
                     let curJ = [];
 
                     // 3. Greedy Joiner Selection (if applicable)
+                     // JOINER GREEDY FILL
                     if (s.rally) {
-                        for (let slot = 0; slot < 4; slot++) {
-                            let bestJoiner = "None";
-                            let maxSlotPeak = -1;
-
+                        for (let slot=0; slot<4; slot++) {
+                            let bj = "None", bestSlotV = -1;
                             jPool.forEach(heroName => {
-                                // Find the peak pivot for this specific leader + current joiners + new candidate
                                 let peakWithCandidate = -1;
                                 pivots.forEach(p => {
+                                    // FIXED: Passing correct flags to getSystemVolume
                                     const v = getSystemVolume(leads, [...curJ, heroName], p, s.ctx, s.bear, s.l);
                                     if (v > peakWithCandidate) peakWithCandidate = v;
                                 });
-
-                                if (peakWithCandidate > maxSlotPeak) {
-                                    maxSlotPeak = peakWithCandidate;
-                                    bestJoiner = heroName;
+                                if (peakWithCandidate > bestSlotV) {
+                                    bestSlotV = peakWithCandidate;
+                                    bj = heroName;
                                 }
                             });
-                            curJ.push(bestJoiner);
+                            curJ.push(bj);
                         }
                     }
 
