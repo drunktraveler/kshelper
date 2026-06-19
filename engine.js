@@ -26,15 +26,22 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
         
-        // 1. SNAPSHOTS: Damage for BOTH sides is calculated using counts at the start of the wave.
+        // --- 1. THE SNAPSHOT (Crucial for Mirror Match) ---
         const atkSnap = { ...m_cur }, defSnap = { ...e_cur };
-        let pendingDamage = { atk: { inf:0, cav:0, arc:0 }, def: { inf:0, cav:0, arc:0 } };
+        let pendingDmgToDef = { inf: 0, cav: 0, arc: 0 };
+        let pendingDmgToAtk = { inf: 0, cav: 0, arc: 0 };
+
+        // --- 2. TARGET LOCKING ---
+        // We find the targets based ONLY on the snapshot at the start of the wave
+        const atkTargetFrontline = (['inf', 'cav', 'arc'].find(u => defSnap[u] >= 1) || 'arc');
+        const defTargetFrontline = (['inf', 'cav', 'arc'].find(u => atkSnap[u] >= 1) || 'arc');
 
         let waveMults = {
             atk: { inf:{off:1,surv:1,dodge:0}, cav:{off:1,surv:1,dodge:0}, arc:{off:1,surv:1,dodge:0} },
             def: { inf:{off:1,surv:1,dodge:0}, cav:{off:1,surv:1,dodge:0}, arc:{off:1,surv:1,dodge:0} }
         };
 
+        // --- 3. SKILL BUCKETS ---
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
             let b = {
@@ -80,84 +87,84 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             });
         });
 
-        // Target Logic Snapshots
-        const mf = (['inf', 'cav', 'arc'].find(u => atkSnap[u] >= 1) || 'arc');
-        const ef = (['inf', 'cav', 'arc'].find(u => defSnap[u] >= 1) || 'arc');
-
+        // --- 4. KILL CALCULATION ---
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return;
+            
             const sP = (side === 'atk' ? atkP : defP), tP = (side === 'atk' ? defP : atkP);
-            const sSnap = (side === 'atk' ? atkSnap : defSnap), tSnap = (side === 'atk' ? defSnap : atkSnap);
-            const sS = setup[side], tS = setup[target], tf = (side === 'atk' ? ef : mf);
+            const sSnap = (side === 'atk' ? atkSnap : defSnap);
+            const tSnap = (side === 'atk' ? defSnap : atkSnap);
+            const sS = setup[side], tS = setup[target];
+            const tf = (side === 'atk' ? atkTargetFrontline : defTargetFrontline);
+            const pMap = (side === 'atk' ? pendingDmgToDef : pendingDmgToAtk);
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sSnap[u] < 1) return;
 
                 const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : p;
 
-                const calcKills = (tUnit, scalar = 1.0) => {
+                const getKills = (tUnit, scalar = 1.0) => {
                     let offMod = 1.0, defMod = 1.0;
-                    
-                    // 1. Rock Paper Scissors (Passive)
                     if (u === 'inf' && tUnit === 'cav') offMod *= 1.1;
                     if (u === 'cav' && tUnit === 'arc') offMod *= 1.1;
                     if (u === 'arc' && tUnit === 'inf') offMod *= 1.1;
 
-                    // 2. Weighted Abilities
                     const w = sP.weights[u], tw = tP.weights[tUnit];
+                    if (u === 'arc') offMod *= (1 + (roll(0.1) * 1.0 * w.t7));
+                    if (tUnit === 'inf' && u === 'cav') defMod *= (1 / (1 + (0.1 * tw.t7)));
                     
-                    // T7+ Thresholds
-                    if (u === 'arc') offMod *= (1 + (roll(0.1) * 1.0 * w.t7)); // Volley
-                    if (tUnit === 'inf' && u === 'cav') defMod *= (1 / (1 + (0.1 * tw.t7))); // Bands of Steel vs Cav
-                    
-                    // TG3+ & TG5+ Weighted Logic
                     if (u === 'arc') {
                         const chance = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
-                        offMod *= (1 + (roll(chance) * 0.5)); // Howling Wind
+                        offMod *= (1 + (roll(chance) * 0.5));
                     }
                     if (u === 'cav') {
                         const chance = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
-                        offMod *= (1 + (roll(chance) * 1.0)); // Assault Lance
+                        offMod *= (1 + (roll(chance) * 1.0));
                     }
                     if (tUnit === 'inf') {
                         const chance = (0.375 * tw.tg5) + (0.25 * (tw.tg3 - tw.tg5));
-                        defMod *= (1 / (1 + (roll(chance) * 0.36))); // Unyielding Shield
+                        defMod *= (1 / (1 + (roll(chance) * 0.36)));
                     }
 
                     const bStats = sP.avgBase[u], tStats = tP.avgBase[tUnit];
                     const finalMult = (waveMults[side][u].off * offMod) / (waveMults[target][tUnit].surv * defMod);
                     const dodgeRed = isStochastic ? 1.0 : (1 - waveMults[target][tUnit].dodge);
 
-                    const kills = (Math.sqrt(sSnap[u]) * sq_min * (bStats.atk * (1 + sS.stats[u+'_att']/100)) * (bStats.leth * (1 + sS.stats[u+'_leth']/100)) * finalMult * dodgeRed) / 
-                                  ((tStats.def * (1 + tS.stats[tUnit+'_def']/100)) * (tStats.hp * (1 + tS.stats[tUnit+'_hp']/100)) * 100);
-                    
-                    return kills * scalar;
+                    // Final Symmetric Formula
+                    return (Math.sqrt(sSnap[u]) * sq_min * (bStats.atk * (1 + sS.stats[u+'_att']/100)) * (bStats.leth * (1 + sS.stats[u+'_leth']/100)) * finalMult * dodgeRed) / 
+                           ((tStats.def * (1 + tS.stats[tUnit+'_def']/100)) * (tStats.hp * (1 + tS.stats[tUnit+'_hp']/100)) * 100);
                 };
 
-                // Bypass Ambusher Check
+                // Cavalry Bypass logic
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tSnap['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const bypassChance = 0.2 * sP.weights.cav.t7;
                     const isBypass = roll(bypassChance);
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        pendingDamage[target]['arc'] += calcKills('arc', isStochastic ? 1 : bypassChance);
-                        if (!isStochastic) pendingDamage[target][tf] += calcKills(tf, 1 - bypassChance);
-                    } else pendingDamage[target][tf] += calcKills(tf);
-                } else pendingDamage[target][tf] += calcKills(tf);
+                        pMap['arc'] += getKills('arc', isStochastic ? 1 : bypassChance);
+                        if (!isStochastic) pMap[tf] += getKills(tf, 1 - bypassChance);
+                    } else pMap[tf] += getKills(tf);
+                } else {
+                    pMap[tf] += getKills(tf);
+                }
             });
         });
 
-        // 2. APPLY DAMAGE (Mirror match now ends in tie due to simultaneous update)
+        // --- 5. EXECUTION PHASE ---
+        // Apply damage at the same time to ensure symmetry
         ['inf', 'cav', 'arc'].forEach(u => {
-            m_cur[u] = Math.max(0, m_cur[u] - pendingDamage.atk[u]);
-            e_cur[u] = Math.max(0, e_cur[u] - pendingDamage.def[u]);
+            m_cur[u] = Math.max(0, m_cur[u] - pendingDmgToAtk[u]);
+            e_cur[u] = Math.max(0, e_cur[u] - pendingDmgToDef[u]);
         });
 
         if (isBear) break;
     }
 
-    return { m_cur, e_cur, wave, totalDmg: isBear ? (1000000 - e_cur.inf) : 0, 
-             atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic),
-             def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) };
+    return { 
+        m_cur, e_cur, wave, 
+        atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), 
+        def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic), 
+        totalDmg: isBear ? (1000000 - e_cur.inf) : 0 
+    };
 }
 
 function applyToBucket(buckets, skill, uptime) {
