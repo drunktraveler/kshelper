@@ -64,55 +64,39 @@ window.openHeroModal = (side, index) => {
 };
 
 window.syncFormationUI = () => {
-    const sides = ['atk', 'def'];
-    const stats = ['att', 'def', 'leth', 'hp'];
-    const units = ['inf', 'cav', 'arc'];
-
-    sides.forEach(side => {
-        // 1. Sync Heroes
-        const heroCont = document.getElementById(`opt-${side}-heroes`);
-        if (heroCont) {
-            heroCont.innerHTML = '';
-            state[side].heroes.slice(0,3).forEach(h => {
-                const div = document.createElement('div');
-                div.className = `w-10 h-10 rounded-full border-2 ${side==='atk'?'border-emerald-500/30':'border-red-500/30'} bg-slate-900 overflow-hidden`;
-                div.innerHTML = h.name !== "None" ? `<img src="./assets/${h.name.toLowerCase()}.png" class="w-full h-full object-cover">` : '';
-                heroCont.appendChild(div);
-            });
-        }
-
-        // 2. Sync Stats (Mirroring the Sim Tab Stat Table)
+    ['atk', 'def'].forEach(side => {
+        // 1. Sync Numeric Stats from Battle Sim Table to Formations Tab
         const statGrid = document.getElementById(`opt-${side}-stats-grid`);
         if (statGrid) {
             statGrid.innerHTML = '';
-            units.forEach(u => {
-                stats.forEach(s => {
+            ['inf', 'cav', 'arc'].forEach(u => {
+                ['att', 'def', 'leth', 'hp'].forEach(s => {
                     const key = `${u}_${s}`;
                     const val = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`)?.value || 1000;
                     statGrid.innerHTML += `
                         <div>
-                            <label class="text-[7px] text-slate-500 uppercase font-black block mb-1">${u} ${s}</label>
-                            <input type="number" value="${val}" oninput="window.globalStatUpdate('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
+                            <label class="text-[7px] text-slate-500 uppercase font-black block">${u} ${s}</label>
+                            <input type="number" value="${val}" oninput="window.updateSharedStat('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
                         </div>`;
                 });
             });
         }
 
-        // 3. Sync Tiers (Mirroring the first batch of the Sim Tab)
+        // 2. Sync Tiers/TG from the first batch of Battle Sim to Formations Tab
         const tierGrid = document.getElementById(`opt-${side}-tiers`);
         if (tierGrid) {
             tierGrid.innerHTML = '';
-            units.forEach(u => {
+            ['inf', 'cav', 'arc'].forEach(u => {
                 const t = document.querySelector(`#${side}-batch-container .batch-tier-${u}`)?.value || 10;
                 const tg = document.querySelector(`#${side}-batch-container .batch-tg-${u}`)?.value || 3;
                 tierGrid.innerHTML += `
                     <div class="flex flex-col gap-1">
-                        <label class="text-[7px] text-slate-500 uppercase font-black">${u} tier/tg</label>
+                        <label class="text-[7px] text-slate-500 uppercase font-black">${u} T/TG</label>
                         <div class="flex gap-1">
-                            <select onchange="window.globalTierUpdate('${side}', '${u}', 'tier', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 font-bold text-slate-300 outline-none flex-grow">
+                            <select onchange="window.updateSharedTier('${side}', '${u}', 'tier', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">
                                 ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v==t?'selected':''}>T${v}</option>`).join('')}
                             </select>
-                            <select onchange="window.globalTierUpdate('${side}', '${u}', 'tg', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 font-bold text-slate-300 outline-none flex-grow">
+                            <select onchange="window.updateSharedTier('${side}', '${u}', 'tg', this.value)" class="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-300 outline-none">
                                 ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v==tg?'selected':''}>TG${v}</option>`).join('')}
                             </select>
                         </div>
@@ -120,6 +104,30 @@ window.syncFormationUI = () => {
             });
         }
     });
+};
+
+window.updateSharedTier = (side, unit, type, val) => {
+    const el = document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`);
+    if (el) el.value = val;
+    window.syncFormationUI();
+};
+
+// --- SHARED INPUT HANDLERS ---
+window.updateSharedStat = (side, key, val) => {
+    const el = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
+    if (el) {
+        el.value = val;
+        window.updateStatColors(el);
+    }
+    window.syncFormationUI();
+};
+
+// --- SYNC ENGINE: Keeps Battle Sim & Formations tabs identical ---
+window.globalSync = () => {
+    window.updateGrids(); // Updates hero circles in both tabs
+    window.updateFormation('atk'); 
+    window.updateFormation('def');
+    window.syncFormationUI(); // Updates the mini-stats and tiers in the Formations tab
 };
 
 // Global Handlers to keep both tabs in perfect sync
@@ -324,15 +332,11 @@ function renderSkillsInModal(name, index, side) {
     }
 }
 
+// --- UPDATE MODAL SAVE ---
+const originalSaveHeroConfig = window.saveHeroConfig;
 window.saveHeroConfig = () => {
-    const name = document.getElementById('hero-select').value;
-    state[activeSlot.side].heroes[activeSlot.index] = { 
-        name, ...modalTemp, 
-        starIndex: roster[name]?.starIndex || 30, 
-        widgetLv: roster[name]?.widget || 10 
-    };
-    window.updateGrids(); 
-    document.getElementById('heroModal').classList.replace('flex', 'hidden');
+    originalSaveHeroConfig(); // Save the data
+    window.globalSync();      // Sync all tabs
 };
 
 const originalUpdateGrids = window.updateGrids;
@@ -622,34 +626,67 @@ window.runOptimizer = async (mode) => {
 
     setTimeout(() => {
         let dataPoints = { a: [], b: [], c: [], z: [] };
-        let best = { form: [0, 0, 0], score: -1 };
+        let best = { form: [0, 0, 0], score: -Infinity };
 
-        const bearConfig = isBear ? {
-            inf_acc: { att: parseFloat(document.getElementById('bear-inf-att').value), leth: parseFloat(document.getElementById('bear-inf-leth').value) },
-            cav_acc: { att: parseFloat(document.getElementById('bear-cav-att').value), leth: parseFloat(document.getElementById('bear-cav-leth').value) },
-            arc_acc: { att: parseFloat(document.getElementById('bear-arc-att').value), leth: parseFloat(document.getElementById('bear-arc-leth').value) },
-            inf_tier: document.getElementById('bear-inf-tier').value,
-            cav_tier: document.getElementById('bear-cav-tier').value,
-            arc_tier: document.getElementById('bear-arc-tier').value,
-            inf_tg: document.getElementById('bear-inf-tg').value,
-            cav_tg: document.getElementById('bear-cav-tg').value,
-            arc_tg: document.getElementById('bear-arc-tg').value
-        } : null;
+        // Configuration for the side we are NOT optimizing (the static opponent)
+        const mySide = isBear ? 'atk' : optRole;
+        const oppSide = mySide === 'atk' ? 'def' : 'atk';
 
-        // Use 2% steps to prevent performance lag and NaN creation
+        // 1. Gather Opponent Data
+        const oppHeroes = state[oppSide].heroes.map(h => h.name);
+        const oppJoiners = (oppSide === 'atk' ? state.atk.heroes : state.def.heroes).slice(3).map(h => h.name);
+        
+        let oppFormation = [33, 33, 34];
+        if (mode === 'current') {
+            // Pull actual troop counts from the Battle Sim tab
+            let i=0, c=0, a=0;
+            document.querySelectorAll(`#${oppSide}-batch-container > div`).forEach(row => {
+                i += parseFloat(row.querySelector('.batch-inf').value) || 0;
+                c += parseFloat(row.querySelector('.batch-cav').value) || 0;
+                a += parseFloat(row.querySelector('.batch-arc').value) || 0;
+            });
+            const total = i+c+a || 1;
+            oppFormation = [(i/total)*100, (c/total)*100, (a/total)*100];
+        } else if (mode === 'custom') {
+            oppFormation = [
+                parseFloat(document.getElementById('custom-inf').value) || 33,
+                parseFloat(document.getElementById('custom-cav').value) || 33,
+                parseFloat(document.getElementById('custom-arc').value) || 34
+            ];
+        }
+
+        // 2. Optimization Loop
+        // We sweep our formation against the static opponent
         for (let i = 0; i <= 100; i += 2) {
             for (let j = 0; j <= 100 - i; j += 2) {
                 let k = 100 - i - j;
-                let score = isBear ? calculateBearDamage(bearConfig, [i, j, k]) : 0; // PVP logic handled elsewhere
+                let currentForm = [i, j, k];
                 
-                if (score > best.score) best = { score, form: [i, j, k] };
+                let score;
+                if (isBear) {
+                    score = getSystemVolume(state.bear.heroes.map(h=>h.name), [], currentForm, 'off', true, "Bear");
+                } else {
+                    // PVP Logic: How does our Power Volume compare to the static opponent?
+                    const myVol = getSystemVolume(state[mySide].heroes.slice(0,3).map(h=>h.name), state[mySide].heroes.slice(3).map(h=>h.name), currentForm, mySide === 'atk' ? 'off' : 'def', false, "PVP");
+                    const oppVol = getSystemVolume(state[oppSide].heroes.slice(0,3).map(h=>h.name), state[oppSide].heroes.slice(3).map(h=>h.name), oppFormation, oppSide === 'atk' ? 'off' : 'def', false, "PVP");
+                    
+                    // The score is our survival/damage margin
+                    score = myVol / oppVol;
+                }
+
+                if (score > best.score) best = { score, form: currentForm };
                 dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
             }
         }
 
         renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
         resArea.innerText = best.form.join(' / ');
-        if(isBear) scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        
+        if (isBear) {
+            scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        } else {
+            scoreArea.innerHTML = `Volume Advantage: <span class="text-blue-400 font-bold">${best.score.toFixed(3)}x</span>`;
+        }
     }, 50);
 };
 
