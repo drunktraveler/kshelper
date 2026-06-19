@@ -39,7 +39,6 @@ window.init = () => {
 };
 
 function getLiveSetup(side, formationOverride = null) {
-    // 1. Get Stats (These are synced, so checking the Sim Tab hidden inputs is safe)
     const stats = {};
     ['inf', 'cav', 'arc'].forEach(u => {
         ['att', 'def', 'leth', 'hp'].forEach(s => {
@@ -48,46 +47,41 @@ function getLiveSetup(side, formationOverride = null) {
         });
     });
 
-    // 2. Get Tiers and TG
-    // We check the OPTIMIZER inputs first as they are the primary source of truth in the Formations tab
-    const getVal = (u, type) => {
-        const optEl = document.querySelector(`.opt-${side}-${u}-${type}`);
-        const simEl = document.querySelector(`#${side}-batch-container .batch-${type}-${u}`);
-        return parseInt(optEl?.value || simEl?.value) || (type === 'tier' ? 10 : 3);
-    };
+    const batches = [];
+    const batchRows = document.querySelectorAll(`#${side}-batch-container > div`);
+    let totalArmyCount = 0;
 
-    // 3. Get Total Count
-    let totalCount = 0;
-    document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
-        totalCount += (parseFloat(row.querySelector('.batch-inf').value) || 0) +
-                      (parseFloat(row.querySelector('.batch-cav').value) || 0) +
-                      (parseFloat(row.querySelector('.batch-arc').value) || 0);
+    batchRows.forEach(row => {
+        const batch = {
+            inf: parseFloat(row.querySelector('.batch-inf').value) || 0,
+            cav: parseFloat(row.querySelector('.batch-cav').value) || 0,
+            arc: parseFloat(row.querySelector('.batch-arc').value) || 0,
+            inf_tier: parseInt(row.querySelector('.batch-tier-inf').value),
+            inf_tg: parseInt(row.querySelector('.batch-tg-inf').value),
+            cav_tier: parseInt(row.querySelector('.batch-tier-cav').value),
+            cav_tg: parseInt(row.querySelector('.batch-tg-cav').value),
+            arc_tier: parseInt(row.querySelector('.batch-tier-arc').value),
+            arc_tg: parseInt(row.querySelector('.batch-tg-arc').value)
+        };
+        totalArmyCount += (batch.inf + batch.cav + batch.arc);
+        batches.push(batch);
     });
-    if (totalCount === 0) totalCount = 1000000;
 
-    // 4. Formation
-    let f = formationOverride;
-    if (!f) {
-        let i=0, c=0, a=0;
-        document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
-            i += parseFloat(row.querySelector('.batch-inf').value) || 0;
-            c += parseFloat(row.querySelector('.batch-cav').value) || 0;
-            a += parseFloat(row.querySelector('.batch-arc').value) || 0;
-        });
-        const t = i+c+a || 1;
-        f = [(i/t)*100, (c/t)*100, (a/t)*100];
+    // If optimizing, we collapse all batches into one representative formation to speed up the 5000+ sims
+    if (formationOverride) {
+        const collapsedBatch = {
+            inf: (formationOverride[0]/100) * (totalArmyCount || 1000000),
+            cav: (formationOverride[1]/100) * (totalArmyCount || 1000000),
+            arc: (formationOverride[2]/100) * (totalArmyCount || 1000000),
+            // Use the tiers from the very first batch as the representative tiers for the optimizer
+            inf_tier: batches[0]?.inf_tier || 10, inf_tg: batches[0]?.inf_tg || 3,
+            cav_tier: batches[0]?.cav_tier || 10, cav_tg: batches[0]?.cav_tg || 3,
+            arc_tier: batches[0]?.arc_tier || 10, arc_tg: batches[0]?.arc_tg || 3
+        };
+        return { heroes: state[side].heroes, stats, batches: [collapsedBatch] };
     }
 
-    const batch = {
-        inf: (f[0]/100) * totalCount,
-        cav: (f[1]/100) * totalCount,
-        arc: (f[2]/100) * totalCount,
-        inf_tier: getVal('inf', 'tier'), inf_tg: getVal('inf', 'tg'),
-        cav_tier: getVal('cav', 'tier'), cav_tg: getVal('cav', 'tg'),
-        arc_tier: getVal('arc', 'tier'), arc_tg: getVal('arc', 'tg')
-    };
-
-    return { heroes: state[side].heroes, stats, batches: [batch] };
+    return { heroes: state[side].heroes, stats, batches };
 }
 
 // --- NAVIGATION ---
