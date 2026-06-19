@@ -1,6 +1,7 @@
 import { HEROES } from './heroes.js';
 import { runCombatSim, isAlive } from './engine.js';
-import { GROWTH_TEMPLATES, WIDGET_GROWTH, WIDGET_STATS } from './constants.js';
+import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
+import { WIDGET_STATS } from './widgets.js';
 import { UNITS } from './units.js'; 
 
 const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
