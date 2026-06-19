@@ -14,8 +14,12 @@ const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
+    // NEW: Specifically for the Bear Tab
+    bear: { heroes: Array(3).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
+
+const originalUpdateGrids = window.updateGrids;
 
 // --- 1. INITIALIZATION ---
 window.init = () => {
@@ -332,17 +336,21 @@ window.saveHeroConfig = () => {
 };
 
 window.updateGrids = () => {
-    ['atk','def'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`); if(!container) return; container.innerHTML = '';
-        state[side].heroes.forEach((h, i) => {
-            const div = document.createElement('div');
-            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
-            if (h.name !== 'None') {
-                div.innerHTML = `<span style="position:absolute;z-index:1">${h.name[0]}</span><img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2" onerror="this.style.opacity='0'">`;
-            } else { div.innerText = (i + 1); }
-            div.onclick = () => window.openHeroModal(side, i);
-            container.appendChild(div);
-        });
+    originalUpdateGrids(); // Run atk/def grids
+    const bearContainer = document.getElementById(`bear-hero-grid`);
+    if (!bearContainer) return;
+    bearContainer.innerHTML = '';
+    state.bear.heroes.forEach((h, i) => {
+        const div = document.createElement('div');
+        const typeColors = ['border-blue-500', 'border-amber-500', 'border-emerald-500'];
+        div.className = `hero-circle active ${typeColors[i]} border-2`;
+        if (h.name !== 'None') {
+            div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2">`;
+        } else {
+            div.innerHTML = `<span class="text-[8px] text-slate-600">${['INF', 'CAV', 'ARC'][i]}</span>`;
+        }
+        div.onclick = () => window.openHeroModal('bear', i);
+        bearContainer.appendChild(div);
     });
 };
 
