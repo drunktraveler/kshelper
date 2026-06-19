@@ -946,15 +946,34 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Combat Efficiency...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Cross-Referencing Leader/Joiner Synergies...</div>`;
 
     // 1. Whitelist & Pivots
-    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric", ];
+    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
     const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0]];
     
-    // 2. Pre-calculate Meta-Mirror Baseline
-    // We assume the opponent is 20% stronger than your naked account
-    const mirrorFactor = 1.2;
+    // 2. Identify the "Elite Pool" (Top 3 of each type to allow Lead Swaps)
+    const getTop = (type) => unlocked
+        .filter(n => HEROES[n].type === type)
+        .sort((a,b) => (GROWTH_TEMPLATES[HEROES[b].template][roster[b].starIndex] || 0) - (GROWTH_TEMPLATES[HEROES[a].template][roster[a].starIndex] || 0))
+        .slice(0, 3);
+
+    const elitePool = [...getTop("Inf"), ...getTop("Cav"), ...getTop("Arc")];
+    
+    // Helper to get all combinations of 3
+    const getCombos = (arr, k) => {
+        const results = [];
+        const f = (prefix, remaining) => {
+            for (let i = 0; i < remaining.length; i++) {
+                if (prefix.length + 1 === k) results.push([...prefix, remaining[i]]);
+                else f([...prefix, remaining[i]], remaining.slice(i + 1));
+            }
+        };
+        f([], arr);
+        return results;
+    };
+    const leaderCombos = getCombos(elitePool, 3);
+
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
         { l: "Solo Defense", ctx: "def", bear: false },
@@ -963,61 +982,38 @@ window.calculateOptimalLineups = async () => {
         { l: "Bear Trap", ctx: "off", rally: true, bear: true }
     ];
 
-    const byT = { 
-        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
-        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
-        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
-    };
-    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
-
     await new Promise(r => setTimeout(r, 100));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Calculate the scenario "Meta Ceiling" once (Average of all pivots)
         let scenarioBaseline = 0;
-        pivots.forEach(p => {
-            scenarioBaseline += getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
-        });
+        pivots.forEach(p => scenarioBaseline += getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l));
         scenarioBaseline /= pivots.length;
 
         let candidates = [];
-        // Phase 1: Combinatorial Search
-        for (let i of byT.Inf) {
-            for (let c of byT.Cav) {
-                for (let a of byT.Arc) {
-                    const leads = [i, c, a];
-                    let bestPV = -1, bestJ = [];
-                    
-                    // Greedy Joiner Fill
-                    let curJ = [];
-                    if (s.rally || s.bear) {
-                        for (let slot=0; slot<4; slot++) {
-                            let bj = "None", mv = -1;
-                            jPool.forEach(cand => {
-                                // Test joiner across all pivots to find "Universal" strength
-                                let totalV = 0;
-                                pivots.forEach(p => {
-                                    totalV += getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
-                                });
-                                if (totalV > mv) { mv = totalV; bj = cand; }
-                            });
-                            curJ.push(bj);
-                        }
-                    }
-
-                    // Score this team across all pivots
-                    let teamAvgV = 0;
-                    pivots.forEach(p => {
-                        teamAvgV += getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
+        
+        // Test every combination of 3 leaders
+        leaderCombos.forEach(leads => {
+            let curJ = [];
+            if (s.rally || s.bear) {
+                for (let slot=0; slot<4; slot++) {
+                    let bj = "None", mv = -1;
+                    // Test joiners against the current leads
+                    jPool.forEach(cand => {
+                        let totalV = 0;
+                        pivots.forEach(p => totalV += getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l));
+                        if (totalV > mv) { mv = totalV; bj = cand; }
                     });
-                    
-                    candidates.push({ leads, joiners: curJ, score: teamAvgV });
+                    curJ.push(bj);
                 }
             }
-        }
 
-        // Phase 2: Sort and Result Generation
+            let teamAvgV = 0;
+            pivots.forEach(p => teamAvgV += getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l));
+            candidates.push({ leads, joiners: curJ, score: teamAvgV });
+        });
+
+        // Sort by Average Multiplier Gain
         candidates.sort((a,b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
         
