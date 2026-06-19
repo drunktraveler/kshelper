@@ -4,6 +4,8 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 import { WIDGET_STATS } from './widgets.js';
 import { UNITS } from './units.js'; 
 
+const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
+
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
@@ -18,23 +20,16 @@ let state = {
 
 // --- INITIALIZATION ---
 window.init = () => {
-    Object.keys(HEROES).forEach(n => { 
-        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
-    });
-    
+    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
     const mainSel = document.getElementById('hero-select');
     if (mainSel) {
         mainSel.innerHTML = '<option value="None">None</option>';
         Object.keys(HEROES).sort().forEach(n => { mainSel.innerHTML += `<option value="${n}">${n}</option>`; });
         mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index, activeSlot.side);
     }
-    
-    buildStatTable(); // Build Battle Sim Table
-    initFormationGrids(); // Build Formations Tab Grids (ONCE)
-    window.addBatch('atk', true); 
-    window.addBatch('def', true);
-    window.updateGrids(); 
-    renderRosterUI(); 
+    buildStatTable(); initFormationGrids(); 
+    window.addBatch('atk', true); window.addBatch('def', true);
+    window.updateGrids(); renderRosterUI(); 
     window.showTab('battle');
 };
 
@@ -46,20 +41,16 @@ function getLiveSetup(side, formationOverride = null) {
             stats[`${u}_${s}`] = parseFloat(el?.value) || 0;
         });
     });
-
     const getVal = (u, type) => {
         const optEl = document.querySelector(`.opt-${side}-${u}-${type}`);
         const simEl = document.querySelector(`#${side}-batch-container .batch-${type}-${u}`);
-        const rawVal = optEl?.value ?? simEl?.value; // Use Nullish Coalescing (??) instead of OR (||)
-        if (rawVal === undefined || rawVal === null) return (type === 'tier' ? 10 : 3);
-        return parseInt(rawVal); // 0 will now remain 0
+        const raw = optEl?.value ?? simEl?.value;
+        return (raw !== undefined && raw !== "") ? parseInt(raw) : (type === 'tier' ? 10 : 3);
     };
-
-    let totalArmyCount = 0;
-    const batchRows = document.querySelectorAll(`#${side}-batch-container > div`);
-    const processedBatches = [];
-
-    batchRows.forEach(row => {
+    let total = 0;
+    const rows = document.querySelectorAll(`#${side}-batch-container > div`);
+    const batches = [];
+    rows.forEach(row => {
         const b = {
             inf: parseFloat(row.querySelector('.batch-inf').value) || 0,
             cav: parseFloat(row.querySelector('.batch-cav').value) || 0,
@@ -71,24 +62,22 @@ function getLiveSetup(side, formationOverride = null) {
             arc_tier: parseInt(row.querySelector('.batch-tier-arc').value),
             arc_tg: parseInt(row.querySelector('.batch-tg-arc').value)
         };
-        totalArmyCount += (b.inf + b.cav + b.arc);
-        processedBatches.push(b);
+        total += (b.inf + b.cav + b.arc);
+        batches.push(b);
     });
-
     if (formationOverride) {
         const collapsed = {
-            inf: (formationOverride[0]/100) * (totalArmyCount || 1000000),
-            cav: (formationOverride[1]/100) * (totalArmyCount || 1000000),
-            arc: (formationOverride[2]/100) * (totalArmyCount || 1000000),
+            inf: (formationOverride[0]/100) * (total || 1000000),
+            cav: (formationOverride[1]/100) * (total || 1000000),
+            arc: (formationOverride[2]/100) * (total || 1000000),
             inf_tier: getVal('inf', 'tier'), inf_tg: getVal('inf', 'tg'),
             cav_tier: getVal('cav', 'tier'), cav_tg: getVal('cav', 'tg'),
             arc_tier: getVal('arc', 'tier'), arc_tg: getVal('arc', 'tg')
         };
         return { heroes: state[side].heroes, stats, batches: [collapsed] };
     }
-    return { heroes: state[side].heroes, stats, batches: processedBatches };
+    return { heroes: state[side].heroes, stats, batches };
 }
-
 // --- NAVIGATION ---
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
@@ -138,22 +127,17 @@ window.syncFormationUI = () => {
 };
 
 window.updateSharedTier = (side, unit, type, val, origin) => {
-    const targetSelector = origin === 'sim' ? `.opt-${side}-${unit}-${type}` : `#${side}-batch-container .batch-${type}-${unit}`;
-    const target = document.querySelector(targetSelector);
+    const target = origin === 'sim' ? document.querySelector(`.opt-${side}-${unit}-${type}`) : document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`);
     if (target && target.value !== val) target.value = val;
 };
 
 // --- SYNC IMPROVEMENTS ---
 window.updateSharedStat = (side, key, val, origin) => {
-    // 1. Update the mirror input
-    const targetSelector = origin === 'sim' ? `.opt-${side}-${key}` : `input[data-side="${side}"][data-stat="${key}"]`;
-    const target = document.querySelector(targetSelector);
+    const target = origin === 'sim' ? document.querySelector(`.opt-${side}-${key}`) : document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
     if (target && target.value !== val) target.value = val;
-
-    // 2. If typing in sim, update color logic
-    const simInput = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
-    if (simInput) window.updateStatColors(simInput);
+    if (origin === 'opt') window.updateStatColors(document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`));
 };
+
 
 // Initializes the Formations tab grids without filling them with innerHTML repeatedly
 function initFormationGrids() {
@@ -552,60 +536,24 @@ function gatherSetup() {
 }
 
 window.handleSimulation = async () => {
-    const setup = gatherSetup(); 
+    const setup = { atk: getLiveSetup('atk'), def: getLiveSetup('def') };
     const mode = document.getElementById('sim-mode-select').value;
-    
-    let rFinal, rBest, rWorst;
-    let winAtk = 0, winDef = 0, winRateText = "";
-
+    let r;
     if (mode === 'monte-carlo') {
-        let results = [], sumAtkWins = 0, sumDefWins = 0;
-        for (let i = 0; i < 100; i++) {
-            const r = runCombatSim(setup, 'stochastic', 'stochastic');
-            const aV = sumTroops(r.m_cur), dV = sumTroops(r.e_cur);
-            if (aV > dV) { winAtk++; sumAtkWins += aV; } 
-            else if (dV > aV) { winDef++; sumDefWins += dV; }
-            results.push(r);
-        }
-        winRateText = `Atk Wins: ${winAtk}% | Def Wins: ${winDef}%`;
-        rFinal = {
-            m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
-            e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
-            wave: results[0].wave, atk_logs: results[0].atk_logs, def_logs: results[0].def_logs
-        };
-        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
-        rWorst = results[0]; rBest = results[99];
+        let results = [];
+        for (let i = 0; i < 20; i++) results.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+        r = results[0];
     } else {
-        // Deterministic Range Assignment
-        rFinal = runCombatSim(setup, 'average', 'average');
-        rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
-        rWorst = runCombatSim(setup, 'unlucky', 'lucky');
+        r = runCombatSim(setup, 'average', 'average');
     }
-
-    const sAtk = Math.round(sumTroops(rFinal.m_cur)), sDef = Math.round(sumTroops(rFinal.e_cur));
+    const sAtk = Math.round(sumTroops(r.m_cur)), sDef = Math.round(sumTroops(r.e_cur));
     document.getElementById('result-screen').classList.remove('hidden');
     document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
     document.getElementById('res-def-total').innerText = sDef.toLocaleString();
-    
-    document.getElementById('res-atk-range').innerText = `Range: ${sumTroops(rWorst.m_cur).toLocaleString()} - ${sumTroops(rBest.m_cur).toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${sumTroops(rBest.e_cur).toLocaleString()} - ${sumTroops(rWorst.e_cur).toLocaleString()}`;
-
     const bar = document.getElementById('luck-bar-inner');
     const score = (sAtk - sDef) / (sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]) || 1);
     bar.style.left = "50%"; bar.style.width = Math.abs(score * 50) + "%";
     bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
-
-    document.getElementById('result-waves').innerHTML = `
-        <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
-        ${winRateText ? winRateText + '<br>' : ''}
-        Representative Duration: ${rFinal.wave} Waves`;
-
-    const logHTML = (side, data) => `
-        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
-        <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
-        ${data.skills.map(s => `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span></div>`).join('')}
-    `;
-    document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
 };
 
 function totalInstances(heroes, name) { return heroes.filter(h => h.name === name).length; }
@@ -697,86 +645,40 @@ window.runOptimizer = async (mode) => {
     const isBear = mode === 'bear';
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
-    
-    resArea.innerText = "Simulating Battles...";
-
+    resArea.innerText = "Simulating...";
     setTimeout(() => {
         let dataPoints = { a: [], b: [], c: [], z: [] };
         let best = { form: [0, 0, 0], wins: -1, margin: -Infinity };
-
         const mySide = isBear ? 'atk' : optRole;
         const oppSide = mySide === 'atk' ? 'def' : 'atk';
-
-        // 1. Prepare Opposition Archetypes
         let oppArchetypes = [];
-        if (mode === 'current') {
-            oppArchetypes.push(getLiveSetup(oppSide));
-        } else if (mode === 'meta') {
-            const metaForms = [[50,20,30], [10,10,80], [60,10,30], [33,33,34], [50,0,50], [60,40,0], [10,80,10]];
-            metaForms.forEach(f => oppArchetypes.push(getLiveSetup(oppSide, f)));
-        } else if (mode === 'custom') {
-            const customF = [
-                parseFloat(document.getElementById('custom-inf').value) || 33,
-                parseFloat(document.getElementById('custom-cav').value) || 33,
-                parseFloat(document.getElementById('custom-arc').value) || 34
-            ];
-            oppArchetypes.push(getLiveSetup(oppSide, customF));
-        }
-
-        // 2. Simulation Loop
+        if (mode === 'current') oppArchetypes.push(getLiveSetup(oppSide));
+        else if (mode === 'meta') [[50,20,30], [10,10,80], [60,10,30], [33,33,34], [50,0,50], [60,40,0], [10,80,10]].forEach(f => oppArchetypes.push(getLiveSetup(oppSide, f)));
+        else if (mode === 'custom') oppArchetypes.push(getLiveSetup(oppSide, [parseFloat(document.getElementById('custom-inf').value)||33, parseFloat(document.getElementById('custom-cav').value)||33, parseFloat(document.getElementById('custom-arc').value)||34]));
+        
         for (let i = 0; i <= 100; i += 2) {
             for (let j = 0; j <= 100 - i; j += 2) {
                 let k = 100 - i - j;
                 const mySetup = getLiveSetup(mySide, [i, j, k]);
-                
-                let currentWins = 0;
-                let totalMargin = 0;
-                let totalBearDmg = 0;
-
+                let currentWins = 0, totalMargin = 0;
                 oppArchetypes.forEach(oppSetup => {
                     const simSetup = { atk: (mySide === 'atk' ? mySetup : oppSetup), def: (mySide === 'def' ? mySetup : oppSetup) };
-                    const result = runCombatSim(simSetup, 'average', 'average', 1000, isBear, true);
-                    
-                    if (isBear) {
-                        totalBearDmg += result.totalDmg;
-                    } else {
-                        const myS = (mySide === 'atk' ? result.m_cur : result.e_cur);
-                        const oppS = (mySide === 'atk' ? result.e_cur : result.m_cur);
-                        const myTotal = (myS.inf + myS.cav + myS.arc);
-                        const oppTotal = (oppS.inf + oppS.cav + oppS.arc);
-                        
-                        if (myTotal > oppTotal) currentWins++;
-                        // The margin is my survivors minus their survivors
-                        totalMargin += (myTotal - oppTotal);
-                    }
+                    const res = runCombatSim(simSetup, 'average', 'average', 1000, isBear, true);
+                    const myTotal = sumTroops(mySide === 'atk' ? res.m_cur : res.e_cur);
+                    const oppTotal = sumTroops(mySide === 'atk' ? res.e_cur : res.m_cur);
+                    if (myTotal > oppTotal) currentWins++;
+                    totalMargin += (myTotal - oppTotal);
                 });
-
                 const avgMargin = totalMargin / oppArchetypes.length;
-                const avgBear = totalBearDmg / oppArchetypes.length;
-
-                // Selection Logic: Prioritize Winrate, then Survivors
-                const isNewBest = isBear ? (avgBear > best.margin) : 
-                                 (currentWins > best.wins || (currentWins === best.wins && avgMargin > best.margin));
-
-                if (isNewBest) {
-                    best = { form: [i, j, k], wins: currentWins, margin: isBear ? avgBear : avgMargin };
+                if (currentWins > best.wins || (currentWins === best.wins && avgMargin > best.margin)) {
+                    best = { form: [i, j, k], wins: currentWins, margin: avgMargin };
                 }
-                
-                // For the heatmap, z is either Bear Dmg or a weighted Win+Margin score
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k);
-                dataPoints.z.push(isBear ? avgBear : (currentWins * 1000000 + avgMargin));
+                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(currentWins * 1000000 + avgMargin);
             }
         }
-
         renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
         resArea.innerText = best.form.join(' / ');
-        
-        if (isBear) {
-            scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.margin).toLocaleString()}</span>`;
-        } else {
-            const winLabel = mode === 'meta' ? `Wins: ${best.wins}/7 | ` : (best.margin > 0 ? 'WINNER | ' : 'LOSER | ');
-            scoreArea.innerHTML = `${winLabel}Net Survivors: <span class="text-blue-400 font-bold">${Math.round(Math.abs(best.margin)).toLocaleString()}</span>`;
-        }
+        scoreArea.innerHTML = `Net Survivors: <span class="text-blue-400 font-bold">${Math.round(Math.abs(best.margin)).toLocaleString()}</span>`;
     }, 50);
 };
 
