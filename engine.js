@@ -26,14 +26,14 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
         
-        // 1. WAVE SNAPSHOTS
+        // --- 1. WAVE START SNAPSHOT ---
         const atkSnap = { ...m_cur }, defSnap = { ...e_cur };
         let damageToAtk = { inf: 0, cav: 0, arc: 0 };
         let damageToDef = { inf: 0, cav: 0, arc: 0 };
 
-        // 2. TARGET LOCKING (Static for the wave)
-        const atkTargetUnit = (['inf', 'cav', 'arc'].find(u => defSnap[u] >= 1) || 'arc');
-        const defTargetUnit = (['inf', 'cav', 'arc'].find(u => atkSnap[u] >= 1) || 'arc');
+        // Determine targets at wave start (Mirror Symmetry)
+        const atkTarget = (['inf', 'cav', 'arc'].find(u => defSnap[u] >= 1) || 'arc');
+        const defTarget = (['inf', 'cav', 'arc'].find(u => atkSnap[u] >= 1) || 'arc');
 
         let waveMults = {
             atk: { inf:{off:1,surv:1,dodge:0}, cav:{off:1,surv:1,dodge:0}, arc:{off:1,surv:1,dodge:0} },
@@ -70,8 +70,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     if (act.minWave && act.interval) {
                         uptime = (act.duration / act.interval) * (Math.max(0, nWaves - act.minWave + 1) / nWaves);
                     } else {
-                        const dur = isBear ? 1 : (act.duration || 1);
-                        uptime = 1 - Math.pow(1 - act.p, dur);
+                        uptime = 1 - Math.pow(1 - act.p, isBear ? 1 : (act.duration || 1));
                         if (act.minWave) uptime *= (Math.max(0, nWaves - act.minWave + 1) / nWaves);
                     }
                     applyToBucket(b, act, uptime);
@@ -86,22 +85,22 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             });
         });
 
-        // 3. COMBAT CLASH
+        // --- 2. THE CLASH ---
         [['atk', 'def'], ['def', 'atk']].forEach(([side, target]) => {
             if (isBear && side === 'def') return;
             const sP = (side === 'atk' ? atkP : defP), tP = (side === 'atk' ? defP : atkP);
             const sSnap = (side === 'atk' ? atkSnap : defSnap);
             const tSnap = (side === 'atk' ? defSnap : atkSnap);
             const sS = setup[side], tS = setup[target];
-            const tf = (side === 'atk' ? atkTargetUnit : defTargetUnit);
-            const pDamage = (side === 'atk' ? damageToDef : damageToAtk);
+            const tf = (side === 'atk' ? atkTarget : defTarget);
+            const pendingMap = (side === 'atk' ? damageToDef : damageToAtk);
 
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sSnap[u] < 1) return;
 
                 const roll = (p) => isStochastic ? (Math.random() < p ? 1 : 0) : p;
 
-                const calcKills = (targetType, ratio = 1.0) => {
+                const getKills = (targetType, scalar = 1.0) => {
                     let offMod = 1.0, defMod = 1.0;
                     if (u === 'inf' && targetType === 'cav') offMod *= 1.1;
                     if (u === 'cav' && targetType === 'arc') offMod *= 1.1;
@@ -110,42 +109,51 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     const w = sP.weights[u], tw = tP.weights[targetType];
                     if (u === 'arc') offMod *= (1 + (roll(0.1) * w.t7));
                     if (targetType === 'inf' && u === 'cav') defMod *= (1 / (1 + (0.1 * tw.t7)));
-                    
                     if (u === 'arc') offMod *= (1 + (roll((0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5))) * 0.5));
                     if (u === 'cav') offMod *= (1 + (roll((0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5))) * 1.0));
                     if (targetType === 'inf') defMod *= (1 / (1 + (roll((0.375 * tw.tg5) + (0.25 * (tw.tg3 - tw.tg5))) * 0.36)));
 
                     const b = sP.avgBase[u], tb = tP.avgBase[targetType];
-                    const atk = b.atk * (1 + sS.stats[u+'_att']/100);
-                    const leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                    const df = tb.def * (1 + tS.stats[targetType+'_def']/100);
-                    const hp = tb.hp * (1 + tS.stats[targetType+'_hp']/100);
+                    const statsAtk = b.atk * (1 + sS.stats[u+'_att']/100);
+                    const statsLeth = b.leth * (1 + sS.stats[u+'_leth']/100);
+                    const statsDef = tb.def * (1 + tS.stats[targetType+'_def']/100);
+                    const statsHP = tb.hp * (1 + tS.stats[targetType+'_hp']/100);
 
                     let fMult = (waveMults[side][u].off * offMod) / (waveMults[target][targetType].surv * defMod);
                     if (!isStochastic) fMult *= (1 - waveMults[target][targetType].dodge);
 
-                    return (Math.sqrt(sSnap[u]) * sq_min * atk * leth * fMult) / (df * hp * 100);
+                    return (Math.sqrt(sSnap[u]) * sq_min * statsAtk * statsLeth * fMult) / (statsDef * statsHP * 100) * scalar;
                 };
 
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tSnap['arc'] >= 1 && tf !== 'arc' && !isBear) {
-                    const bChance = 0.2 * sP.weights.cav.t7;
-                    const isBypass = roll(bChance);
-                    if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        pDamage['arc'] += calcKills('arc') * (isStochastic ? 1 : bChance);
-                        if (!isStochastic) pDamage[tf] += calcKills(tf) * (1 - bChance);
-                    } else pDamage[tf] += calcKills(tf);
-                } else pDamage[tf] += calcKills(tf);
+                    const bypass = 0.2 * sP.weights.cav.t7;
+                    pendingMap['arc'] += getKills('arc', isStochastic ? (roll(bypass) ? 1 : 0) : bypass);
+                    pendingMap[tf] += getKills(tf, isStochastic ? (roll(bypass) ? 0 : 1) : (1 - bypass));
+                } else {
+                    pendingMap[tf] += getKills(tf);
+                }
             });
         });
 
-        // 4. SYNC UPDATE
+        // --- 3. FINAL EXECUTION ---
         ['inf', 'cav', 'arc'].forEach(u => {
             m_cur[u] = Math.max(0, m_cur[u] - damageToAtk[u]);
             e_cur[u] = Math.max(0, e_cur[u] - damageToDef[u]);
         });
         if (isBear) break;
     }
-    return { m_cur, e_cur, wave, totalDmg: isBear ? (1000000 - e_cur.inf) : 0, atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) };
+
+    // Mirror Draw Protection: If difference is negligible, force draw
+    const sumA = m_cur.inf + m_cur.cav + m_cur.arc;
+    const sumD = e_cur.inf + e_cur.cav + e_cur.arc;
+    if (Math.abs(sumA - sumD) < 1) { m_cur = { ...e_cur }; }
+
+    return { 
+        m_cur, e_cur, wave, 
+        totalDmg: isBear ? (1000000 - e_cur.inf) : 0, 
+        atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), 
+        def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) 
+    };
 }
 
 function applyToBucket(buckets, skill, uptime) {
@@ -185,101 +193,6 @@ function processBatches(batches) {
         } 
     });
     return { counts: totals, avgBase, weights };
-}
-
-function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, triggerTracker) {
-    let selfPool = {}, enemyPool = {}, logs = [];
-    const isStochastic = (luckMode === 'stochastic');
-
-    // 1. Group lineup to apply stacking rules correctly
-    const lineup = {}; 
-    sideSetup.heroes.forEach((h, index) => {
-        if (h.name === "None" || !HEROES[h.name]) return;
-        if (!lineup[h.name]) {
-            lineup[h.name] = { 
-                lead: 0, 
-                joiner: 0, 
-                data: HEROES[h.name], 
-                levels: { s1: h.s1, s2: h.s2, s3: h.s3 } 
-            };
-        }
-        if (index < 3) lineup[h.name].lead++; 
-        else lineup[h.name].joiner++;
-    });
-
-    for (const name in lineup) {
-        const h = lineup[name];
-        h.data.skills.forEach((s, si) => {
-            // Logic: Leaders get all skills, Joiners get S1 only
-            const instances = h.lead + (si === 0 ? h.joiner : 0);
-            if (instances === 0) return;
-
-            // FIXED: Corrected property access (removed .roster)
-            const lvl = h.levels[`s${si+1}`] || 5;
-            const x = s.values[lvl - 1];
-            if (x === undefined) return;
-
-            const p = s.getChance(x);
-            const m = s.getMagnitude(x);
-            
-            let factor;
-            if (p >= 1.0) {
-                factor = instances;
-            } else {
-                const combinedProb = 1 - Math.pow(1 - p, instances);
-                if (isStochastic) {
-                    const hit = Math.random() < combinedProb ? 1 : 0;
-                    if (hit) triggerTracker[`${name} ${s.name}`] = (triggerTracker[`${name} ${s.name}`] || 0) + 1;
-                    factor = hit;
-                } else {
-                    const dur = isBear ? 1 : (s.duration || 1);
-                    factor = (1 - Math.pow(1 - shiftFn(combinedProb, luckMode), dur));
-                }
-            }
-
-            // Calculation for math pool (handles multi-part arrays)
-            const effectiveMagnitude = Array.isArray(m) ? m.map(v => v * factor) : m * factor;
-
-            s.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return;
-                const val = Array.isArray(effectiveMagnitude) ? effectiveMagnitude[idx] : effectiveMagnitude;
-                if (val === 0) return;
-
-                if (id < 200) selfPool[id] = (selfPool[id] || 0) + val;
-                else enemyPool[id] = (enemyPool[id] || 0) + val;
-            });
-
-            // 2. LOGGING (Handles multi-part visibility)
-            if (!isOptimizing) {
-                const isPassive = p >= 1.0;
-                let logVal;
-                
-                if (isStochastic && !isPassive) {
-                    logVal = `Triggers: ${triggerTracker[`${name} ${s.name}`] || 0}`;
-                } else {
-                    // FIXED: Now maps all parts of Saul/Hilde skills into the log string
-                    if (Array.isArray(effectiveMagnitude)) {
-                        logVal = "+" + effectiveMagnitude.map(v => (v * 100).toFixed(1) + "%").join("/");
-                    } else {
-                        logVal = `+${(effectiveMagnitude * 100).toFixed(1)}%`;
-                    }
-                }
-                
-                logs.push({ 
-                    name: `${name} ${s.name}${instances > 1 ? ' (x' + instances + ')' : ''}`, 
-                    val: logVal, 
-                    isPassive 
-                });
-            }
-        });
-    }
-
-    const calc = (pool) => { 
-        let m = 1.0; 
-        Object.values(pool).forEach(v => { if(!isNaN(v)) m *= (1 + v); }); 
-        return m; 
-    };
-    return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
 }
 
 function getHeroData(sideSetup) {
