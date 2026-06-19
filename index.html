@@ -44,11 +44,11 @@
                         <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
                     </div>
                     <div id="atk-batch-container"></div>
-                    <div class="f-bar mb-1" id="atk-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-                    <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                        <span id="atk-inf-pct">0%</span><span id="atk-cav-pct">0%</span><span id="atk-arc-pct">0%</span>
-                    </div>
-                    <div class="flex gap-2" id="atk-hero-grid"></div>
+                    <div class="f-bar atk-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+<div class="flex justify-between text-[10px] text-slate-600 px-1">
+    <span class="atk-inf-pct">0%</span><span class="atk-cav-pct">0%</span><span class="atk-arc-pct">0%</span>
+</div>
+<div class="flex gap-2 atk-hero-grid mt-4"></div>
                 </div>
                 <div class="glass-card p-6 border-r-4 border-red-500/30">
                     <div class="flex justify-between items-center mb-4">
@@ -56,11 +56,11 @@
                         <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
                     </div>
                     <div id="def-batch-container"></div>
-                    <div class="f-bar mb-1" id="def-f-bar"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-                    <div class="flex justify-between text-[10px] font-black text-slate-600 mb-6 px-1">
-                        <span id="def-inf-pct">0%</span><span id="def-cav-pct">0%</span><span id="def-arc-pct">0%</span>
-                    </div>
-                    <div class="flex gap-2" id="def-hero-grid"></div>
+                    <div class="f-bar def-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+<div class="flex justify-between text-[10px] text-slate-600 px-1">
+    <span class="def-inf-pct">0%</span><span class="def-cav-pct">0%</span><span class="def-arc-pct">0%</span>
+</div>
+<div class="flex gap-2 def-hero-grid mt-4"></div>
                 </div>
             </div>
             <div class="max-w-2xl mx-auto space-y-4">
@@ -120,6 +120,8 @@
     </div>
     <div id="opt-atk-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
     <div id="opt-atk-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
+    <div class="f-bar atk-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+<div class="atk-hero-grid flex gap-1 scale-75 origin-left"></div>
 </div>
 
 <!-- Defender Configuration Panel -->
@@ -130,6 +132,8 @@
     </div>
     <div id="opt-def-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
     <div id="opt-def-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
+    <div class="f-bar def-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+<div class="def-hero-grid flex gap-1 scale-75 origin-left"></div>
 </div>
 </div>
         <div class="glass-card p-8">
