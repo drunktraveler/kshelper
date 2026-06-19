@@ -826,7 +826,7 @@ function renderTernary(id, data, best, isBear) {
 
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-// --- UPDATED SYSTEM VOLUME LOGIC ---
+// --- UPDATED SYSTEM VOLUME LOGIC (Reflecting periodic and troop specific) ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
     const isCalibrated = !!rawStats;
@@ -843,70 +843,55 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     };
 
     // ID Buckets per Troop Type
-    const createBuckets = () => ({
-        101: 0, 102: 1, 103: 1, 104: 1, 105: 1, 106: 1,
-        201: 0, 202: 1, 203: 1, 204: 1, 205: 1, 250: 1 
-    });
-
-    let b = { inf: createBuckets(), cav: createBuckets(), arc: createBuckets() };
+    const createB = () => ({ 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 });
+    let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const lineup = {}; 
-    leads.forEach(n => { if(n !== "None") lineup[n] = (lineup[n] || 0) + 1; });
-    
-    // 1. LEADERS: Apply Star Stats and Widgets
-     leads.forEach(name => {
-        if (name === "None") return;
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-        const tk = h.type.toLowerCase().slice(0, 3);
-        
-        if (isCalibrated) {
-            const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
-            curS[tk].att += star; curS[tk].def += star;
-            if (h.widget) {
-                const wT = WIDGET_STATS[h.template] || [];
-                if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
-                if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
-            }
-        }
-        // Logic check: Only apply Rally/Garrison widgets if the scenario allows it
-        // scenarioLabel is things like "Rally (Offense)", "Garrison (Defense)", etc.
-        const isRallyOrGarrison = scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear");
-        if (isRallyOrGarrison && h.widget && h.widget.context === ctx) {
-            wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-        }
-    });
-
-    // 2. SKILL PROCESSING
     const processPool = (heroList, isLeadPool) => {
         heroList.forEach(name => {
-            if (name === "None") return;
-            const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
+            if (name === "None" || !HEROES[name]) return;
+            const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
             
+            // Apply Stats/Widgets (Leads only)
+            if (isLeadPool) {
+                const tk = h.type.toLowerCase().slice(0, 3);
+                if (isCalibrated) {
+                    const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
+                    curS[tk].att += star; curS[tk].def += star;
+                    if (h.widget) {
+                        const wT = WIDGET_STATS[h.template] || [];
+                        if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
+                        if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
+                    }
+                }
+                if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
+                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+                }
+            }
+
+            // Apply Skills
             h.skills.forEach((skill, si) => {
                 if (!isLeadPool && si > 0) return; // Joiners S1 only
-                
-                const lvl = isLeadPool ? (r[`s${si+1}`] || 5) : 5;
-                const x = skill.values[lvl - 1];
+                const x = skill.values[(isLeadPool ? (r[`s${si+1}`]||5) : 5) - 1];
                 const p = skill.getChance(x), mFull = skill.getMagnitude(x);
                 
-                // Account for Wave 5 gate: weight Alcar's S1 at 75% efficiency for total volume
-                let uptime = (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
-                if (skill.minWave) uptime *= 0.75; 
+                // PERIODIC UPTIME (Alcar S1)
+                let uptime;
+                if (skill.interval) {
+                    uptime = skill.duration / skill.interval;
+                } else {
+                    uptime = (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
+                }
+                if (skill.minWave && !skill.interval) uptime *= 0.75; // Standard penalty for delayed skills
 
                 const affectedUnits = skill.units || ["inf", "cav", "arc"];
-
                 skill.ids.forEach((id, idx) => {
-                    if (isBear && id >= 200) return;
                     const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-
                     affectedUnits.forEach(u => {
                         let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                        const final = mag * uptime;
-
-                        if (id === 101 || id === 201) b[u][id] += final;
-                        else if (id === 250) b[u][id] *= (1 / (1 - final)); // Dodge is a survival multiplier
-                        else b[u][id] *= (1 + final);
+                        if (id === 101 || id === 201) b[u][id] += (mag * uptime);
+                        else if (id === 250) b[u][id] += (mag * uptime); // Sum of dodge chances
+                        else b[u][id] *= (1 + (mag * uptime));
                     });
                 });
             });
@@ -917,22 +902,18 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     processPool(joiners, false);
 
     const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
-
-    // Offense Volume
+    
     const getOff = (u) => {
         const stats = curS[u];
         const mult = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
         return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
     };
-    // 1.6x Quality Factor for Cavalry Bypass in PVP
     const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.0 : 1.6)) + getOff('arc');
-
     if (isBear) return totalD;
 
-    // Survival Volume
     const getSurv = (u) => {
         const stats = curS[u];
-        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * b[u][250];
+        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * (1 / (1 - Math.min(0.9, b[u][250])));
         return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
     };
     const totalS = getSurv('inf') + getSurv('cav') + getSurv('arc');
