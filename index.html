@@ -216,7 +216,15 @@
                 <div><label class="text-[8px] text-slate-500 uppercase font-black ml-1">Lethality %</label><input type="number" id="bear-arc-leth" class="input-dark !py-1 text-xs" value="500"></div>
             </div>
         </div>
-
+        <div class="glass-card p-6 border-t border-slate-800 mb-8">
+    <div class="flex justify-between items-center mb-4">
+        <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Chosen Leaders</span>
+        <span class="text-[9px] text-slate-500 font-bold uppercase">Click to Configure (Inf / Cav / Arc)</span>
+    </div>
+    <div class="flex justify-center gap-4" id="bear-hero-grid">
+        <!-- Will be populated by JS -->
+    </div>
+</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div id="bear-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
             <div class="space-y-6">
