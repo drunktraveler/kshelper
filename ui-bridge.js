@@ -19,8 +19,6 @@ let state = {
     bear: { heroes: Array(3).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
 
-const originalUpdateGrids = window.updateGrids;
-
 // --- 1. INITIALIZATION ---
 window.init = () => {
     Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
@@ -335,6 +333,7 @@ window.saveHeroConfig = () => {
     window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
+const originalUpdateGrids = window.updateGrids;
 window.updateGrids = () => {
     originalUpdateGrids(); // Run atk/def grids
     const bearContainer = document.getElementById(`bear-hero-grid`);
@@ -653,7 +652,6 @@ window.runOptimizer = async (mode) => {
     }, 50);
 };
 
-// Helper specific to the Bear Tab's custom inputs
 function calculateBearDamage(config, formation) {
     const units = ['inf', 'cav', 'arc'];
     const longUnits = ['infantry', 'cavalry', 'archers'];
