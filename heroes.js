@@ -46,7 +46,7 @@ export const HEROES = {
         skills: [
             { name: "Iron Maiden", ids: [102], values: [5, 10, 15, 20, 25], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, duration: 0 },
             { name: "Shield of Grace", ids: [250], values: [4, 8, 12, 16, 20], getChance: (X) => X / 100, getMagnitude: (X) => 1.0, duration: 1 },
-            { name: "Second Strike", ids: [103], units: ["cav"], values: [120, 140, 160, 180, 200], getChance: (X) => 0.25, getMagnitude: (X) => (X + 100) / 100, duration: 1 }
+            { name: "Second Strike", ids: [103], units: ["cav"], values: [120, 140, 160, 180, 200], getChance: (X) => 0.25, getMagnitude: (X) => X / 100, duration: 1 }
         ]
     },
 
