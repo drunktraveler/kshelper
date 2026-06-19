@@ -112,33 +112,25 @@
         <!-- Formation Tab -->
         <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-    <!-- ATTACKER PANEL -->
-    <div class="glass-card p-6 border-l-4 border-emerald-500/50 bg-slate-950/20">
-        <div class="flex justify-between items-center mb-4">
-            <span class="text-xs font-black text-emerald-500 uppercase tracking-tighter">Attacker Configuration</span>
-            <div id="opt-atk-heroes" class="flex -space-x-2"></div>
-        </div>
-        <div id="opt-atk-stats-grid" class="grid grid-cols-4 gap-3 mb-4">
-            <!-- Populated via JS for sync -->
-        </div>
-        <div id="opt-atk-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4">
-            <!-- Populated via JS for sync -->
-        </div>
+    <!-- Attacker Configuration Panel -->
+<div class="glass-card p-6 border-l-4 border-emerald-500/50">
+    <div class="flex justify-between items-center mb-4">
+        <span class="text-xs font-black text-emerald-500 uppercase">Attacker Config</span>
+        <div id="atk-hero-grid" class="flex gap-1 scale-75 origin-right"></div> <!-- REUSED ID -->
     </div>
+    <div id="opt-atk-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
+    <div id="opt-atk-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
+</div>
 
-    <!-- DEFENDER PANEL -->
-    <div class="glass-card p-6 border-r-4 border-red-500/50 bg-slate-950/20">
-        <div class="flex justify-between items-center mb-4">
-            <span class="text-xs font-black text-red-500 uppercase tracking-tighter">Defender Configuration</span>
-            <div id="opt-def-heroes" class="flex -space-x-2"></div>
-        </div>
-        <div id="opt-def-stats-grid" class="grid grid-cols-4 gap-3 mb-4">
-            <!-- Populated via JS for sync -->
-        </div>
-        <div id="opt-def-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4">
-            <!-- Populated via JS for sync -->
-        </div>
+<!-- Defender Configuration Panel -->
+<div class="glass-card p-6 border-r-4 border-red-500/50">
+    <div class="flex justify-between items-center mb-4">
+        <span class="text-xs font-black text-red-500 uppercase">Defender Config</span>
+        <div id="def-hero-grid" class="flex gap-1 scale-75 origin-right"></div> <!-- REUSED ID -->
     </div>
+    <div id="opt-def-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
+    <div id="opt-def-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
+</div>
 </div>
         <div class="glass-card p-8">
     <div class="flex justify-between items-center mb-6">
