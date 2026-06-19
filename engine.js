@@ -83,13 +83,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         });
     }
 });
-            // Finalizing multipliers for the wave
-            ['inf', 'cav', 'arc'].forEach(u => {
-                waveMults[side][u].off = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
-                waveMults[side][u].surv = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205];
-                waveMults[side][u].dodge = b[u][250];
-            });
-        });
 
         let pending = [];
         const mf = (['inf', 'cav', 'arc'].find(u => m_cur[u] >= 1) || 'arc');
