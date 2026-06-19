@@ -927,33 +927,17 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Cross-Referencing Leader/Joiner Synergies...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Scanning Meta-Peak Formations...</div>`;
 
-    // 1. Whitelist & Pivots
     const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0]];
-    
-    // 2. Identify the "Elite Pool" (Top 3 of each type to allow Lead Swaps)
-    const getTop = (type) => unlocked
-        .filter(n => HEROES[n].type === type)
-        .sort((a,b) => (GROWTH_TEMPLATES[HEROES[b].template][roster[b].starIndex] || 0) - (GROWTH_TEMPLATES[HEROES[a].template][roster[a].starIndex] || 0))
-        .slice(0, 3);
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
 
-    const elitePool = [...getTop("Inf"), ...getTop("Cav"), ...getTop("Arc")];
-    
-    // Helper to get all combinations of 3
-    const getCombos = (arr, k) => {
-        const results = [];
-        const f = (prefix, remaining) => {
-            for (let i = 0; i < remaining.length; i++) {
-                if (prefix.length + 1 === k) results.push([...prefix, remaining[i]]);
-                else f([...prefix, remaining[i]], remaining.slice(i + 1));
-            }
-        };
-        f([], arr);
-        return results;
+    const byT = { 
+        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
+        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
+        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
-    const leaderCombos = getCombos(elitePool, 3);
+    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
@@ -967,72 +951,112 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        let scenarioBaseline = 0;
-        pivots.forEach(p => scenarioBaseline += getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l));
-        scenarioBaseline /= pivots.length;
-
-        let candidates = [];
-        
-        // Test every combination of 3 leaders
-        leaderCombos.forEach(leads => {
-            let curJ = [];
-            if (s.rally || s.bear) {
-                for (let slot=0; slot<4; slot++) {
-                    let bj = "None", mv = -1;
-                    // Test joiners against the current leads
-                    jPool.forEach(cand => {
-                        let totalV = 0;
-                        pivots.forEach(p => totalV += getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l));
-                        if (totalV > mv) { mv = totalV; bj = cand; }
-                    });
-                    curJ.push(bj);
-                }
-            }
-
-            let teamAvgV = 0;
-            pivots.forEach(p => teamAvgV += getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l));
-            candidates.push({ leads, joiners: curJ, score: teamAvgV });
+        // Find Peak Baseline (Best your account can do with NO heroes)
+        let baselinePeak = 0;
+        pivots.forEach(p => {
+            const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
+            if (v > baselinePeak) baselinePeak = v;
         });
 
-        // Sort by Average Multiplier Gain
-        candidates.sort((a,b) => b.score - a.score);
-        const top3 = candidates.slice(0, 3);
-        
-        const card = document.createElement('div');
-        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
-        card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
+        let candidates = [];
+        for (let i of byT.Inf) {
+            for (let c of byT.Cav) {
+                for (let a of byT.Arc) {
+                    const leads = [i, c, a];
+                    let curJ = [];
 
-        for (let rk = 0; rk < top3.length; rk++) {
-            const team = top3[rk];
-            const gain = (team.score / scenarioBaseline);
+                    // Fill Joiners based on what increases the PEAK potential across all pivots
+                    if (s.rally || s.bear) {
+                        for (let slot=0; slot<4; slot++) {
+                            let bj = "None", maxPeakForThisSlot = -1;
+                            jPool.forEach(cand => {
+                                let bestPivotVal = -1;
+                                pivots.forEach(p => {
+                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
+                                    if (v > bestPivotVal) bestPivotVal = v;
+                                });
+                                if (bestPivotVal > maxPeakForThisSlot) {
+                                    maxPeakForThisSlot = bestPivotVal;
+                                    bj = cand;
+                                }
+                            });
+                            curJ.push(bj);
+                        }
+                    }
 
-            const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
-                const count = team.joiners.filter(x=>x===n).length;
-                return `${n}${count > 1 ? ' x'+count : ''}`;
-            }).join(', ');
+                    // Final Score for this combo is its absolute Peak performance among benchmarks
+                    let finalComboPeak = -1;
+                    pivots.forEach(p => {
+                        const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
+                        if (v > finalComboPeak) finalComboPeak = v;
+                    });
 
-            card.innerHTML += `
-            <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
-                <div class="flex items-center gap-5">
-                    <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
-                    <div class="flex -space-x-3">
-                        ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
-                    </div>
-                    <div>
-                        <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
-                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jN || 'Solo Setup'}</div>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
-                    <div class="text-xl font-black text-emerald-400">${gain.toFixed(3)}x</div>
-                </div>
-            </div>`;
+                    candidates.push({ leads, joiners: curJ, score: finalComboPeak });
+                }
+            }
         }
-        resArea.appendChild(card);
-        await new Promise(r => setTimeout(r, 1));
+
+        // Phase 2: High-Resolution Sweep for Top 10
+        candidates.sort((a,b) => b.score - a.score);
+        const top10 = candidates.slice(0, 10);
+        let finalDisplay = [];
+
+        for (let team of top10) {
+            let absoluteBestVol = -1;
+            let bestF = [33, 33, 34];
+            
+            // Sweep 0-100% in 5% steps to find the "Hill", then 1% steps around it
+            for (let fI=0; fI<=100; fI+=5) {
+                for (let fC=0; fC<=100-fI; fC+=5) {
+                    const fA = 100 - fI - fC;
+                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, fA], s.ctx, s.bear, s.l);
+                    if (v > absoluteBestVol) {
+                        absoluteBestVol = v;
+                        bestF = [fI, fC, fA];
+                    }
+                }
+            }
+            finalDisplay.push({ ...team, peakGain: absoluteBestVol / baselinePeak, formation: bestF });
+        }
+
+        // Sort by final sweep results and take top 3 for display
+        finalDisplay.sort((a,b) => b.peakGain - a.peakGain);
+        renderScenarioResults(s.l, finalDisplay.slice(0, 3), resArea);
     }
 };
+
+function renderScenarioResults(title, top3, container) {
+    const card = document.createElement('div');
+    card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
+    card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
+
+    top3.forEach((team, rk) => {
+        const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
+            const count = team.joiners.filter(x=>x===n).length;
+            return `${n}${count > 1 ? ' x'+count : ''}`;
+        }).join(', ');
+
+        card.innerHTML += `
+        <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
+            <div class="flex items-center gap-5">
+                <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
+                <div class="flex -space-x-3">
+                    ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
+                </div>
+                <div>
+                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.join(' / ')}</div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase">${jN || 'Solo Setup'}</div>
+                    <div class="text-[9px] text-blue-400 font-black mt-1">Best Form: ${team.formation.join('/')}</div>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
+                <div class="text-xl font-black text-emerald-400">${team.peakGain.toFixed(3)}x</div>
+            </div>
+        </div>`;
+    });
+    container.appendChild(card);
+}
 
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
