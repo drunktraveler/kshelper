@@ -4,9 +4,6 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 import { WIDGET_STATS } from './widgets.js';
 import { UNITS } from './units.js'; 
 
-// --- HELPERS ---
-const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
-
 let roster = JSON.parse(localStorage.getItem('ks_roster')) || {};
 let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
@@ -32,28 +29,26 @@ window.init = () => {
         mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index, activeSlot.side);
     }
     
-    buildStatTable();
+    buildStatTable(); // Build Battle Sim Table
+    initFormationGrids(); // Build Formations Tab Grids (ONCE)
     window.addBatch('atk', true); 
     window.addBatch('def', true);
-    window.globalSync(); 
+    window.updateGrids(); 
     renderRosterUI(); 
-    if(nakedStats) renderNakedStats();
     window.showTab('battle');
 };
 
-// --- UI / NAVIGATION ---
+// --- NAVIGATION ---
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
-    
     Object.keys(screens).forEach(k => {
         const el = document.getElementById(screens[k]);
         if (el) el.classList.toggle('hidden', k !== tab);
         const b = document.getElementById(btns[k]);
         if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
-
-    if (tab === 'bear' || tab === 'battle') window.updateGrids();
+    window.updateGrids(); // Refresh grids on tab change
 };
 
 // --- HERO MODAL LOGIC ---
@@ -91,18 +86,64 @@ window.syncFormationUI = () => {
     });
 };
 
-window.updateSharedTier = (side, unit, type, val) => {
-    const el = document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`);
-    if (el) el.value = val;
-    window.syncFormationUI();
+window.updateSharedTier = (side, unit, type, val, origin) => {
+    const targetSelector = origin === 'sim' ? `.opt-${side}-${unit}-${type}` : `#${side}-batch-container .batch-${type}-${unit}`;
+    const target = document.querySelector(targetSelector);
+    if (target && target.value !== val) target.value = val;
 };
 
-// --- SHARED INPUT HANDLERS ---
-window.updateSharedStat = (side, key, val) => {
-    const el = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
-    if (el) { el.value = val; window.updateStatColors(el); }
-    window.syncFormationUI();
+// --- CORE SYNC ENGINE (No Destructive Re-rendering) ---
+window.updateSharedStat = (side, key, val, origin) => {
+    // 1. Update internal state if needed (optional, we mostly pull from DOM)
+    // 2. Find the "other" input and update it
+    const targetSelector = origin === 'sim' ? `.opt-${side}-${key}` : `input[data-side="${side}"][data-stat="${key}"]`;
+    const target = document.querySelector(targetSelector);
+    if (target && target.value !== val) target.value = val;
+
+    // 3. Update Colors in Battle Sim
+    const simInput = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
+    if (simInput) window.updateStatColors(simInput);
 };
+
+// Initializes the Formations tab grids without filling them with innerHTML repeatedly
+function initFormationGrids() {
+    ['atk', 'def'].forEach(side => {
+        const statGrid = document.getElementById(`opt-${side}-stats-grid`);
+        const tierGrid = document.getElementById(`opt-${side}-tiers`);
+        if (!statGrid || !tierGrid) return;
+
+        statGrid.innerHTML = '';
+        ['inf', 'cav', 'arc'].forEach(u => {
+            ['att', 'def', 'leth', 'hp'].forEach(s => {
+                const key = `${u}_${s}`;
+                statGrid.innerHTML += `
+                    <div>
+                        <label class="text-[7px] text-slate-500 uppercase font-black block">${u} ${s}</label>
+                        <input type="number" value="1000" 
+                            class="opt-${side}-${key} input-dark !py-1 !text-[10px]" 
+                            oninput="window.updateSharedStat('${side}', '${key}', this.value, 'opt')">
+                    </div>`;
+            });
+        });
+
+        tierGrid.innerHTML = '';
+        ['inf', 'cav', 'arc'].forEach(u => {
+            tierGrid.innerHTML += `
+                <div class="flex flex-col gap-1">
+                    <label class="text-[7px] text-slate-500 uppercase font-black">${u} T/TG</label>
+                    <div class="flex gap-1">
+                        <select class="opt-${side}-${u}-tier bg-slate-900 text-[9px] border border-slate-700 rounded text-slate-300" onchange="window.updateSharedTier('${side}','${u}','tier',this.value,'opt')">
+                            ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v==10?'selected':''}>T${v}</option>`).join('')}
+                        </select>
+                        <select class="opt-${side}-${u}-tg bg-slate-900 text-[9px] border border-slate-700 rounded text-slate-300" onchange="window.updateSharedTier('${side}','${u}','tg',this.value,'opt')">
+                            ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v==3?'selected':''}>TG${v}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>`;
+        });
+    });
+}
+
 
 // --- GLOBAL SYNC ENGINE ---
 window.globalSync = () => {
@@ -162,15 +203,20 @@ window.setOptRole = (role) => {
     window.syncOptimizerUI();
 };
 
+// --- UPDATED BATTLE SIM UI ---
 function buildStatTable() {
     const table = document.getElementById('stat-table');
     if(!table) return;
-    const units = ["Infantry", "Cavalry", "Archer"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+    const units = ["inf", "cav", "arc"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
     table.innerHTML = '';
     units.forEach(u => cats.forEach(c => {
-        const row = document.createElement('div'); row.className = "stat-row";
-        const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" class="text-emerald-500 font-bold w-16 bg-transparent text-center" value="1000"><div class="text-[9px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" class="text-red-500 font-bold w-16 bg-transparent text-center" value="1000">`;
+        const key = `${u}_${c.k}`;
+        const row = document.createElement('div'); 
+        row.className = "stat-row";
+        row.innerHTML = `
+            <input type="number" data-side="atk" data-stat="${key}" oninput="window.updateSharedStat('atk','${key}',this.value,'sim')" class="text-emerald-500 font-bold w-16 bg-transparent text-center" value="1000">
+            <div class="text-[9px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div>
+            <input type="number" data-side="def" data-stat="${key}" oninput="window.updateSharedStat('def','${key}',this.value,'sim')" class="text-red-500 font-bold w-16 bg-transparent text-center" value="1000">`;
         table.appendChild(row);
     }));
 }
@@ -188,52 +234,40 @@ window.setOptRole = (role) => {
     document.getElementById('opt-role-def').className = role === 'def' ? "px-3 py-1 text-[10px] font-bold rounded bg-red-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
 };
 
+// --- BATTLE TAB HELPERS ---
 window.addBatch = (side, initial = false) => {
     const container = document.getElementById(`${side}-batch-container`);
-    if (!container) return;
     const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-2 relative mb-2";
+    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-1 mb-2";
     
-    const types = [
-        { label: 'Infantry', key: 'inf', color: 'text-blue-400', def: 500000 },
-        { label: 'Cavalry', key: 'cav', color: 'text-amber-400', def: 200000 },
-        { label: 'Archers', key: 'arc', color: 'text-emerald-400', def: 300000 }
-    ];
-
-    let html = `<div class="flex justify-between items-center mb-1">
-        <span class="text-[9px] font-bold text-slate-500 uppercase">Army Batch</span>
-        ${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}
-    </div>`;
-
+    const types = [{l:'Inf', k:'inf', c:'text-blue-400'}, {l:'Cav', k:'cav', c:'text-amber-400'}, {l:'Arc', k:'arc', c:'text-emerald-400'}];
+    let html = `<div class="flex justify-between items-center"><span class="text-[8px] font-bold text-slate-600 uppercase">Batch</span>${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[8px]">DEL</button>`:''}</div>`;
+    
     types.forEach(t => {
         html += `
-        <div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/40 pb-1 mb-1">
-            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
-            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}
-            </select>
-            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}
-            </select>
-            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? t.def : 0}" oninput="window.updateFormation('${side}')">
+        <div class="grid grid-cols-12 gap-1 items-center">
+            <div class="col-span-3 text-[9px] font-bold ${t.c}">${t.l}</div>
+            <select class="batch-tier-${t.k} col-span-2 bg-slate-900 text-[9px] border border-slate-800 rounded" onchange="window.updateSharedTier('${side}','${t.k}','tier',this.value,'sim')"><option value="11">T11</option><option value="10" selected>T10</option><option value="9">T9</option></select>
+            <select class="batch-tg-${t.k} col-span-2 bg-slate-900 text-[9px] border border-slate-800 rounded" onchange="window.updateSharedTier('${side}','${t.k}','tg',this.value,'sim')"><option value="5">TG5</option><option value="3" selected>TG3</option></select>
+            <input type="number" class="batch-${t.k} col-span-5 input-dark !text-right !py-0" value="${initial ? (t.k==='inf'?500000:250000) : 0}" oninput="window.updateFormation('${side}')">
         </div>`;
     });
-
     div.innerHTML = html;
-    container.appendChild(div); 
+    container.appendChild(div);
     window.updateFormation(side);
 };
 
 window.updateFormation = (side) => {
     let i=0, c=0, a=0;
     document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
-        i += parseFloat(row.querySelector('.batch-inf').value) || 0;
-        c += parseFloat(row.querySelector('.batch-cav').value) || 0;
-        a += parseFloat(row.querySelector('.batch-arc').value) || 0;
+        i += parseFloat(row.querySelector(`.batch-inf`).value) || 0;
+        c += parseFloat(row.querySelector(`.batch-cav`).value) || 0;
+        a += parseFloat(row.querySelector(`.batch-arc`).value) || 0;
     });
     const total = i+c+a || 1;
-    const bars = document.querySelectorAll(`.${side}-f-bar`); // Update bar in both tabs
-    bars.forEach(bar => {
+    
+    // Update all bars and text elements associated with this side
+    document.querySelectorAll(`.${side}-f-bar`).forEach(bar => {
         bar.children[0].style.width = (i/total*100)+'%';
         bar.children[1].style.width = (c/total*100)+'%';
         bar.children[2].style.width = (a/total*100)+'%';
@@ -329,9 +363,9 @@ window.saveHeroConfig = () => {
     document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
+// --- HERO GRID LOGIC (Targets Classes correctly) ---
 window.updateGrids = () => {
     ['atk','def','bear'].forEach(side => {
-        // Use querySelectorAll to update hero grids in ALL tabs (Battle Sim and Formations)
         const containers = document.querySelectorAll(`.${side}-hero-grid`);
         containers.forEach(container => {
             container.innerHTML = '';
@@ -340,9 +374,9 @@ window.updateGrids = () => {
                 const isLead = (side === 'bear' || i < 3);
                 div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
                 if (h.name !== 'None') {
-                    div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
+                    div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none">`;
                 } else {
-                    div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
+                    div.innerHTML = `<span class="text-[10px] pointer-events-none">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
                 }
                 div.onclick = () => window.openHeroModal(side, i);
                 container.appendChild(div);
