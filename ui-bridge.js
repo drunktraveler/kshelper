@@ -299,15 +299,32 @@ window.openHeroModal = (side, index) => {
 window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index); };
 
 function renderSkillsInModal(name, slot) {
-    const container = document.getElementById('skill-inputs'); container.innerHTML = '';
+    const container = document.getElementById('skill-inputs'); 
+    container.innerHTML = '';
     if(name === "None") return;
-    const h = HEROES[name]; const max = (slot < 3) ? h.skills.length : 1;
+    
+    const h = HEROES[name]; 
+    const max = (slot < 3) ? h.skills.length : 1;
+    
     for(let i=0; i<max; i++) {
+        const skill = h.skills[i];
         const div = document.createElement('div');
-        div.innerHTML = `<div class="text-[9px] text-slate-500 font-black uppercase mb-1">${h.skills[i].name}</div>${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}`;
+        div.className = "p-3 bg-slate-950/50 rounded-lg border border-slate-800 mb-2";
+        
+        // Show what units are affected if it's restricted
+        const unitTag = skill.units ? `<span class="text-[7px] bg-blue-900 text-blue-200 px-1 rounded ml-2">${skill.units.join(', ').toUpperCase()}</span>` : '';
+        
+        div.innerHTML = `
+            <div class="flex justify-between items-center mb-2">
+                <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">${skill.name}${unitTag}</div>
+                <div class="text-[8px] text-slate-600 font-bold">ID: ${skill.ids.join('+')}</div>
+            </div>
+            ${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}
+        `;
         container.appendChild(div);
     }
 }
+
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
     state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30, widgetLv: roster[name]?.widget || 0 };
@@ -822,24 +839,24 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // Multiplicative ID Buckets: 1XX = Buffs, 2XX = Survival Debuffs
-    let b = { 
-        101: {i:0,c:0,a:0}, 102: {i:0,c:0,a:0}, 
-        201: {i:0,c:0,a:0}, 202: {i:0,c:0,a:0}, 203: {i:0,c:0,a:0}, 
-        204: {i:0,c:0,a:0}, 205: {i:0,c:0,a:0}, 206: 0 
-    };
+    // ID Buckets per Troop Type
+    const createBuckets = () => ({
+        101: 0, 102: 1, 103: 1, 104: 1, 105: 1, 106: 1,
+        201: 0, 202: 1, 203: 1, 204: 1, 205: 1, 250: 1 
+    });
+
+    let b = { inf: createBuckets(), cav: createBuckets(), arc: createBuckets() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    // Grouping for the 5-Instance Rule
-    const leadsInLineup = {}; 
-    leads.forEach(n => { if(n !== "None") leadsInLineup[n] = (leadsInLineup[n] || 0) + 1; });
-    const totalLineup = { ...leadsInLineup };
-    joiners.forEach(n => { if(n !== "None") totalLineup[n] = (totalLineup[n] || 0) + 1; });
-
-    // 1. LEADERS: Apply Star Stats, Widget Flats, and Global Multipliers
-    Object.keys(leadsInLineup).forEach(name => {
+    const lineup = {}; 
+    leads.forEach(n => { if(n !== "None") lineup[n] = (lineup[n] || 0) + 1; });
+    
+    // 1. LEADERS: Apply Star Stats and Widgets
+    leads.forEach(name => {
+        if (name === "None") return;
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
+        
         if (isCalibrated) {
             const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
             curS[tk].att += star; curS[tk].def += star;
@@ -854,64 +871,67 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         }
     });
 
-    // 2. SKILL PROCESSING: Independent Multipliers
-    Object.keys(totalLineup).forEach(name => {
-        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
-        const lCount = leadsInLineup[name] || 0;
-        const jCount = totalLineup[name] - lCount;
+    // 2. SKILL PROCESSING
+    const processPool = (heroList, isLeadPool) => {
+        heroList.forEach(name => {
+            if (name === "None") return;
+            const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
+            
+            h.skills.forEach((skill, si) => {
+                if (!isLeadPool && si > 0) return; // Joiners S1 only
+                
+                const lvl = isLeadPool ? (r[`s${si+1}`] || 5) : 5;
+                const x = skill.values[lvl - 1];
+                const p = skill.getChance(x), mFull = skill.getMagnitude(x);
+                
+                // Account for Wave 5 gate: weight Alcar's S1 at 75% efficiency for total volume
+                let uptime = (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
+                if (skill.minWave) uptime *= 0.75; 
 
-        h.skills.forEach((skill, si) => {
-            const isLeadSlot = lCount > 0;
-            const isJoinerSlot = si === 0 && jCount > 0;
-            if (!isLeadSlot && !isJoinerSlot) return;
+                const affectedUnits = skill.units || ["inf", "cav", "arc"];
 
-            // Leaders use Roster levels; Joiners always use Forced Level 5
-            const lvl = isLeadSlot ? (r[`s${si+1}`] || 5) : 5;
-            const x = skill.values[lvl - 1];
-            if (x === undefined) return;
+                skill.ids.forEach((id, idx) => {
+                    if (isBear && id >= 200) return;
+                    const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
-            const p = skill.getChance(x), mFull = skill.getMagnitude(x);
-            // S3 permanent for Alcar, otherwise standard EV
-            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
-            const instances = lCount + (si === 0 ? jCount : 0);
+                    affectedUnits.forEach(u => {
+                        let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                        const final = mag * uptime;
 
-            skill.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return; // Bear is immune to all 2XX
-                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
-                ['inf', 'cav', 'arc'].forEach(u => {
-                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
-                    const final = val * instances * uptime;
-                    if (id === 206) b[206] += final;
-                    else if (b[id]) b[id][u[0]] += final;
+                        if (id === 101 || id === 201) b[u][id] += final;
+                        else if (id === 250) b[u][id] *= (1 / (1 - final)); // Dodge is a survival multiplier
+                        else b[u][id] *= (1 + final);
+                    });
                 });
             });
         });
-    });
-
-    const f = { i: formation[0], c: formation[1], a: formation[2] };
-    const getM = (id, char) => 1 + b[id][char];
-
-    // Offense (D): (Stats * Ally Buffs)
-    const dmg = (u, baseAtk) => {
-        const c = u[0];
-        return Math.sqrt(f[c] * 10000) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, c) * 
-               (1 + curS[u].leth/100) * wM.lethality * getM(102, c);
     };
-    // 1.6x Quality Factor for Cavalry Bypass in PVP Volume
-    const totalD = dmg('inf', 597) + (dmg('cav', 1790) * (isBear ? 1.0 : 1.6)) + dmg('arc', 2387);
+
+    processPool(leads, true);
+    processPool(joiners, false);
+
+    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
+
+    // Offense Volume
+    const getOff = (u) => {
+        const stats = curS[u];
+        const mult = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
+        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
+    };
+    // 1.6x Quality Factor for Cavalry Bypass in PVP
+    const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.0 : 1.6)) + getOff('arc');
 
     if (isBear) return totalD;
 
-    // Tanking (T): (Stats) * (ALL 2XX Multipliers)
-    const tank = (u, baseHP) => {
-        const c = u[0];
-        return f[c] * 100 * baseHP * (1 + curS[u].hp/100) * wM.health * 
-               10 * (1 + curS[u].def/100) * wM.defense *
-               getM(201, c) * getM(202, c) * getM(203, c) * getM(204, c) * getM(205, c);
+    // Survival Volume
+    const getSurv = (u) => {
+        const stats = curS[u];
+        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * b[u][250];
+        return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
     };
-    const totalT = tank('inf', 1790) + tank('cav', 597) + tank('arc', 448);
+    const totalS = getSurv('inf') + getSurv('cav') + getSurv('arc');
 
-    return totalD * totalT * (1 + b[206]);
+    return totalD * totalS;
 }
 
 window.calculateOptimalLineups = async () => {
@@ -1063,89 +1083,9 @@ function renderOptimizerCard(scenario, best, container) {
 }
 
 function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
-    let skillBuckets = {}; 
-    let widgetGrowthSum = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    
-    // 1. WIDGET MULTIPLIERS (Additive within same stat)
-    // Solo Attack = None | Solo Defense = Def Only | Rally = Context specific
-    if (isRally || ctx === 'def') {
-        leaders.forEach(n => {
-            if (n === "None" || !HEROES[n]) return;
-            const d = HEROES[n], r = roster[n];
-            if (d.widget && d.widget.context === ctx) {
-                widgetGrowthSum[d.widget.stat] += WIDGET_GROWTH[r.widget];
-            }
-        });
-    }
-
-    const widgetEffect = (1 + widgetGrowthSum.attack) * (1 + widgetGrowthSum.lethality) * 
-                         (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
-
-    // 2. SKILL STACKING (Manifest used to count instances of a hero)
-    const manifest = {};
-    leaders.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].l++; }});
-    joiners.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].j++; }});
-
-    for (const name in manifest) {
-        const d = HEROES[name], r = roster[name], count = manifest[name];
-        d.skills.forEach((s, si) => {
-            const instances = count.l + (si === 0 ? count.j : 0);
-            if (instances === 0) return;
-            const x = s.values[(r[`s${si+1}`]||5)-1], p = s.getChance(x), m = s.getMagnitude(x);
-            
-            let effectiveMagnitude;
-            if (p >= 1.0) {
-                effectiveMagnitude = instances; // Additive: (1 + .25 + .25)
-            } else {
-                // Probabilistic: 1 - (1-p)^n
-                const probAny = 1 - Math.pow(1 - p, instances);
-                effectiveMagnitude = (1 - Math.pow(1 - probAny, isBear ? 1 : (s.duration || 1)));
-            }
-
-            s.ids.forEach((id, idx) => {
-                if (isBear && id >= 200) return;
-                const val = (Array.isArray(m) ? m[idx] : m) * effectiveMagnitude;
-                skillBuckets[id] = (skillBuckets[id] || 0) + val;
-            });
-        });
-    }
-
-    let skillMult = 1.0;
-    Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
-
-    // 3. STAT POWER GAIN (The "Normal Multiplier" upgrade to your account)
-    let statEffect = 1.0;
-    if (document.getElementById('use-account-stats').checked && nakedStats) {
-        let totalNakedVol = 0, totalFinalVol = 0;
-
-        ['inf', 'cav', 'arc'].forEach(t => {
-            const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
-            let flats = { att: 0, def: 0, leth: 0, hp: 0 };
-            
-            leaders.forEach(name => {
-                if (name === "None" || !HEROES[name]) return;
-                const d = HEROES[name], r = roster[name];
-                if (d.type.toLowerCase().slice(0,3) === t) {
-                    flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
-                    if (d.widget) {
-                        const templateStats = WIDGET_STATS[d.template];
-                        flats.leth += (templateStats ? templateStats[r.widget] : 0);
-                        flats.hp += (templateStats ? templateStats[r.widget] : 0);
-                    }
-                }
-            });
-
-            const nVol = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
-            const fVol = isBear ? ((naked.att+flats.att)*(naked.leth+flats.leth)) : ((naked.att+flats.att)*(naked.leth+flats.leth)*(naked.def+flats.def)*(naked.hp+flats.hp));
-            
-            totalNakedVol += nVol;
-            totalFinalVol += fVol;
-        });
-        statEffect = totalFinalVol / (totalNakedVol || 1);
-    }
-
-    return statEffect * skillMult * widgetEffect;
+    function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
+    const scenario = isBear ? "Bear Trap" : (isRally ? "Rally" : "Solo");
+    return getSystemVolume(leaders, joiners, [33, 33, 34], ctx, isBear, scenario);
 }
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
