@@ -927,18 +927,22 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [5,15,80]];
+    if (unlocked.length < 3) return alert("Please unlock at least one hero of each type in the Roster.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Executing Peak Potential Analysis...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Scientific Peak...</div>`;
+
+    // Whitelist and Pivots
+    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
         Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
+    // Ensure we have at least "None" to prevent loop crashes
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
@@ -953,6 +957,7 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
+        // 1. Calculate Peak Baseline (No Heroes)
         let baselinePeak = 0;
         pivots.forEach(p => {
             const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
@@ -960,48 +965,66 @@ window.calculateOptimalLineups = async () => {
         });
 
         let candidates = [];
+
+        // 2. Step through Leader Combinations (Strict 1 per type)
         for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
                     let curJ = [];
+
+                    // 3. Greedy Joiner Selection (if applicable)
                     if (s.rally) {
-                        for (let slot=0; slot<4; slot++) {
-                            let bj = "None", bestSlotV = -1;
-                            jPool.forEach(cand => {
-                                let pVal = -1;
+                        for (let slot = 0; slot < 4; slot++) {
+                            let bestJoiner = "None";
+                            let maxSlotPeak = -1;
+
+                            jPool.forEach(heroName => {
+                                // Find the peak pivot for this specific leader + current joiners + new candidate
+                                let peakWithCandidate = -1;
                                 pivots.forEach(p => {
-                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
-                                    if (v > pVal) pVal = v;
+                                    const v = getSystemVolume(leads, [...curJ, heroName], p, s.ctx, s.bear, s.l);
+                                    if (v > peakWithCandidate) peakWithCandidate = v;
                                 });
-                                if (pVal > bestSlotV) { bestSlotV = pVal; bj = cand; }
+
+                                if (peakWithCandidate > maxSlotPeak) {
+                                    maxSlotPeak = peakWithCandidate;
+                                    bestJoiner = heroName;
+                                }
                             });
-                            curJ.push(bj);
+                            curJ.push(bestJoiner);
                         }
                     }
-                    let comboPeak = -1;
+
+                    // Calculate the final Peak Volume for this team across benchmark pivots
+                    let finalPeakVolume = -1;
                     pivots.forEach(p => {
                         const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
-                        if (v > comboPeak) comboPeak = v;
+                        if (v > finalPeakVolume) finalPeakVolume = v;
                     });
-                    candidates.push({ leads, joiners: curJ, score: comboPeak });
+
+                    candidates.push({ leads, joiners: curJ, score: finalPeakVolume });
                 }
             }
         }
 
+        // 4. Final 2% Resolution Deep Dive for Top 3
         candidates.sort((a,b) => b.score - a.score);
-        const top3 = candidates.slice(0, 3).map(team => {
-            let bestVol = -1;
-            for (let fI=0; fI<=100; fI+=2) {
-                for (let fC=0; fC<=100-fI; fC+=2) {
-                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
-                    if (v > bestVol) bestVol = v;
+        const top3Final = candidates.slice(0, 3).map(team => {
+            let sweepBestVol = -1;
+            // High-res sweep to find the absolute ceiling
+            for (let fI = 0; fI <= 100; fI += 2) {
+                for (let fC = 0; fC <= 100 - fI; fC += 2) {
+                    const fA = 100 - fI - fC;
+                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, fA], s.ctx, s.bear, s.l);
+                    if (v > sweepBestVol) sweepBestVol = v;
                 }
             }
-            return { ...team, gain: bestVol / baselinePeak };
+            return { ...team, gain: sweepBestVol / baselinePeak };
         });
 
-        renderScenarioResults(s.l, top3, resArea);
+        // 5. Render
+        renderScenarioResults(s.l, top3Final, resArea);
     }
 };
 
@@ -1011,27 +1034,26 @@ function renderScenarioResults(title, top3, container) {
     card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
 
     top3.forEach((team, rk) => {
-        const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
-            const count = team.joiners.filter(x=>x===n).length;
-            return `${n}${count > 1 ? ' x'+count : ''}`;
-        }).join(', ');
+        // Group joiners for clean display (e.g., Saul x2)
+        const joinerMap = {};
+        team.joiners.forEach(j => { if(j !== "None") joinerMap[j] = (joinerMap[j] || 0) + 1; });
+        const joinerText = Object.entries(joinerMap).map(([name, count]) => `${name}${count > 1 ? ' x' + count : ''}`).join(', ');
 
         card.innerHTML += `
         <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
             <div class="flex items-center gap-5">
                 <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
                 <div class="flex -space-x-3">
-                    ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
+                    ${team.leads.map(n => n !== "None" ? `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
                 </div>
                 <div>
-                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.join(' / ')}</div>
-                    <div class="text-[8px] text-slate-500 font-bold uppercase">${jN || 'Solo Setup'}</div>
-                    <div class="text-[9px] text-blue-400 font-black mt-1">Best Form: ${team.formation.join('/')}</div>
+                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n => n !== "None").join(' / ')}</div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${joinerText || 'Solo Configuration'}</div>
                 </div>
             </div>
             <div class="text-right">
-                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
-                <div class="text-xl font-black text-emerald-400">${team.peakGain.toFixed(3)}x</div>
+                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Total Efficiency</div>
+                <div class="text-xl font-black text-emerald-400">${team.gain.toFixed(3)}x</div>
             </div>
         </div>`;
     });
