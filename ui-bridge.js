@@ -842,14 +842,13 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // Correct Stacking Buckets
-    // ID 101 and 201 are additive bases per troop type. 102-106 are multipliers.
-    const createB = () => ({ 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 });
+    // Initialize Buckets
+    const createB = () => ({ 
+        101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0, 
+        201: 0, 202: 0, 203: 0, 204: 0, 205: 0, 250: 0 
+    });
     let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
-
-    // Track joiners to handle Additive vs Multiplicative stacking
-    let joinerCounts = {}; 
 
     const processHero = (name, isLead) => {
         if (name === "None" || !HEROES[name]) return;
@@ -858,24 +857,25 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         if (isLead) {
             const tk = h.type.toLowerCase().slice(0, 3);
             if (isCalibrated) {
-                const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
-                curS[tk].att += star; curS[tk].def += star;
+                curS[tk].att += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+                curS[tk].def += (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
                 if (h.widget) {
                     const wT = WIDGET_STATS[h.template] || [];
                     if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
                     if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
                 }
             }
+            // Apply Widget Multipliers if context matches
             if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
                 wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
             }
         }
 
         h.skills.forEach((skill, si) => {
-            if (!isLead && si > 0) return;
+            if (!isLead && si > 0) return; // Joiners S1 only
             const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
             
-            // Fixed Periodic/Duration Uptime
+            // Expected Value Uptime
             let uptime = skill.interval ? (skill.duration / skill.interval) : (skill.getChance(x));
             if (skill.duration > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, skill.duration);
 
@@ -886,50 +886,44 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
                 affectedUnits.forEach(u => {
                     let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    let val = mag * uptime;
-
-                    if (id === 101 || id === 201) b[u][id] += val;
-                    else if (id === 250) b[u][id] += val; // Margot Dodge stacks additively
-                    else {
-                        // MULTIPLICATIVE STACKING RULE:
-                        // If same hero is already a joiner, add to this bucket. Otherwise, multiply.
-                        if (!isLead && joinerCounts[name] > 1) b[u][id] += val; 
-                        else b[u][id] *= (1 + val);
-                    }
+                    // Skill ID Stacking: All magnitudes within the same ID are additive
+                    b[u][id] += (mag * uptime);
                 });
             });
         });
     };
 
     leads.forEach(l => processHero(l, true));
-    joiners.forEach(j => { joinerCounts[j] = (joinerCounts[j] || 0) + 1; processHero(j, false); });
+    joiners.forEach(j => processHero(j, false));
 
     const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
     
-    // Offense Volume (The "Damage" half)
     const getOff = (u) => {
         const stats = curS[u];
-        const mult = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
-        // If Bear, ignore base stats of Infantry as they don't attack
-        const troopWeight = (isBear && u === 'inf') ? 0.01 : 1.0; 
-        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult * troopWeight;
+        // Multiplicative between different ID buckets
+        const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
+        // The Offense Volume: sqrt(Count) * Atk * Leth * AccountWidget * Multipliers
+        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
     };
     
-    // Quality factor: Archers are the kings of Bear. Cavalry are kings of Bypass.
-    const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.2 : 1.6)) + (getOff('arc') * (isBear ? 2.0 : 1.0));
+    // Total Damage Output per Wave
+    const totalD = getOff('inf') + getOff('cav') + getOff('arc');
 
-    if (isBear) return totalD; // In Bear Trap, Survival Volume is irrelevant.
+    // In Bear Trap, target is pure damage output
+    if (isBear) return totalD;
 
-    // Survival Volume (The "Time" half)
     const getSurv = (u) => {
         const stats = curS[u];
-        const dodgeMult = 1 / (1 - Math.min(0.8, b[u][250]));
-        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * dodgeMult;
+        // Dodge (ID 250) lifespan multiplier: 1 / (1 - Prob)
+        const dodgeLifespanMult = 1 / (1 - Math.min(0.9, b[u][250]));
+        const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeLifespanMult;
+        // The Survival Volume: Count * HP * Def * AccountWidget * Multipliers
         return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
     };
+
+    // PvP Target: Total damage capacity (Damage * Survival)
     return totalD * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
 }
-
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
