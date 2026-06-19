@@ -746,19 +746,96 @@ function calculateBearPotentials(config) {
 }
 
 function renderTernary(id, data, best, isBear) {
-    const traces = [{ 
-        type: 'scatterternary', a: data.a, b: data.b, c: data.c, mode: 'markers',
-        marker: { color: data.z, colorscale: 'Viridis', size: 4, showscale: false }
-    }, {
-        type: 'scatterternary', a: [best.form[0]], b: [best.form[1]], c: [best.form[2]],
-        marker: { size: 15, symbol: 'star', color: '#00f2ff' }
-    }];
+    const traces = [
+        { 
+            type: 'scatterternary',
+            a: data.a,
+            b: data.b,
+            c: data.c,
+            mode: 'markers',
+            name: 'Efficiency',
+            marker: { 
+                color: data.z, 
+                colorscale: 'Viridis', 
+                size: 5, 
+                opacity: 0.8,
+                showscale: false,
+                line: { width: 0 }
+            },
+            hoverinfo: 'none'
+        },
+        // Standard Reference Point (e.g., 50/20/30)
+        { 
+            type: 'scatterternary',
+            a: [isBear ? 10 : 50],
+            b: [isBear ? 10 : 20],
+            c: [isBear ? 80 : 30],
+            name: 'Standard Meta',
+            mode: 'markers',
+            marker: { 
+                size: 12, 
+                symbol: 'circle-open', 
+                color: 'rgba(255,255,255,0.4)', 
+                line: { width: 2 } 
+            } 
+        },
+        // Optimal Point (The Cyan Star)
+        { 
+            type: 'scatterternary',
+            a: [best.form[0]],
+            b: [best.form[1]],
+            c: [best.form[2]],
+            name: 'Optimal',
+            mode: 'markers',
+            marker: { 
+                size: 18, 
+                symbol: 'star', 
+                color: '#00f2ff', 
+                line: { width: 1.5, color: '#080a0f' } 
+            } 
+        }
+    ];
+
     const layout = {
-        ternary: { aaxis:{title:'INF'}, baxis:{title:'CAV'}, caxis:{title:'ARC'} },
-        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
-        margin: { l:0, r:0, t:30, b:0 }, showlegend: false
+        ternary: { 
+            sum: 100,
+            aaxis: { 
+                title: 'INF', 
+                titlefont: { size: 12, color: '#3b82f6', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            baxis: { 
+                title: 'CAV', 
+                titlefont: { size: 12, color: '#f59e0b', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            caxis: { 
+                title: 'ARC', 
+                titlefont: { size: 12, color: '#10b981', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            bgcolor: 'rgba(0,0,0,0)'
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 20, r: 20, t: 40, b: 20 },
+        showlegend: false,
+        hovermode: false,
+        font: { family: 'Inter, sans-serif' }
     };
-    Plotly.newPlot(id, traces, layout, { displayModeBar: false });
+
+    const config = { 
+        displayModeBar: false, 
+        responsive: true 
+    };
+
+    Plotly.newPlot(id, traces, layout, config);
 }
 
 // --- UPDATED SYSTEM VOLUME LOGIC (Reflecting periodic and troop specific) ---
