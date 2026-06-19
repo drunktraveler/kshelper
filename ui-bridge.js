@@ -47,12 +47,20 @@ function getLiveSetup(side, formationOverride = null) {
         });
     });
 
-    const batches = [];
-    const batchRows = document.querySelectorAll(`#${side}-batch-container > div`);
+    const getVal = (u, type) => {
+        // Try the Formations tab select classes first
+        const optEl = document.querySelector(`.opt-${side}-${u}-${type}`);
+        // Then try the Sim tab batch container
+        const simEl = document.querySelector(`#${side}-batch-container .batch-${type}-${u}`);
+        return parseInt(optEl?.value || simEl?.value) || (type === 'tier' ? 10 : 3);
+    };
+
     let totalArmyCount = 0;
+    const batchRows = document.querySelectorAll(`#${side}-batch-container > div`);
+    const processedBatches = [];
 
     batchRows.forEach(row => {
-        const batch = {
+        const b = {
             inf: parseFloat(row.querySelector('.batch-inf').value) || 0,
             cav: parseFloat(row.querySelector('.batch-cav').value) || 0,
             arc: parseFloat(row.querySelector('.batch-arc').value) || 0,
@@ -63,25 +71,24 @@ function getLiveSetup(side, formationOverride = null) {
             arc_tier: parseInt(row.querySelector('.batch-tier-arc').value),
             arc_tg: parseInt(row.querySelector('.batch-tg-arc').value)
         };
-        totalArmyCount += (batch.inf + batch.cav + batch.arc);
-        batches.push(batch);
+        totalArmyCount += (b.inf + b.cav + b.arc);
+        processedBatches.push(b);
     });
 
-    // If optimizing, we collapse all batches into one representative formation to speed up the 5000+ sims
     if (formationOverride) {
-        const collapsedBatch = {
+        const collapsed = {
             inf: (formationOverride[0]/100) * (totalArmyCount || 1000000),
             cav: (formationOverride[1]/100) * (totalArmyCount || 1000000),
             arc: (formationOverride[2]/100) * (totalArmyCount || 1000000),
-            // Use the tiers from the very first batch as the representative tiers for the optimizer
-            inf_tier: batches[0]?.inf_tier || 10, inf_tg: batches[0]?.inf_tg || 3,
-            cav_tier: batches[0]?.cav_tier || 10, cav_tg: batches[0]?.cav_tg || 3,
-            arc_tier: batches[0]?.arc_tier || 10, arc_tg: batches[0]?.arc_tg || 3
+            // Ensure optimization uses the TG/Tier selected in the Formations Tab UI
+            inf_tier: getVal('inf', 'tier'), inf_tg: getVal('inf', 'tg'),
+            cav_tier: getVal('cav', 'tier'), cav_tg: getVal('cav', 'tg'),
+            arc_tier: getVal('arc', 'tier'), arc_tg: getVal('arc', 'tg')
         };
-        return { heroes: state[side].heroes, stats, batches: [collapsedBatch] };
+        return { heroes: state[side].heroes, stats, batches: [collapsed] };
     }
 
-    return { heroes: state[side].heroes, stats, batches };
+    return { heroes: state[side].heroes, stats, batches: processedBatches };
 }
 
 // --- NAVIGATION ---
