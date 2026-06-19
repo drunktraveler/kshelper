@@ -27,52 +27,80 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
         let waveMults = { 
-            atk: { self: {inf:1,cav:1,arc:1}, survival: {inf:1,cav:1,arc:1} }, 
-            def: { self: {inf:1,cav:1,arc:1}, survival: {inf:1,cav:1,arc:1} } 
+            atk: { inf: { off: 1, surv: 1, dodge: false }, cav: { off: 1, surv: 1, dodge: false }, arc: { off: 1, surv: 1, dodge: false } },
+            def: { inf: { off: 1, surv: 1, dodge: false }, cav: { off: 1, surv: 1, dodge: false }, arc: { off: 1, surv: 1, dodge: false } }
         };
 
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
-            let unitBuckets = { inf: { 1:0, 2:0 }, cav: { 1:0, 2:0 }, arc: { 1:0, 2:0 } };
-            let global206 = 0;
+            // ID Buckets per troop type
+            let b = {
+                inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false },
+                cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false },
+                arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false }
+            };
+
             const currentActiveSkills = [...h.passives];
 
             if (isStochastic) {
                 activeBuffs[side] = activeBuffs[side].filter(b => b.expires > wave);
                 h.actives.forEach(act => {
-                    let procced = false;
-                    if (act.isAlcarS1) { if (wave >= 5 && (wave % 5 === 0 || wave % 5 === 1)) procced = true; }
-                    else { if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) procced = true; }
-                    if (procced) {
+                    if (act.minWave && wave < act.minWave) return;
+                    // Standard trigger check
+                    if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) {
                         triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
-                        activeBuffs[side].push({ m: act.m, ids: act.ids, expires: wave + (isBear ? 1 : act.duration), inst: act.isAlcarS1 ? act.instances : 1 });
+                        activeBuffs[side].push({ ...act, expires: wave + act.duration });
                     }
                 });
-                activeBuffs[side].forEach(b => currentActiveSkills.push({ m: b.m, ids: b.ids, instances: b.inst, uptime: 1.0 }));
+                activeBuffs[side].forEach(ab => currentActiveSkills.push({ ...ab, uptime: 1.0 }));
             } else {
                 h.actives.forEach(act => {
-                    const uptime = act.isAlcarS1 ? 0.4 : (1 - Math.pow(1 - act.p, isBear ? 1 : act.duration));
-                    currentActiveSkills.push({ m: act.m, ids: act.ids, instances: act.instances, uptime });
+                    let uptime = (1 - Math.pow(1 - act.p, act.duration || 1));
+                    if (act.minWave) {
+                        const activeWaves = Math.max(0, nWaves - act.minWave + 1);
+                        uptime *= (activeWaves / nWaves);
+                    }
+                    currentActiveSkills.push({ ...act, uptime });
                 });
             }
 
             currentActiveSkills.forEach(s => {
                 const up = s.uptime || 1.0;
+                const affectedUnits = s.units || ["inf", "cav", "arc"];
+                
                 s.ids.forEach((id, idx) => {
                     const rawM = Array.isArray(s.m) ? s.m[idx] : s.m;
-                    ['inf', 'cav', 'arc'].forEach(u => {
-                        const mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                        const final = mag * s.instances * up;
-                        if (id === 206) global206 += final;
-                        else if (id < 200) unitBuckets[u][1] += final;
-                        else unitBuckets[u][2] += final;
+                    
+                    affectedUnits.forEach(u => {
+                        let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                        let final = mag * s.instances * up;
+
+                        if (id === 101 || id === 201) {
+                            b[u][id] += final;
+                        } else if (id === 106) {
+                            // ID 106: Multiplicative, but in stochastic mode we roll per troop type
+                            if (isStochastic && up < 1.0) {
+                                if (Math.random() < up) b[u][id] *= (1 + (mag * s.instances));
+                            } else {
+                                b[u][id] *= (1 + final);
+                            }
+                        } else if (id === 250) {
+                            // True Dodge
+                            if (isStochastic) { if (Math.random() < (mag * s.instances)) b[u][id] = true; }
+                            else { b[u][id] = (mag * s.instances); } // Average mode uses % reduction
+                        } else {
+                            // Standard Multiplicative layers
+                            b[u][id] *= (1 + final);
+                        }
                     });
                 });
             });
 
+            // Finalizing multipliers for the wave
             ['inf', 'cav', 'arc'].forEach(u => {
-                waveMults[side].self[u] = (1 + unitBuckets[u][1]);
-                waveMults[side].survival[u] = (1 + unitBuckets[u][2]) * (1 + global206);
+                waveMults[side][u].off = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
+                waveMults[side][u].surv = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205];
+                waveMults[side][u].dodge = b[u][250];
             });
         });
 
@@ -89,47 +117,41 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             ['inf', 'cav', 'arc'].forEach(u => {
                 if (sC[u] < 1) return;
 
-                const roll = (p, name) => {
-                    const hit = isStochastic ? (Math.random() < p) : true;
-                    if (hit && isStochastic) triggers[side][name] = (triggers[side][name] || 0) + 1;
-                    return isStochastic ? (hit ? 1 : 0) : p;
-                };
-
-                const calcKillsForTarget = (targetUnit) => {
-                    let offMod = 1.0; let defMod = 1.0;
-                    if (u === 'inf' && targetUnit === 'cav') { offMod *= 1.1; triggers[side]["Master Brawler"] = true; }
-                    if (u === 'cav' && targetUnit === 'arc') { offMod *= 1.1; triggers[side]["Charge"] = true; }
-                    if (u === 'arc' && targetUnit === 'inf') { offMod *= 1.1; triggers[side]["Ranged Strike"] = true; }
-                    if (targetUnit === 'inf' && u === 'cav' && tP.weights.inf.t7 > 0) {
-                        defMod *= (1 / 1.1); triggers[target]["Bands of Steel"] = true;
+                const calcKills = (tUnit) => {
+                    // Check for Dodge (ID 250)
+                    if (waveMults[target][tUnit].dodge === true) return 0;
+                    
+                    let offMod = 1.0, defMod = 1.0;
+                    // RPS Logic
+                    if (u === 'inf' && tUnit === 'cav') offMod *= 1.1;
+                    if (u === 'cav' && tUnit === 'arc') offMod *= 1.1;
+                    if (u === 'arc' && tUnit === 'inf') offMod *= 1.1;
+                    
+                    // Final Multiplier Calculation
+                    let finalMult = (waveMults[side][u].off * offMod) / (waveMults[target][tUnit].surv * defMod);
+                    
+                    // Dodge in non-stochastic mode acts as a massive damage reduction
+                    if (typeof waveMults[target][tUnit].dodge === 'number') {
+                        finalMult *= (1 - waveMults[target][tUnit].dodge);
                     }
-                    if (u === 'arc' && sP.weights.arc.t7 > 0) offMod *= (1 + roll(0.1, "Volley") * sP.weights.arc.t7);
-                    const w = sP.weights[u], tw = tP.weights[targetUnit];
-                    if (u === 'arc' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.3 : 0.2, "Howling Wind") * (0.5 * w.tg3));
-                    if (u === 'cav' && w.tg3 > 0) offMod *= (1 + roll(w.tg5 > 0 ? 0.15 : 0.1, "Assault Lance") * (1.0 * w.tg3));
-                    if (targetUnit === 'inf' && tw.tg3 > 0) defMod *= (1 / (1 + roll(tw.tg5 > 0 ? 0.375 : 0.25, "Unyielding Shield") * (0.36 * tw.tg3)));
 
-                    const finalKillMult = (waveMults[side].self[u] * offMod) / (waveMults[target].survival[targetUnit] * defMod);
-                    const b = sP.avgBase[u], tb = tP.avgBase[targetUnit];
+                    const b = sP.avgBase[u], tb = tP.avgBase[tUnit];
                     const atk = b.atk * (1 + sS.stats[u+'_att']/100);
                     const leth = b.leth * (1 + sS.stats[u+'_leth']/100);
-                    const df = tb.def * (1 + tS.stats[targetUnit+'_def']/100);
-                    const hp = tb.hp * (1 + tS.stats[targetUnit+'_hp']/100);
-                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * finalKillMult) / (df * hp * 100);
+                    const df = tb.def * (1 + tS.stats[tUnit+'_def']/100);
+                    const hp = tb.hp * (1 + tS.stats[tUnit+'_hp']/100);
+
+                    return (Math.sqrt(sC[u]) * sq_min * atk * leth * finalMult) / (df * hp * 100);
                 };
 
+                // Cavalry Ambusher Logic
                 if (u === 'cav' && sP.weights.cav.t7 > 0 && tC['arc'] >= 1 && tf !== 'arc' && !isBear) {
                     const isBypass = isStochastic ? (Math.random() < 0.2) : 0.2;
-                    if (isBypass && isStochastic) triggers[side]["Ambusher"] = (triggers[side]["Ambusher"] || 0) + 1;
                     if (isBypass === 1 || (!isStochastic && isBypass > 0)) {
-                        pending.push({dict: tC, unit: 'arc', amt: calcKillsForTarget('arc') * (isStochastic ? 1 : 0.2)});
-                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf) * 0.8});
-                    } else {
-                        pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf)});
-                    }
-                } else {
-                    pending.push({dict: tC, unit: tf, amt: calcKillsForTarget(tf)});
-                }
+                        pending.push({dict: tC, unit: 'arc', amt: calcKills('arc') * (isStochastic ? 1 : 0.2)});
+                        if (!isStochastic) pending.push({dict: tC, unit: tf, amt: calcKills(tf) * 0.8});
+                    } else { pending.push({dict: tC, unit: tf, amt: calcKills(tf)}); }
+                } else { pending.push({dict: tC, unit: tf, amt: calcKills(tf)}); }
             });
         });
 
@@ -137,48 +159,9 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         if (isBear) break;
     }
 
-    const finalizeLogs = (side) => {
-        let list = [];
-        const hData = (side === 'atk' ? atkH : defH);
-        const pData = (side === 'atk' ? atkP : defP);
-        const oppP = (side === 'atk' ? defP : atkP);
-
-        [...hData.passives, ...hData.actives].forEach(act => {
-            const isP = act.p >= 1.0 || act.isAlcarS3;
-            let val = isP ? (typeof act.m === 'object' ? `+${(act.m.inf*100).toFixed(0)}%` : `+${(act.m*100).toFixed(0)}%`) :
-                (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Eff: +${((Array.isArray(act.m)?act.m[0]:act.m) * (1-Math.pow(1-act.p, act.duration||1))*100).toFixed(1)}%`);
-            list.push({ name: act.name, val, isPassive: isP });
-        });
-
-        const chanceAbils = [
-            { n: "Ambusher", w: pData.weights.cav.t7, p: 0.2, m: 1.0 },
-            { n: "Volley", w: pData.weights.arc.t7, p: 0.1, m: 1.0 },
-            { n: "Unyielding Shield", w: pData.weights.inf.tg3, p: (pData.weights.inf.tg5 > 0 ? 0.375 : 0.25), m: 0.36 },
-            { n: "Assault Lance", w: pData.weights.cav.tg3, p: (pData.weights.cav.tg5 > 0 ? 0.15 : 0.1), m: 1.0 },
-            { n: "Howling Wind", w: pData.weights.arc.tg3, p: (pData.weights.arc.tg5 > 0 ? 0.3 : 0.2), m: 0.5 }
-        ];
-        chanceAbils.forEach(a => {
-            if (a.w > 0) {
-                const label = isStochastic ? `Triggers: ${triggers[side][a.n] || 0}` : `Eff: +${(a.p * a.m * a.w * 100).toFixed(1)}%`;
-                list.push({ name: a.n, val: label, isPassive: false });
-            }
-        });
-
-        const passives = [];
-        if (pData.counts.inf > 0 && oppP.counts.cav > 0) passives.push("Master Brawler (+10%)");
-        if (pData.counts.cav > 0 && (oppP.counts.arc > 0)) passives.push("Charge (+10%)");
-        if (pData.counts.arc > 0 && oppP.counts.inf > 0) passives.push("Ranged Strike (+10%)");
-        if (pData.counts.inf > 0 && oppP.counts.cav > 0 && pData.weights.inf.t7 > 0) passives.push("Bands of Steel (+10% Def)");
-        if (passives.length > 0) list.push({ name: "Troop Passives", val: passives.join(", "), isPassive: true });
-
-        const iE = (pData.weights.inf.tg3 * 100).toFixed(0);
-        const cE = (pData.weights.cav.tg3 * 100).toFixed(0);
-        const aE = (pData.weights.arc.tg3 * 100).toFixed(0);
-        return { skills: list, troopEff: `Inf ${iE}% | Cav ${cE}% | Arc ${aE}%` };
-    };
-
-    return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk'), def_logs: finalizeLogs('def'), totalDmg: isBear ? (1000000 - e_cur.inf) : 0 };
+    return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic), totalDmg: isBear ? (1000000 - e_cur.inf) : 0 };
 }
+
 
 function processBatches(batches) {
     let totals = {inf:0,cav:0,arc:0}, avgBase = {inf:{atk:0,def:0,leth:0,hp:0},cav:{atk:0,def:0,leth:0,hp:0},arc:{atk:0,def:0,leth:0,hp:0}};
@@ -329,14 +312,26 @@ function getHeroData(sideSetup) {
             const skillObj = { 
                 name: `${name} ${s.name}`, p, m, ids: s.ids, 
                 duration: s.duration || 1, instances,
-                isAlcarS3: (name === "Alcar" && si === 2),
-                isAlcarS1: (name === "Alcar" && si === 0)
+                units: s.units || null,
+                minWave: s.minWave || 0
             };
 
-            // Treat Alcar S3 as Passive (100% uptime)
-            if (p >= 1.0 || skillObj.isAlcarS3) passives.push(skillObj);
+            if (p >= 1.0) passives.push(skillObj);
             else actives.push(skillObj);
         });
     }
     return { passives, actives };
+}
+
+function finalizeLogs(side, triggers, hData, pData, oppP, isStochastic) {
+    let list = [];
+    [...hData.passives, ...hData.actives].forEach(act => {
+        const isP = act.p >= 1.0;
+        let val = isP ? "Passive" : (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Proc: ${(act.p * 100).toFixed(0)}%`);
+        list.push({ name: act.name, val, isPassive: isP });
+    });
+    const iE = (pData.weights.inf.tg3 * 100).toFixed(0);
+    const cE = (pData.weights.cav.tg3 * 100).toFixed(0);
+    const aE = (pData.weights.arc.tg3 * 100).toFixed(0);
+    return { skills: list, troopEff: `Inf ${iE}% | Cav ${cE}% | Arc ${aE}%` };
 }
