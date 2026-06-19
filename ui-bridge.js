@@ -946,18 +946,15 @@ window.calculateOptimalLineups = async () => {
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Combat Efficiency...</div>`;
 
-    // JOINER POOL: Whitelist specialists, always available at Max S1
-    const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul"];
-
-    const byT = { 
-        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
-        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
-        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
-    };
-    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
-
+    // 1. Whitelist & Pivots
+    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric", ];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0]];
+    
+    // 2. Pre-calculate Meta-Mirror Baseline
+    // We assume the opponent is 20% stronger than your naked account
+    const mirrorFactor = 1.2;
     const scenarios = [
         { l: "Solo Attack", ctx: "off", bear: false },
         { l: "Solo Defense", ctx: "def", bear: false },
@@ -966,48 +963,61 @@ window.calculateOptimalLineups = async () => {
         { l: "Bear Trap", ctx: "off", rally: true, bear: true }
     ];
 
-    const pivots = [[50,20,30], [60,40,0], [33,33,34], [70,10,20], [10,10,80], [30,60,10], [50,50,0]];
+    const byT = { 
+        Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
+        Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
+        Arc: unlocked.filter(n => HEROES[n].type === "Arc")
+    };
+    ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     await new Promise(r => setTimeout(r, 100));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Step 1: Calculate Scenario-Specific Naked Baseline Ceiling
-        let bCeil = -1;
-        for (let i=0; i<=100; i+=10) {
-            for (let c=0; c<=100-i; c+=10) {
-                const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, s.bear, s.l);
-                if (v > bCeil) bCeil = v;
-            }
-        }
+        // Calculate the scenario "Meta Ceiling" once (Average of all pivots)
+        let scenarioBaseline = 0;
+        pivots.forEach(p => {
+            scenarioBaseline += getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
+        });
+        scenarioBaseline /= pivots.length;
 
         let candidates = [];
-        // Step 2: Phase 1 Team Pivot Filter
+        // Phase 1: Combinatorial Search
         for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
                     let bestPV = -1, bestJ = [];
-                    for (const p of pivots) {
-                        let curJ = [];
-                        if (s.rally || s.bear) {
-                            for (let slot=0; slot<4; slot++) {
-                                let bj = "None", mv = -1;
-                                jPool.forEach(cand => {
-                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
-                                    if (v > mv) { mv = v; bj = cand; }
+                    
+                    // Greedy Joiner Fill
+                    let curJ = [];
+                    if (s.rally || s.bear) {
+                        for (let slot=0; slot<4; slot++) {
+                            let bj = "None", mv = -1;
+                            jPool.forEach(cand => {
+                                // Test joiner across all pivots to find "Universal" strength
+                                let totalV = 0;
+                                pivots.forEach(p => {
+                                    totalV += getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
                                 });
-                                curJ.push(bj);
-                            }
+                                if (totalV > mv) { mv = totalV; bj = cand; }
+                            });
+                            curJ.push(bj);
                         }
-                        const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
-                        if (v > bestPV) { bestPV = v; bestJ = curJ; }
                     }
-                    candidates.push({ leads, joiners: bestJ, score: bestPV });
+
+                    // Score this team across all pivots
+                    let teamAvgV = 0;
+                    pivots.forEach(p => {
+                        teamAvgV += getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
+                    });
+                    
+                    candidates.push({ leads, joiners: curJ, score: teamAvgV });
                 }
             }
         }
 
+        // Phase 2: Sort and Result Generation
         candidates.sort((a,b) => b.score - a.score);
         const top3 = candidates.slice(0, 3);
         
@@ -1017,16 +1027,8 @@ window.calculateOptimalLineups = async () => {
 
         for (let rk = 0; rk < top3.length; rk++) {
             const team = top3[rk];
-            let peakV = -1;
-            // Step 3: Phase 2 Formation Deep Dive (2% resolution for speed/stability)
-            for (let fI=0; fI<=100; fI+=2) {
-                for (let fC=0; fC<=100-fI; fC+=2) {
-                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
-                    if (v > peakV) peakV = v;
-                }
-            }
+            const gain = (team.score / scenarioBaseline);
 
-            const gain = peakV / bCeil;
             const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
                 const count = team.joiners.filter(x=>x===n).length;
                 return `${n}${count > 1 ? ' x'+count : ''}`;
@@ -1045,7 +1047,7 @@ window.calculateOptimalLineups = async () => {
                     </div>
                 </div>
                 <div class="text-right">
-                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Account Improvement</div>
+                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
                     <div class="text-xl font-black text-emerald-400">${gain.toFixed(3)}x</div>
                 </div>
             </div>`;
