@@ -1083,7 +1083,6 @@ function renderOptimizerCard(scenario, best, container) {
 }
 
 function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
-    function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
     const scenario = isBear ? "Bear Trap" : (isRally ? "Rally" : "Solo");
     return getSystemVolume(leaders, joiners, [33, 33, 34], ctx, isBear, scenario);
 }
