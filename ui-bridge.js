@@ -48,11 +48,11 @@ function getLiveSetup(side, formationOverride = null) {
     });
 
     const getVal = (u, type) => {
-        // Try the Formations tab select classes first
         const optEl = document.querySelector(`.opt-${side}-${u}-${type}`);
-        // Then try the Sim tab batch container
         const simEl = document.querySelector(`#${side}-batch-container .batch-${type}-${u}`);
-        return parseInt(optEl?.value || simEl?.value) || (type === 'tier' ? 10 : 3);
+        const rawVal = optEl?.value ?? simEl?.value; // Use Nullish Coalescing (??) instead of OR (||)
+        if (rawVal === undefined || rawVal === null) return (type === 'tier' ? 10 : 3);
+        return parseInt(rawVal); // 0 will now remain 0
     };
 
     let totalArmyCount = 0;
@@ -80,14 +80,12 @@ function getLiveSetup(side, formationOverride = null) {
             inf: (formationOverride[0]/100) * (totalArmyCount || 1000000),
             cav: (formationOverride[1]/100) * (totalArmyCount || 1000000),
             arc: (formationOverride[2]/100) * (totalArmyCount || 1000000),
-            // Ensure optimization uses the TG/Tier selected in the Formations Tab UI
             inf_tier: getVal('inf', 'tier'), inf_tg: getVal('inf', 'tg'),
             cav_tier: getVal('cav', 'tier'), cav_tg: getVal('cav', 'tg'),
             arc_tier: getVal('arc', 'tier'), arc_tg: getVal('arc', 'tg')
         };
         return { heroes: state[side].heroes, stats, batches: [collapsed] };
     }
-
     return { heroes: state[side].heroes, stats, batches: processedBatches };
 }
 
