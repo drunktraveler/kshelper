@@ -353,10 +353,12 @@ window.toggleAccountStats = () => {
 };
 
 window.reverseEngineerAccount = () => {
-    const mode = document.getElementById('report-mode').value;
-    const ctx = document.getElementById('report-ctx').value;
+    const reportType = document.getElementById('report-type').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
+    // Logic: Solo = no widgets. Rally = Offense widgets. Garrison = Defense widgets.
+    const widgetCtx = reportType === 'rally' ? 'off' : (reportType === 'garrison' ? 'def' : 'none');
+
     const tBuffs = {
         att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) / 100),
         def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) / 100),
@@ -370,11 +372,13 @@ window.reverseEngineerAccount = () => {
     }));
 
     let wMults = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    if (mode === 'rally') {
+    if (widgetCtx !== 'none') {
         reportHeroNames.forEach(name => {
             if (name === "None" || !HEROES[name]) return;
-            const d = HEROES[name], r = roster[name];
-            if (d.widget && d.widget.context === ctx) wMults[d.widget.stat] += WIDGET_GROWTH[r.widget];
+            const d = HEROES[name], r = roster[name] || { widget: 10 };
+            if (d.widget && d.widget.context === widgetCtx) {
+                wMults[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+            }
         });
     }
 
@@ -387,12 +391,11 @@ window.reverseEngineerAccount = () => {
             
             reportHeroNames.forEach(name => {
                 if (name === "None" || !HEROES[name]) return;
-                const d = HEROES[name], r = roster[name];
+                const d = HEROES[name], r = roster[name] || { starIndex: 30, widget: 10 };
                 if (d.type.toLowerCase().slice(0,3) === t) {
                     if (s === 'att' || s === 'def') {
                         val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     } else if (s === 'leth' || s === 'hp') {
-                        // VERIFIED: Pulling from widgets.js correctly
                         const widgetData = WIDGET_STATS[d.template];
                         if (widgetData) val -= (widgetData[r.widget] || 0);
                     }
@@ -852,7 +855,7 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
     leads.forEach(n => { if(n !== "None") lineup[n] = (lineup[n] || 0) + 1; });
     
     // 1. LEADERS: Apply Star Stats and Widgets
-    leads.forEach(name => {
+     leads.forEach(name => {
         if (name === "None") return;
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
         const tk = h.type.toLowerCase().slice(0, 3);
@@ -866,7 +869,10 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
                 if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
             }
         }
-        if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
+        // Logic check: Only apply Rally/Garrison widgets if the scenario allows it
+        // scenarioLabel is things like "Rally (Offense)", "Garrison (Defense)", etc.
+        const isRallyOrGarrison = scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear");
+        if (isRallyOrGarrison && h.widget && h.widget.context === ctx) {
             wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
         }
     });
