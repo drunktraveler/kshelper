@@ -842,95 +842,103 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // ID Buckets per Troop Type
+    // Correct Stacking Buckets
+    // ID 101 and 201 are additive bases per troop type. 102-106 are multipliers.
     const createB = () => ({ 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 });
     let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const processPool = (heroList, isLeadPool) => {
-        heroList.forEach(name => {
-            if (name === "None" || !HEROES[name]) return;
-            const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-            
-            // Apply Stats/Widgets (Leads only)
-            if (isLeadPool) {
-                const tk = h.type.toLowerCase().slice(0, 3);
-                if (isCalibrated) {
-                    const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
-                    curS[tk].att += star; curS[tk].def += star;
-                    if (h.widget) {
-                        const wT = WIDGET_STATS[h.template] || [];
-                        if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
-                        if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
-                    }
-                }
-                if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
-                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+    // Track joiners to handle Additive vs Multiplicative stacking
+    let joinerCounts = {}; 
+
+    const processHero = (name, isLead) => {
+        if (name === "None" || !HEROES[name]) return;
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
+        
+        if (isLead) {
+            const tk = h.type.toLowerCase().slice(0, 3);
+            if (isCalibrated) {
+                const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
+                curS[tk].att += star; curS[tk].def += star;
+                if (h.widget) {
+                    const wT = WIDGET_STATS[h.template] || [];
+                    if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
+                    if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
                 }
             }
+            if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
+                wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+            }
+        }
 
-            // Apply Skills
-            h.skills.forEach((skill, si) => {
-                if (!isLeadPool && si > 0) return; // Joiners S1 only
-                const x = skill.values[(isLeadPool ? (r[`s${si+1}`]||5) : 5) - 1];
-                const p = skill.getChance(x), mFull = skill.getMagnitude(x);
-                
-                // PERIODIC UPTIME (Alcar S1)
-                let uptime;
-                if (skill.interval) {
-                    uptime = skill.duration / skill.interval;
-                } else {
-                    uptime = (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
-                }
-                if (skill.minWave && !skill.interval) uptime *= 0.75; // Standard penalty for delayed skills
+        h.skills.forEach((skill, si) => {
+            if (!isLead && si > 0) return;
+            const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
+            
+            // Fixed Periodic/Duration Uptime
+            let uptime = skill.interval ? (skill.duration / skill.interval) : (skill.getChance(x));
+            if (skill.duration > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, skill.duration);
 
-                const affectedUnits = skill.units || ["inf", "cav", "arc"];
-                skill.ids.forEach((id, idx) => {
-                    const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-                    affectedUnits.forEach(u => {
-                        let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                        if (id === 101 || id === 201) b[u][id] += (mag * uptime);
-                        else if (id === 250) b[u][id] += (mag * uptime); // Sum of dodge chances
-                        else b[u][id] *= (1 + (mag * uptime));
-                    });
+            const mFull = skill.getMagnitude(x);
+            const affectedUnits = skill.units || ["inf", "cav", "arc"];
+            
+            skill.ids.forEach((id, idx) => {
+                const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
+                affectedUnits.forEach(u => {
+                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                    let val = mag * uptime;
+
+                    if (id === 101 || id === 201) b[u][id] += val;
+                    else if (id === 250) b[u][id] += val; // Margot Dodge stacks additively
+                    else {
+                        // MULTIPLICATIVE STACKING RULE:
+                        // If same hero is already a joiner, add to this bucket. Otherwise, multiply.
+                        if (!isLead && joinerCounts[name] > 1) b[u][id] += val; 
+                        else b[u][id] *= (1 + val);
+                    }
                 });
             });
         });
     };
 
-    processPool(leads, true);
-    processPool(joiners, false);
+    leads.forEach(l => processHero(l, true));
+    joiners.forEach(j => { joinerCounts[j] = (joinerCounts[j] || 0) + 1; processHero(j, false); });
 
     const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
     
+    // Offense Volume (The "Damage" half)
     const getOff = (u) => {
         const stats = curS[u];
         const mult = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
-        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
+        // If Bear, ignore base stats of Infantry as they don't attack
+        const troopWeight = (isBear && u === 'inf') ? 0.01 : 1.0; 
+        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult * troopWeight;
     };
-    const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.0 : 1.6)) + getOff('arc');
-    if (isBear) return totalD;
+    
+    // Quality factor: Archers are the kings of Bear. Cavalry are kings of Bypass.
+    const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.2 : 1.6)) + (getOff('arc') * (isBear ? 2.0 : 1.0));
 
+    if (isBear) return totalD; // In Bear Trap, Survival Volume is irrelevant.
+
+    // Survival Volume (The "Time" half)
     const getSurv = (u) => {
         const stats = curS[u];
-        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * (1 / (1 - Math.min(0.9, b[u][250])));
+        const dodgeMult = 1 / (1 - Math.min(0.8, b[u][250]));
+        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * dodgeMult;
         return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
     };
-    const totalS = getSurv('inf') + getSurv('cav') + getSurv('arc');
-
-    return totalD * totalS;
+    return totalD * (getSurv('inf') + getSurv('cav') + getSurv('arc'));
 }
+
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock 3+ heroes in Roster.");
+    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [5,15,80]];
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Scanning Meta-Peak Formations...</div>`;
-
-    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Executing Peak Potential Analysis...</div>`;
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
@@ -940,18 +948,17 @@ window.calculateOptimalLineups = async () => {
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
-        { l: "Solo Attack", ctx: "off", bear: false },
-        { l: "Solo Defense", ctx: "def", bear: false },
-        { l: "Rally (Offense)", ctx: "off", rally: true, bear: false },
-        { l: "Garrison (Defense)", ctx: "def", rally: true, bear: false },
-        { l: "Bear Trap", ctx: "off", rally: true, bear: true }
+        { l: "Solo Attack", ctx: "off", bear: false, rally: false },
+        { l: "Solo Defense", ctx: "def", bear: false, rally: false },
+        { l: "Rally (Offense)", ctx: "off", bear: false, rally: true },
+        { l: "Garrison (Defense)", ctx: "def", bear: false, rally: true },
+        { l: "Bear Trap", ctx: "off", bear: true, rally: true }
     ];
 
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 50));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Find Peak Baseline (Best your account can do with NO heroes)
         let baselinePeak = 0;
         pivots.forEach(p => {
             const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
@@ -964,64 +971,43 @@ window.calculateOptimalLineups = async () => {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
                     let curJ = [];
-
-                    // Fill Joiners based on what increases the PEAK potential across all pivots
-                    if (s.rally || s.bear) {
+                    if (s.rally) {
                         for (let slot=0; slot<4; slot++) {
-                            let bj = "None", maxPeakForThisSlot = -1;
+                            let bj = "None", bestSlotV = -1;
                             jPool.forEach(cand => {
-                                let bestPivotVal = -1;
+                                let pVal = -1;
                                 pivots.forEach(p => {
                                     const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
-                                    if (v > bestPivotVal) bestPivotVal = v;
+                                    if (v > pVal) pVal = v;
                                 });
-                                if (bestPivotVal > maxPeakForThisSlot) {
-                                    maxPeakForThisSlot = bestPivotVal;
-                                    bj = cand;
-                                }
+                                if (pVal > bestSlotV) { bestSlotV = pVal; bj = cand; }
                             });
                             curJ.push(bj);
                         }
                     }
-
-                    // Final Score for this combo is its absolute Peak performance among benchmarks
-                    let finalComboPeak = -1;
+                    let comboPeak = -1;
                     pivots.forEach(p => {
                         const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
-                        if (v > finalComboPeak) finalComboPeak = v;
+                        if (v > comboPeak) comboPeak = v;
                     });
-
-                    candidates.push({ leads, joiners: curJ, score: finalComboPeak });
+                    candidates.push({ leads, joiners: curJ, score: comboPeak });
                 }
             }
         }
 
-        // Phase 2: High-Resolution Sweep for Top 10
         candidates.sort((a,b) => b.score - a.score);
-        const top10 = candidates.slice(0, 10);
-        let finalDisplay = [];
-
-        for (let team of top10) {
-            let absoluteBestVol = -1;
-            let bestF = [33, 33, 34];
-            
-            // Sweep 0-100% in 5% steps to find the "Hill", then 1% steps around it
-            for (let fI=0; fI<=100; fI+=5) {
-                for (let fC=0; fC<=100-fI; fC+=5) {
-                    const fA = 100 - fI - fC;
-                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, fA], s.ctx, s.bear, s.l);
-                    if (v > absoluteBestVol) {
-                        absoluteBestVol = v;
-                        bestF = [fI, fC, fA];
-                    }
+        const top3 = candidates.slice(0, 3).map(team => {
+            let bestVol = -1;
+            for (let fI=0; fI<=100; fI+=2) {
+                for (let fC=0; fC<=100-fI; fC+=2) {
+                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
+                    if (v > bestVol) bestVol = v;
                 }
             }
-            finalDisplay.push({ ...team, peakGain: absoluteBestVol / baselinePeak, formation: bestF });
-        }
+            return { ...team, gain: bestVol / baselinePeak };
+        });
 
-        // Sort by final sweep results and take top 3 for display
-        finalDisplay.sort((a,b) => b.peakGain - a.peakGain);
-        renderScenarioResults(s.l, finalDisplay.slice(0, 3), resArea);
+        renderScenarioResults(s.l, top3, resArea);
     }
 };
 
