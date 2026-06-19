@@ -933,7 +933,7 @@ window.calculateOptimalLineups = async () => {
 
     // Whitelist and Pivots
     const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80], [5,5,90];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80], [5,5,90]];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
