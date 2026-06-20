@@ -14,12 +14,8 @@ const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
-    // NEW: Specifically for the Bear Tab
-    bear: { heroes: Array(3).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
-
-const originalUpdateGrids = window.updateGrids;
 
 // --- 1. INITIALIZATION ---
 window.init = () => {
@@ -303,32 +299,15 @@ window.openHeroModal = (side, index) => {
 window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index); };
 
 function renderSkillsInModal(name, slot) {
-    const container = document.getElementById('skill-inputs'); 
-    container.innerHTML = '';
+    const container = document.getElementById('skill-inputs'); container.innerHTML = '';
     if(name === "None") return;
-    
-    const h = HEROES[name]; 
-    const max = (slot < 3) ? h.skills.length : 1;
-    
+    const h = HEROES[name]; const max = (slot < 3) ? h.skills.length : 1;
     for(let i=0; i<max; i++) {
-        const skill = h.skills[i];
         const div = document.createElement('div');
-        div.className = "p-3 bg-slate-950/50 rounded-lg border border-slate-800 mb-2";
-        
-        // Show what units are affected if it's restricted
-        const unitTag = skill.units ? `<span class="text-[7px] bg-blue-900 text-blue-200 px-1 rounded ml-2">${skill.units.join(', ').toUpperCase()}</span>` : '';
-        
-        div.innerHTML = `
-            <div class="flex justify-between items-center mb-2">
-                <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">${skill.name}${unitTag}</div>
-                <div class="text-[8px] text-slate-600 font-bold">ID: ${skill.ids.join('+')}</div>
-            </div>
-            ${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}
-        `;
+        div.innerHTML = `<div class="text-[9px] text-slate-500 font-black uppercase mb-1">${h.skills[i].name}</div>${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}`;
         container.appendChild(div);
     }
 }
-
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
     state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30, widgetLv: roster[name]?.widget || 0 };
@@ -336,21 +315,17 @@ window.saveHeroConfig = () => {
 };
 
 window.updateGrids = () => {
-    originalUpdateGrids(); // Run atk/def grids
-    const bearContainer = document.getElementById(`bear-hero-grid`);
-    if (!bearContainer) return;
-    bearContainer.innerHTML = '';
-    state.bear.heroes.forEach((h, i) => {
-        const div = document.createElement('div');
-        const typeColors = ['border-blue-500', 'border-amber-500', 'border-emerald-500'];
-        div.className = `hero-circle active ${typeColors[i]} border-2`;
-        if (h.name !== 'None') {
-            div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2">`;
-        } else {
-            div.innerHTML = `<span class="text-[8px] text-slate-600">${['INF', 'CAV', 'ARC'][i]}</span>`;
-        }
-        div.onclick = () => window.openHeroModal('bear', i);
-        bearContainer.appendChild(div);
+    ['atk','def'].forEach(side => {
+        const container = document.getElementById(`${side}-hero-grid`); if(!container) return; container.innerHTML = '';
+        state[side].heroes.forEach((h, i) => {
+            const div = document.createElement('div');
+            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
+            if (h.name !== 'None') {
+                div.innerHTML = `<span style="position:absolute;z-index:1">${h.name[0]}</span><img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2" onerror="this.style.opacity='0'">`;
+            } else { div.innerText = (i + 1); }
+            div.onclick = () => window.openHeroModal(side, i);
+            container.appendChild(div);
+        });
     });
 };
 
@@ -361,12 +336,10 @@ window.toggleAccountStats = () => {
 };
 
 window.reverseEngineerAccount = () => {
-    const reportType = document.getElementById('report-type').value;
+    const mode = document.getElementById('report-mode').value;
+    const ctx = document.getElementById('report-ctx').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
     
-    // Logic: Solo = no widgets. Rally = Offense widgets. Garrison = Defense widgets.
-    const widgetCtx = reportType === 'rally' ? 'off' : (reportType === 'garrison' ? 'def' : 'none');
-
     const tBuffs = {
         att: 1 + (parseFloat(document.getElementById('temp-buff-att').value) / 100),
         def: 1 + (parseFloat(document.getElementById('temp-buff-def').value) / 100),
@@ -380,13 +353,11 @@ window.reverseEngineerAccount = () => {
     }));
 
     let wMults = { attack: 0, defense: 0, lethality: 0, health: 0 };
-    if (widgetCtx !== 'none') {
+    if (mode === 'rally') {
         reportHeroNames.forEach(name => {
             if (name === "None" || !HEROES[name]) return;
-            const d = HEROES[name], r = roster[name] || { widget: 10 };
-            if (d.widget && d.widget.context === widgetCtx) {
-                wMults[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-            }
+            const d = HEROES[name], r = roster[name];
+            if (d.widget && d.widget.context === ctx) wMults[d.widget.stat] += WIDGET_GROWTH[r.widget];
         });
     }
 
@@ -399,11 +370,12 @@ window.reverseEngineerAccount = () => {
             
             reportHeroNames.forEach(name => {
                 if (name === "None" || !HEROES[name]) return;
-                const d = HEROES[name], r = roster[name] || { starIndex: 30, widget: 10 };
+                const d = HEROES[name], r = roster[name];
                 if (d.type.toLowerCase().slice(0,3) === t) {
                     if (s === 'att' || s === 'def') {
                         val -= (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
                     } else if (s === 'leth' || s === 'hp') {
+                        // VERIFIED: Pulling from widgets.js correctly
                         const widgetData = WIDGET_STATS[d.template];
                         if (widgetData) val -= (widgetData[r.widget] || 0);
                     }
@@ -619,103 +591,132 @@ window.runOptimizer = async (mode) => {
     if (!resArea) return;
     resArea.innerText = "Analyzing...";
 
-    setTimeout(() => {
-        let dataPoints = { a: [], b: [], c: [], z: [] };
-        let best = { form: [0, 0, 0], score: -1 };
+    // Give UI thread air to render "Analyzing..."
+    setTimeout(async () => {
+        try {
+            let dataPoints = { a: [], b: [], c: [], z: [] };
+            let best = { form: [0, 0, 0], score: -Infinity };
 
-        // Collect current stats from Bear Tab inputs
-        const bearConfig = {
-            inf_acc: { att: parseFloat(document.getElementById('bear-inf-att').value) || 0, leth: parseFloat(document.getElementById('bear-inf-leth').value) || 0 },
-            cav_acc: { att: parseFloat(document.getElementById('bear-cav-att').value) || 0, leth: parseFloat(document.getElementById('bear-cav-leth').value) || 0 },
-            arc_acc: { att: parseFloat(document.getElementById('bear-arc-att').value) || 0, leth: parseFloat(document.getElementById('bear-arc-leth').value) || 0 },
-            inf_tier: parseInt(document.getElementById('bear-inf-tier').value),
-            cav_tier: parseInt(document.getElementById('bear-cav-tier').value),
-            arc_tier: parseInt(document.getElementById('bear-arc-tier').value),
-            inf_tg: parseInt(document.getElementById('bear-inf-tg').value),
-            cav_tg: parseInt(document.getElementById('bear-cav-tg').value),
-            arc_tg: parseInt(document.getElementById('bear-arc-tg').value)
-        };
+            if (isBear) {
+                // --- 1. BEAR TRAP SCIENTIFIC LOGIC ---
+                let potentials = { inf: 0, cav: 0, arc: 0 };
+                let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
+                let wAtk = 1.0, wLeth = 1.0;
 
-        // Sweep formations
-        for (let i = 0; i <= 100; i += 2) {
-            for (let j = 0; j <= 100 - i; j += 2) {
-                let k = 100 - i - j;
-                const score = calculateBearDamage(bearConfig, [i, j, k]);
+                // A. Process Current Attacker Heroes (State from Sim Tab)
+                state.atk.heroes.forEach((h, idx) => {
+                    if (h.name === "None" || !HEROES[h.name]) return;
+                    const d = HEROES[h.name], r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
+                    const isLead = idx < 3;
 
-                if (score > best.score) best = { score, form: [i, j, k] };
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                    if (isLead && d.widget && d.widget.context === 'off') {
+                        const val = WIDGET_GROWTH[r.widget] || 0;
+                        if (d.widget.stat === "attack") wAtk += val;
+                        if (d.widget.stat === "lethality") wLeth += val;
+                    }
+
+                    d.skills.forEach((s, si) => {
+                        if (!isLead && si > 0) return; // Joiners S1 only
+                        const x = s.values[(r[`s${si + 1}`] || 5) - 1];
+                        const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : s.getChance(x);
+                        
+                        s.ids.forEach((id, idxM) => {
+                            if (id >= 200) return; // Debuffs ignored
+                            const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idxM] : s.getMagnitude(x);
+                            ['inf', 'cav', 'arc'].forEach(u => {
+                                let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                                if (id === 101) m101[u] += val * uptime;
+                                if (id === 102) m102[u] += val * uptime;
+                            });
+                        });
+                    });
+                });
+
+                // B. Calculate Base Unit Potentials
+                ['inf', 'cav', 'arc'].forEach(u => {
+                    const t = parseInt(document.getElementById(`bear-${u}-tier`).value);
+                    const tg = parseInt(document.getElementById(`bear-${u}-tg`).value);
+                    const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
+                    
+                    const base = UNITS[longU][t][tg];
+                    const accAtt = parseFloat(document.getElementById(`bear-${u}-att`).value) || 0;
+                    const accLeth = parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0;
+                    
+                    let abil = 1.0;
+                    if (u === 'arc') {
+                        const effP = (tg >= 5 ? 0.3 : (tg >= 3 ? 0.2 : 0));
+                        abil *= (1 + (effP * 0.5)) * 1.1; // Incl. Ranged Strike
+                    }
+                    if (u === 'cav' && tg >= 3) {
+                        const effP = (tg >= 5 ? 0.15 : 0.1);
+                        abil *= (1 + (effP * 1.0));
+                    }
+
+                    const tA = base[0] * (1 + accAtt / 100) * wAtk * m101[u];
+                    const tL = base[2] * (1 + accLeth / 100) * wLeth * m102[u];
+                    potentials[u] = (1000 * tA * tL * abil) / 8333.33;
+                });
+
+                // C. Formation Search
+                for (let i = 0; i <= 100; i++) {
+                    for (let j = 0; j <= 100 - i; j++) {
+                        let k = 100 - i - j;
+                        const score = (Math.sqrt(i * 10000) * potentials.inf) +
+                                      (Math.sqrt(j * 10000) * potentials.cav) +
+                                      (Math.sqrt(k * 10000) * potentials.arc);
+                        if (score > best.score) best = { score, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                    }
+                }
+                scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+
+            } else {
+                // --- 2. PVP FORMATION LOGIC (Simulation Sweep) ---
+                const mySide = optRole;
+                const oppSide = mySide === 'atk' ? 'def' : 'atk';
+                const setup = gatherSetup();
+
+                // Simple representative opponent (Standard Meta)
+                const opp = JSON.parse(JSON.stringify(setup[oppSide]));
+                if (mode === 'custom') {
+                    const i = parseFloat(document.getElementById('custom-inf').value) || 33;
+                    const c = parseFloat(document.getElementById('custom-cav').value) || 33;
+                    const a = parseFloat(document.getElementById('custom-arc').value) || 34;
+                    const tot = i + c + a || 1;
+                    opp.batches = [{ inf: (i/tot)*1000000, cav: (c/tot)*1000000, arc: (a/tot)*1000000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                }
+
+                for (let i = 0; i <= 100; i += 2) {
+                    for (let j = 0; j <= 100 - i; j += 2) {
+                        let k = 100 - i - j;
+                        const testSetup = { atk: {}, def: {} };
+                        const myConfig = JSON.parse(JSON.stringify(setup[mySide]));
+                        myConfig.batches = [{ inf: i*10000, cav: j*10000, arc: k*10000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
+                        
+                        testSetup[mySide] = myConfig;
+                        testSetup[oppSide] = opp;
+
+                        const r = runCombatSim(testSetup, 'average', 'average', 1000, false, true);
+                        const mS = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc);
+                        const oS = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc);
+                        const res = mS - oS;
+
+                        if (res > best.score) best = { score: res, form: [i, j, k] };
+                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(res);
+                    }
+                }
+                scoreArea.innerHTML = `Survival Margin: <span class="text-blue-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
             }
-        }
 
-        renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
-        resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-        scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+            renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
+            resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
+
+        } catch (err) {
+            console.error("Optimizer Crash:", err);
+            resArea.innerText = "Error";
+        }
     }, 50);
 };
-
-// Helper specific to the Bear Tab's custom inputs
-function calculateBearDamage(config, formation) {
-    const units = ['inf', 'cav', 'arc'];
-    const longUnits = ['infantry', 'cavalry', 'archers'];
-    
-    // Setup temporary "Account Volume" environment
-    let b = { inf: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1}, cav: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1}, arc: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1} };
-    let wM = { attack: 1.0, lethality: 1.0 };
-
-    state.bear.heroes.forEach((h, idx) => {
-        if (h.name === "None") return;
-        const data = HEROES[h.name];
-        const r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-
-        // 1. Widgets (Offense Context Only)
-        if (data.widget && data.widget.context === 'off') {
-            wM[data.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-        }
-
-        // 2. Skills (Duration 1, Ignore Survival)
-        data.skills.forEach((skill, si) => {
-            const x = skill.values[r[`s${si+1}`] - 1];
-            let uptime = skill.interval ? (1 / skill.interval) : skill.getChance(x);
-            // Bear = 1 wave calculation
-            const mFull = skill.getMagnitude(x);
-            skill.ids.forEach((id, mIdx) => {
-                if (id >= 200) return; // Ignore defensive IDs
-                (skill.units || ["inf", "cav", "arc"]).forEach(u => {
-                    const rawM = Array.isArray(mFull) ? mFull[mIdx] : mFull;
-                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    if (id === 101) b[u][id] += (mag * uptime);
-                    else b[u][id] *= (1 + (mag * uptime));
-                });
-            });
-        });
-    });
-
-    let totalDmg = 0;
-    units.forEach((u, idx) => {
-        const f = formation[idx];
-        if (f <= 0) return;
-        
-        const unitBase = UNITS[longUnits[idx]][config[`${u}_tier`]][config[`${u}_tg`]];
-        const acc = config[`${u}_acc`];
-        
-        // Troop Passives (Ranged Strike for Archers / Assault Lance for Cavalry)
-        let abil = 1.0;
-        if (u === 'arc') abil *= 1.1; // Ranged Strike always active vs Bear
-        if (u === 'cav' && config[`${u}_tg`] >= 3) {
-            const prob = config[`${u}_tg`] >= 5 ? 0.15 : 0.1;
-            abil *= (1 + prob); // Assault Lance EV
-        }
-
-        const totalAtk = unitBase[0] * (1 + acc.att/100) * wM.attack * (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
-        const totalLeth = unitBase[2] * (1 + acc.leth/100) * wM.lethality;
-
-        // Damage Formula: sqrt(count) * 1000 * Atk * Leth * TroopAbil / (Def * HP * 100)
-        // Bear Def/HP constants: 83333.3
-        totalDmg += (Math.sqrt(f * 10000) * 1000 * totalAtk * totalLeth * abil) / 83333.3;
-    });
-
-    return totalDmg;
-}
 
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
@@ -805,7 +806,7 @@ function renderTernary(id, data, best, isBear) {
 
     Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
-// --- UPDATED SYSTEM VOLUME LOGIC (Reflecting periodic and troop specific) ---
+// --- UPDATED SYSTEM VOLUME LOGIC ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
     const isCalibrated = !!rawStats;
@@ -821,219 +822,212 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    const createB = () => ({ 101:0, 102:0, 103:0, 104:0, 105:0, 106:0, 201:0, 202:0, 203:0, 204:0, 205:0, 250:0 });
-    let b = { inf: createB(), cav: createB(), arc: createB() };
+    // Multiplicative ID Buckets: 1XX = Buffs, 2XX = Survival Debuffs
+    let b = { 
+        101: {i:0,c:0,a:0}, 102: {i:0,c:0,a:0}, 
+        201: {i:0,c:0,a:0}, 202: {i:0,c:0,a:0}, 203: {i:0,c:0,a:0}, 
+        204: {i:0,c:0,a:0}, 205: {i:0,c:0,a:0}, 206: 0 
+    };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const processHero = (name, isLead) => {
-        if (name === "None" || !HEROES[name]) return;
+    // Grouping for the 5-Instance Rule
+    const leadsInLineup = {}; 
+    leads.forEach(n => { if(n !== "None") leadsInLineup[n] = (leadsInLineup[n] || 0) + 1; });
+    const totalLineup = { ...leadsInLineup };
+    joiners.forEach(n => { if(n !== "None") totalLineup[n] = (totalLineup[n] || 0) + 1; });
+
+    // 1. LEADERS: Apply Star Stats, Widget Flats, and Global Multipliers
+    Object.keys(leadsInLineup).forEach(name => {
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-        
-        if (isLead) {
-            const tk = h.type.toLowerCase().slice(0, 3);
-            if (isCalibrated) {
-                // FIXED: GROWTH_TEMPLATES and WIDGET_STATS (Flats) are ALWAYS ON
-                const growth = (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
-                curS[tk].att += growth; curS[tk].def += growth;
-                
-                if (h.widget) {
-                    const flats = WIDGET_STATS[h.template] || [];
-                    const fVal = flats[r.widget] || 0;
-                    if (h.widget.stat === "lethality") curS[tk].leth += fVal;
-                    if (h.widget.stat === "health") curS[tk].hp += fVal;
-                    // Add protection for widgets that might have attack/defense flats
-                    if (h.widget.stat === "attack") curS[tk].att += fVal;
-                    if (h.widget.stat === "defense") curS[tk].def += fVal;
-                }
-            }
-            // FIXED: WIDGET_GROWTH (The 15% Multiplier) is Context Gated
-            if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear")) {
-                if (h.widget && h.widget.context === ctx) {
-                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-                }
+        const tk = h.type.toLowerCase().slice(0, 3);
+        if (isCalibrated) {
+            const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
+            curS[tk].att += star; curS[tk].def += star;
+            if (h.widget) {
+                const wT = WIDGET_STATS[h.template] || [];
+                if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
+                if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
             }
         }
+        if (scenarioLabel !== "Solo Attack" && h.widget && h.widget.context === ctx) {
+            wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+        }
+    });
+
+    // 2. SKILL PROCESSING: Independent Multipliers
+    Object.keys(totalLineup).forEach(name => {
+        const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
+        const lCount = leadsInLineup[name] || 0;
+        const jCount = totalLineup[name] - lCount;
 
         h.skills.forEach((skill, si) => {
-            if (!isLead && si > 0) return;
-            const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
-            
-            // FIXED: Duration 1 for Bear Trap
-            const dur = isBear ? 1 : (skill.duration || 1);
-            let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : (skill.getChance(x));
-            if (dur > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, dur);
+            const isLeadSlot = lCount > 0;
+            const isJoinerSlot = si === 0 && jCount > 0;
+            if (!isLeadSlot && !isJoinerSlot) return;
 
-            const mFull = skill.getMagnitude(x);
+            // Leaders use Roster levels; Joiners always use Forced Level 5
+            const lvl = isLeadSlot ? (r[`s${si+1}`] || 5) : 5;
+            const x = skill.values[lvl - 1];
+            if (x === undefined) return;
+
+            const p = skill.getChance(x), mFull = skill.getMagnitude(x);
+            // S3 permanent for Alcar, otherwise standard EV
+            const uptime = (name === "Alcar" && si === 2) ? 1.0 : (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
+            const instances = lCount + (si === 0 ? jCount : 0);
+
             skill.ids.forEach((id, idx) => {
-                const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-                (skill.units || ["inf", "cav", "arc"]).forEach(u => {
-                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    b[u][id] += (mag * uptime);
+                if (isBear && id >= 200) return; // Bear is immune to all 2XX
+                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
+                ['inf', 'cav', 'arc'].forEach(u => {
+                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
+                    const final = val * instances * uptime;
+                    if (id === 206) b[206] += final;
+                    else if (b[id]) b[id][u[0]] += final;
                 });
             });
         });
-    };
+    });
 
-    leads.forEach(l => processHero(l, true));
-    joiners.forEach(j => processHero(j, false));
+    const f = { i: formation[0], c: formation[1], a: formation[2] };
+    const getM = (id, char) => 1 + b[id][char];
 
-    const f = [formation[0], formation[1], formation[2]];
-    const getOff = (u, idx) => {
-        const stats = curS[u];
-        const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
-        const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
-        
-        // Damage = sqrt(count) * BaseAtk * Stats * Multipliers
-        return Math.sqrt(f[idx] * 1000000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
+    // Offense (D): (Stats * Ally Buffs)
+    const dmg = (u, baseAtk) => {
+        const c = u[0];
+        return Math.sqrt(f[c] * 10000) * baseAtk * (1 + curS[u].att/100) * wM.attack * getM(101, c) * 
+               (1 + curS[u].leth/100) * wM.lethality * getM(102, c);
     };
-    
-    const totalD = getOff('inf', 0) + getOff('cav', 1) + getOff('arc', 2);
+    // 1.6x Quality Factor for Cavalry Bypass in PVP Volume
+    const totalD = dmg('inf', 597) + (dmg('cav', 1790) * (isBear ? 1.0 : 1.6)) + dmg('arc', 2387);
+
     if (isBear) return totalD;
 
-    const getSurv = (u, idx) => {
-        const stats = curS[u];
-        const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
-        const dodgeMult = 1 / (1 - Math.min(0.9, b[u][250]));
-        const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
-        return (f[idx] * 1000000) * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
+    // Tanking (T): (Stats) * (ALL 2XX Multipliers)
+    const tank = (u, baseHP) => {
+        const c = u[0];
+        return f[c] * 100 * baseHP * (1 + curS[u].hp/100) * wM.health * 
+               10 * (1 + curS[u].def/100) * wM.defense *
+               getM(201, c) * getM(202, c) * getM(203, c) * getM(204, c) * getM(205, c);
     };
+    const totalT = tank('inf', 1790) + tank('cav', 597) + tank('arc', 448);
 
-    return totalD * (getSurv('inf', 0) + getSurv('cav', 1) + getSurv('arc', 2));
+    return totalD * totalT * (1 + b[206]);
 }
-
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Please unlock at least one hero of each type in the Roster.");
+    if (unlocked.length < 3) return alert("Unlock 3+ heroes in Roster.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Scientific Peak...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Solving Scientific Ceiling...</div>`;
 
-    // Whitelist and Pivots
-    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80], [5,5,90]];
+    // JOINER POOL: Whitelist specialists, always available at Max S1
+    const jPool = ["Chenko", "Amane", "Howard", "Eric", "Gordon", "Fahd", "Hilde", "Saul"];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
         Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
-    // Ensure we have at least "None" to prevent loop crashes
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
-        { l: "Solo Attack", ctx: "off", bear: false, rally: false },
-        { l: "Solo Defense", ctx: "def", bear: false, rally: false },
-        { l: "Rally (Offense)", ctx: "off", bear: false, rally: true },
-        { l: "Garrison (Defense)", ctx: "def", bear: false, rally: true },
-        { l: "Bear Trap", ctx: "off", bear: true, rally: true }
+        { l: "Solo Attack", ctx: "off", bear: false },
+        { l: "Solo Defense", ctx: "def", bear: false },
+        { l: "Rally (Offense)", ctx: "off", rally: true, bear: false },
+        { l: "Garrison (Defense)", ctx: "def", rally: true, bear: false },
+        { l: "Bear Trap", ctx: "off", rally: true, bear: true }
     ];
 
-    await new Promise(r => setTimeout(r, 50));
+    const pivots = [[50,20,30], [60,40,0], [33,33,34], [70,10,20], [10,10,80], [30,60,10], [50,50,0]];
+
+    await new Promise(r => setTimeout(r, 100));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // 1. Calculate Peak Baseline (No Heroes)
-        let baselinePeak = 0;
-        pivots.forEach(p => {
-            const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
-            if (v > baselinePeak) baselinePeak = v;
-        });
+        // Step 1: Calculate Scenario-Specific Naked Baseline Ceiling
+        let bCeil = -1;
+        for (let i=0; i<=100; i+=10) {
+            for (let c=0; c<=100-i; c+=10) {
+                const v = getSystemVolume(["None","None","None"], [], [i, c, 100-i-c], s.ctx, s.bear, s.l);
+                if (v > bCeil) bCeil = v;
+            }
+        }
 
         let candidates = [];
-
-        // 2. Step through Leader Combinations (Strict 1 per type)
+        // Step 2: Phase 1 Team Pivot Filter
         for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
-                    let curJ = [];
-
-                    // 3. Greedy Joiner Selection (if applicable)
-                     // JOINER GREEDY FILL
-                    if (s.rally) {
-                        for (let slot=0; slot<4; slot++) {
-                            let bj = "None", bestSlotV = -1;
-                            jPool.forEach(heroName => {
-                                let peakWithCandidate = -1;
-                                pivots.forEach(p => {
-                                    // FIXED: Passing correct flags to getSystemVolume
-                                    const v = getSystemVolume(leads, [...curJ, heroName], p, s.ctx, s.bear, s.l);
-                                    if (v > peakWithCandidate) peakWithCandidate = v;
+                    let bestPV = -1, bestJ = [];
+                    for (const p of pivots) {
+                        let curJ = [];
+                        if (s.rally || s.bear) {
+                            for (let slot=0; slot<4; slot++) {
+                                let bj = "None", mv = -1;
+                                jPool.forEach(cand => {
+                                    const v = getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
+                                    if (v > mv) { mv = v; bj = cand; }
                                 });
-                                if (peakWithCandidate > bestSlotV) {
-                                    bestSlotV = peakWithCandidate;
-                                    bj = heroName;
-                                }
-                            });
-                            curJ.push(bj);
+                                curJ.push(bj);
+                            }
                         }
-                    }
-
-                    // Calculate the final Peak Volume for this team across benchmark pivots
-                    let finalPeakVolume = -1;
-                    pivots.forEach(p => {
                         const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
-                        if (v > finalPeakVolume) finalPeakVolume = v;
-                    });
-
-                    candidates.push({ leads, joiners: curJ, score: finalPeakVolume });
+                        if (v > bestPV) { bestPV = v; bestJ = curJ; }
+                    }
+                    candidates.push({ leads, joiners: bestJ, score: bestPV });
                 }
             }
         }
 
-        // 4. Final 2% Resolution Deep Dive for Top 3
         candidates.sort((a,b) => b.score - a.score);
-        const top3Final = candidates.slice(0, 3).map(team => {
-            let sweepBestVol = -1;
-            // High-res sweep to find the absolute ceiling
-            for (let fI = 0; fI <= 100; fI += 2) {
-                for (let fC = 0; fC <= 100 - fI; fC += 2) {
-                    const fA = 100 - fI - fC;
-                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, fA], s.ctx, s.bear, s.l);
-                    if (v > sweepBestVol) sweepBestVol = v;
+        const top3 = candidates.slice(0, 3);
+        
+        const card = document.createElement('div');
+        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
+        card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
+
+        for (let rk = 0; rk < top3.length; rk++) {
+            const team = top3[rk];
+            let peakV = -1;
+            // Step 3: Phase 2 Formation Deep Dive (2% resolution for speed/stability)
+            for (let fI=0; fI<=100; fI+=2) {
+                for (let fC=0; fC<=100-fI; fC+=2) {
+                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, 100-fI-fC], s.ctx, s.bear, s.l);
+                    if (v > peakV) peakV = v;
                 }
             }
-            return { ...team, gain: sweepBestVol / baselinePeak };
-        });
 
-        // 5. Render
-        renderScenarioResults(s.l, top3Final, resArea);
+            const gain = peakV / bCeil;
+            const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
+                const count = team.joiners.filter(x=>x===n).length;
+                return `${n}${count > 1 ? ' x'+count : ''}`;
+            }).join(', ');
+
+            card.innerHTML += `
+            <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
+                <div class="flex items-center gap-5">
+                    <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
+                    <div class="flex -space-x-3">
+                        ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
+                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jN || 'Solo Setup'}</div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Account Improvement</div>
+                    <div class="text-xl font-black text-emerald-400">${gain.toFixed(3)}x</div>
+                </div>
+            </div>`;
+        }
+        resArea.appendChild(card);
+        await new Promise(r => setTimeout(r, 1));
     }
 };
-
-function renderScenarioResults(title, top3, container) {
-    const card = document.createElement('div');
-    card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
-    card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
-
-    top3.forEach((team, rk) => {
-        // Group joiners for clean display (e.g., Saul x2)
-        const joinerMap = {};
-        team.joiners.forEach(j => { if(j !== "None") joinerMap[j] = (joinerMap[j] || 0) + 1; });
-        const joinerText = Object.entries(joinerMap).map(([name, count]) => `${name}${count > 1 ? ' x' + count : ''}`).join(', ');
-
-        card.innerHTML += `
-        <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
-            <div class="flex items-center gap-5">
-                <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
-                <div class="flex -space-x-3">
-                    ${team.leads.map(n => n !== "None" ? `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
-                </div>
-                <div>
-                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n => n !== "None").join(' / ')}</div>
-                    <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${joinerText || 'Solo Configuration'}</div>
-                </div>
-            </div>
-            <div class="text-right">
-                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Total Efficiency</div>
-                <div class="text-xl font-black text-emerald-400">${team.gain.toFixed(3)}x</div>
-            </div>
-        </div>`;
-    });
-    container.appendChild(card);
-}
 
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
@@ -1069,8 +1063,89 @@ function renderOptimizerCard(scenario, best, container) {
 }
 
 function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
-    const scenario = isBear ? "Bear Trap" : (isRally ? "Rally" : "Solo");
-    return getSystemVolume(leaders, joiners, [33, 33, 34], ctx, isBear, scenario);
+    let skillBuckets = {}; 
+    let widgetGrowthSum = { attack: 0, defense: 0, lethality: 0, health: 0 };
+    
+    // 1. WIDGET MULTIPLIERS (Additive within same stat)
+    // Solo Attack = None | Solo Defense = Def Only | Rally = Context specific
+    if (isRally || ctx === 'def') {
+        leaders.forEach(n => {
+            if (n === "None" || !HEROES[n]) return;
+            const d = HEROES[n], r = roster[n];
+            if (d.widget && d.widget.context === ctx) {
+                widgetGrowthSum[d.widget.stat] += WIDGET_GROWTH[r.widget];
+            }
+        });
+    }
+
+    const widgetEffect = (1 + widgetGrowthSum.attack) * (1 + widgetGrowthSum.lethality) * 
+                         (isBear ? 1 : (1 + widgetGrowthSum.defense) * (1 + widgetGrowthSum.health));
+
+    // 2. SKILL STACKING (Manifest used to count instances of a hero)
+    const manifest = {};
+    leaders.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].l++; }});
+    joiners.forEach(n => { if(n!=="None"){ manifest[n] = manifest[n] || { l:0, j:0 }; manifest[n].j++; }});
+
+    for (const name in manifest) {
+        const d = HEROES[name], r = roster[name], count = manifest[name];
+        d.skills.forEach((s, si) => {
+            const instances = count.l + (si === 0 ? count.j : 0);
+            if (instances === 0) return;
+            const x = s.values[(r[`s${si+1}`]||5)-1], p = s.getChance(x), m = s.getMagnitude(x);
+            
+            let effectiveMagnitude;
+            if (p >= 1.0) {
+                effectiveMagnitude = instances; // Additive: (1 + .25 + .25)
+            } else {
+                // Probabilistic: 1 - (1-p)^n
+                const probAny = 1 - Math.pow(1 - p, instances);
+                effectiveMagnitude = (1 - Math.pow(1 - probAny, isBear ? 1 : (s.duration || 1)));
+            }
+
+            s.ids.forEach((id, idx) => {
+                if (isBear && id >= 200) return;
+                const val = (Array.isArray(m) ? m[idx] : m) * effectiveMagnitude;
+                skillBuckets[id] = (skillBuckets[id] || 0) + val;
+            });
+        });
+    }
+
+    let skillMult = 1.0;
+    Object.keys(skillBuckets).forEach(id => skillMult *= (1 + skillBuckets[id]));
+
+    // 3. STAT POWER GAIN (The "Normal Multiplier" upgrade to your account)
+    let statEffect = 1.0;
+    if (document.getElementById('use-account-stats').checked && nakedStats) {
+        let totalNakedVol = 0, totalFinalVol = 0;
+
+        ['inf', 'cav', 'arc'].forEach(t => {
+            const naked = { att: nakedStats[`${t}_att`], leth: nakedStats[`${t}_leth`], def: nakedStats[`${t}_def`], hp: nakedStats[`${t}_hp`] };
+            let flats = { att: 0, def: 0, leth: 0, hp: 0 };
+            
+            leaders.forEach(name => {
+                if (name === "None" || !HEROES[name]) return;
+                const d = HEROES[name], r = roster[name];
+                if (d.type.toLowerCase().slice(0,3) === t) {
+                    flats.att += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    flats.def += (GROWTH_TEMPLATES[d.template][r.starIndex] || 0);
+                    if (d.widget) {
+                        const templateStats = WIDGET_STATS[d.template];
+                        flats.leth += (templateStats ? templateStats[r.widget] : 0);
+                        flats.hp += (templateStats ? templateStats[r.widget] : 0);
+                    }
+                }
+            });
+
+            const nVol = isBear ? (naked.att * naked.leth) : (naked.att * naked.leth * naked.def * naked.hp);
+            const fVol = isBear ? ((naked.att+flats.att)*(naked.leth+flats.leth)) : ((naked.att+flats.att)*(naked.leth+flats.leth)*(naked.def+flats.def)*(naked.hp+flats.hp));
+            
+            totalNakedVol += nVol;
+            totalFinalVol += fVol;
+        });
+        statEffect = totalFinalVol / (totalNakedVol || 1);
+    }
+
+    return statEffect * skillMult * widgetEffect;
 }
 
 document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
