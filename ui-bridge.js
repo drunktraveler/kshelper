@@ -153,17 +153,66 @@ window.setOptRole = (role) => {
 };
 
 function buildStatTable() {
-    const table = document.getElementById('stat-table');
-    if(!table) return;
-    const units = ["Infantry", "Cavalry", "Archer"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
-    table.innerHTML = '';
-    units.forEach(u => cats.forEach(c => {
-        const row = document.createElement('div'); row.className = "stat-row";
-        const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" class="text-emerald-500 font-bold w-16 bg-transparent text-center" value="1000"><div class="text-[9px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" class="text-red-500 font-bold w-16 bg-transparent text-center" value="1000">`;
-        table.appendChild(row);
-    }));
+    // We populate both the main battle table and the optimizer version
+    const tables = [document.getElementById('stat-table'), document.getElementById('opt-stat-table')];
+    
+    tables.forEach(table => {
+        if(!table) return;
+        const units = ["Inf", "Cav", "Arc"], cats = [{ l: "Atk", k: "att" }, { l: "Def", k: "def" }, { l: "Leth", k: "leth" }, { l: "HP", k: "hp" }];
+        table.innerHTML = '';
+        units.forEach(u => cats.forEach(c => {
+            const row = document.createElement('div'); 
+            row.className = "stat-row";
+            const key = `${u.toLowerCase()}_${c.k}`;
+            row.innerHTML = `
+                <input type="number" data-stat="${key}" data-side="atk" oninput="window.syncStat(this)" class="text-emerald-500 font-bold w-12 bg-transparent text-center" value="1000">
+                <div class="text-[8px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div>
+                <input type="number" data-stat="${key}" data-side="def" oninput="window.syncStat(this)" class="text-red-500 font-bold w-12 bg-transparent text-center" value="1000">
+            `;
+            table.appendChild(row);
+        }));
+    });
 }
+
+// Sync function: when you change a stat in one tab, find all inputs with the same stat/side and update them
+window.syncStat = (el) => {
+    const val = el.value;
+    const stat = el.dataset.stat;
+    const side = el.dataset.side;
+    document.querySelectorAll(`input[data-stat="${stat}"][data-side="${side}"]`).forEach(input => {
+        input.value = val;
+    });
+};
+
+window.syncBatch = (batchId, side) => {
+    // 1. Find all mirrored rows with this ID
+    const mirroredRows = document.querySelectorAll(`[data-batch-id="${batchId}"]`);
+    if (mirroredRows.length < 2) return; // Should always find 2
+
+    // 2. We use the one that was actually changed as the source
+    // But for simplicity, we'll just check which tab is currently active or just sync all to match the first found
+    const sourceInputs = mirroredRows[0].querySelectorAll('input, select');
+    
+    mirroredRows.forEach(row => {
+        const targetInputs = row.querySelectorAll('input, select');
+        sourceInputs.forEach((input, index) => {
+            // Note: We only update if values differ to avoid infinite loops, 
+            // though standard browser events handle this fine.
+            if (targetInputs[index].value !== input.value) {
+                targetInputs[index].value = input.value;
+            }
+        });
+    });
+
+    // 3. Recalculate the troop percentage bars for both tabs
+    window.updateFormation(side);
+};
+
+window.removeBatch = (batchId, side) => {
+    const rows = document.querySelectorAll(`[data-batch-id="${batchId}"]`);
+    rows.forEach(row => row.remove());
+    window.updateFormation(side);
+};
 
 window.toggleHeroLock = (name) => {
     roster[name].unlocked = !roster[name].unlocked;
@@ -200,10 +249,14 @@ window.showTab = (tab) => {
 };
 
 window.addBatch = (side, initial = false) => {
-    const container = document.getElementById(`${side}-batch-container`);
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = "p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-2 relative mb-2";
+    // We target both the main container and the mirrored container in the Optimizer tab
+    const containers = [
+        document.getElementById(`${side}-batch-container`),
+        document.getElementById(`opt-${side}-batch-container`)
+    ];
+
+    // Generate a unique ID to link the two mirrored rows together
+    const batchId = 'batch-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     
     const types = [
         { label: 'Infantry', key: 'inf', color: 'text-blue-400', def: 500000 },
@@ -211,43 +264,82 @@ window.addBatch = (side, initial = false) => {
         { label: 'Archers', key: 'arc', color: 'text-emerald-400', def: 300000 }
     ];
 
-    let html = `<div class="flex justify-between items-center mb-1">
-        <span class="text-[9px] font-bold text-slate-500 uppercase">Army Batch</span>
-        ${!initial ? `<button onclick="this.parentElement.parentElement.remove(); window.updateFormation('${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}
-    </div>`;
+    // Create the row for each container
+    containers.forEach(container => {
+        if (!container) return;
 
-    types.forEach(t => {
-        html += `
-        <div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/40 pb-1 mb-1">
-            <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
-            <select class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}
-            </select>
-            <select class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
-                ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}
-            </select>
-            <input type="number" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? t.def : 0}" oninput="window.updateFormation('${side}')">
-        </div>`;
+        const div = document.createElement('div');
+        div.setAttribute('data-batch-id', batchId);
+        div.className = `p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-2 relative mb-2`;
+        
+        let html = `
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-[9px] font-bold text-slate-500 uppercase">Army Batch</span>
+                ${!initial ? `<button onclick="window.removeBatch('${batchId}', '${side}')" class="text-red-500 text-[10px] font-black uppercase">Remove</button>` : ''}
+            </div>`;
+
+        types.forEach(t => {
+            html += `
+            <div class="grid grid-cols-12 gap-2 items-center border-b border-slate-800/40 pb-1 mb-1">
+                <div class="col-span-3 text-[10px] font-bold ${t.color}">${t.label}</div>
+                <select onchange="window.syncBatch('${batchId}', '${side}')" class="batch-tier-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                    ${[11,10,9,8,7,6,5,4,3,2,1].map(v => `<option value="${v}" ${v===10?'selected':''}>T${v}</option>`).join('')}
+                </select>
+                <select onchange="window.syncBatch('${batchId}', '${side}')" class="batch-tg-${t.key} col-span-2 bg-slate-900 text-[10px] border border-slate-700 rounded px-1 font-bold text-slate-400 outline-none">
+                    ${[5,4,3,2,1,0].map(v => `<option value="${v}" ${v===3?'selected':''}>TG${v}</option>`).join('')}
+                </select>
+                <input type="number" oninput="window.syncBatch('${batchId}', '${side}')" class="batch-${t.key} col-span-5 input-dark !text-right" value="${initial ? t.def : 0}">
+            </div>`;
+        });
+
+        div.innerHTML = html;
+        container.appendChild(div);
     });
 
-    div.innerHTML = html;
-    container.appendChild(div); 
     window.updateFormation(side);
 };
 
 window.updateFormation = (side) => {
     let i=0, c=0, a=0;
-    document.querySelectorAll(`#${side}-batch-container > div`).forEach(row => {
+    // We only need to read from one container because they are synced
+    const rows = document.querySelectorAll(`#${side}-batch-container > div`);
+    
+    rows.forEach(row => {
         i += parseFloat(row.querySelector('.batch-inf').value) || 0;
         c += parseFloat(row.querySelector('.batch-cav').value) || 0;
         a += parseFloat(row.querySelector('.batch-arc').value) || 0;
     });
-    const total = i+c+a; const bar = document.getElementById(`${side}-f-bar`);
-    if (total > 0 && bar) {
-        bar.children[0].style.width = (i/total*100)+'%'; bar.children[1].style.width = (c/total*100)+'%'; bar.children[2].style.width = (a/total*100)+'%';
-        document.getElementById(`${side}-inf-pct`).innerText = Math.round(i/total*100)+'%';
-        document.getElementById(`${side}-cav-pct`).innerText = Math.round(c/total*100)+'%';
-        document.getElementById(`${side}-arc-pct`).innerText = Math.round(a/total*100)+'%';
+
+    const total = i + c + a;
+    
+    // Target both the standard bar and the opt (optimizer) bar
+    const bars = [
+        document.querySelector(`.${side}-f-bar`), 
+        document.querySelector(`.opt-${side}-f-bar`)
+    ];
+
+    bars.forEach(bar => {
+        if (!bar) return;
+        const pctI = total > 0 ? (i / total * 100) : 0;
+        const pctC = total > 0 ? (c / total * 100) : 0;
+        const pctA = total > 0 ? (a / total * 100) : 0;
+
+        bar.children[0].style.width = pctI + '%';
+        bar.children[1].style.width = pctC + '%';
+        bar.children[2].style.width = pctA + '%';
+    });
+
+    // Update the text labels (0%) in both tabs
+    const labels = {
+        inf: document.querySelectorAll(`.${side}-inf-pct`),
+        cav: document.querySelectorAll(`.${side}-cav-pct`),
+        arc: document.querySelectorAll(`.${side}-arc-pct`)
+    };
+
+    if (total > 0) {
+        labels.inf.forEach(el => el.innerText = Math.round(i / total * 100) + '%');
+        labels.cav.forEach(el => el.innerText = Math.round(c / total * 100) + '%');
+        labels.arc.forEach(el => el.innerText = Math.round(a / total * 100) + '%');
     }
 };
 
@@ -392,20 +484,21 @@ window.saveHeroConfig = () => {
 
 window.updateGrids = () => {
     ['atk','def','bear'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`);
-        if(!container) return;
-        container.innerHTML = '';
-        state[side].heroes.forEach((h, i) => {
-            const div = document.createElement('div');
-            const isLead = (side === 'bear' || i < 3);
-            div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
-            if (h.name !== 'None') {
-                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
-            } else {
-                div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
-            }
-            div.onclick = () => window.openHeroModal(side, i);
-            container.appendChild(div);
+        const containers = document.querySelectorAll(`.${side}-hero-grid`);
+        containers.forEach(container => {
+            container.innerHTML = '';
+            state[side].heroes.forEach((h, i) => {
+                const div = document.createElement('div');
+                const isLead = (side === 'bear' || i < 3);
+                div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
+                if (h.name !== 'None') {
+                    div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
+                } else {
+                    div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
+                }
+                div.onclick = () => window.openHeroModal(side, i);
+                container.appendChild(div);
+            });
         });
     });
 };
