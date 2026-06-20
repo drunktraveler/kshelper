@@ -1065,39 +1065,6 @@ function renderScenarioResults(title, top3, container) {
     container.appendChild(card);
 }
 
-function renderScenarioResults(title, top3, container) {
-    const card = document.createElement('div');
-    card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
-    card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
-
-    top3.forEach((team, rk) => {
-        const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
-            const count = team.joiners.filter(x=>x===n).length;
-            return `${n}${count > 1 ? ' x'+count : ''}`;
-        }).join(', ');
-
-        card.innerHTML += `
-        <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
-            <div class="flex items-center gap-5">
-                <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
-                <div class="flex -space-x-3">
-                    ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
-                </div>
-                <div>
-                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.join(' / ')}</div>
-                    <div class="text-[8px] text-slate-500 font-bold uppercase">${jN || 'Solo Setup'}</div>
-                    <div class="text-[9px] text-blue-400 font-black mt-1">Best Form: ${team.formation.join('/')}</div>
-                </div>
-            </div>
-            <div class="text-right">
-                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
-                <div class="text-xl font-black text-emerald-400">${team.peakGain.toFixed(3)}x</div>
-            </div>
-        </div>`;
-    });
-    container.appendChild(card);
-}
-
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
     card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4 mb-4";
