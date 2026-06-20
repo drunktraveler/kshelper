@@ -769,43 +769,134 @@ function getBearSpecificVolume(heroes, formation, bearConfig) {
 }
 
 window.runOptimizer = async (mode) => {
-    const isBear = mode === 'bear';
-    const plotId = isBear ? 'bear-plot' : 'ternary-plot';
-    const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
-    
+    const resArea = document.getElementById('opt-best-form');
+    const scoreArea = document.getElementById('opt-best-score');
     resArea.innerText = "Analyzing...";
 
-    setTimeout(() => {
-        let dataPoints = { a: [], b: [], c: [], z: [] };
-        let best = { form: [0, 0, 0], score: -Infinity };
+    // We use a small delay to allow the UI to update the "Analyzing" text
+    await new Promise(resolve => setTimeout(resolve, 50));
 
-        const setup = gatherSetup();
-        
-        // Prevent Plotly Th.createHash error by ensuring dataPoints are filled
-        for (let i = 0; i <= 100; i += 2) {
-            for (let j = 0; j <= 100 - i; j += 2) {
-                let k = 100 - i - j;
-                let score = 0;
+    const setup = gatherSetup();
+    const myRole = optRole; 
+    const oppRole = myRole === 'atk' ? 'def' : 'atk';
+    
+    // 1. Calculate Total Volumes
+    let myTotalTroops = 0;
+    setup[myRole].batches.forEach(b => myTotalTroops += (parseFloat(b.inf) + parseFloat(b.cav) + parseFloat(b.arc)));
+    
+    let oppTotalTroops = 0;
+    setup[oppRole].batches.forEach(b => oppTotalTroops += (parseFloat(b.inf) + parseFloat(b.cav) + parseFloat(b.arc)));
 
-                if (isBear) {
-                    score = calculateBearDamage(setup, [i, j, k]);
-                } else {
-                    // (PVP Optimization Logic here...)
-                }
+    if (myTotalTroops === 0 || oppTotalTroops === 0) {
+        resArea.innerText = "Missing Troops";
+        return;
+    }
+
+    let best = { form: [0, 0, 0], score: -Infinity, wins: 0 };
+    let dataPoints = { a: [], b: [], c: [], z: [] };
+
+    // 2. Optimization Loop
+    // Use step 2 or 5 for speed, step 1 for absolute precision
+    const step = 2; 
+
+    for (let i = 0; i <= 100; i += step) {
+        for (let j = 0; j <= 100 - i; j += step) {
+            const k = 100 - i - j;
+            const myForm = [i, j, k];
+            
+            // Generate the specific testing setup for this iteration
+            let testSetup = JSON.parse(JSON.stringify(setup));
+            
+            // Apply the iterated formation to the first batch
+            testSetup[myRole].batches = [{
+                inf: (i / 100) * myTotalTroops,
+                cav: (j / 100) * myTotalTroops,
+                arc: (k / 100) * myTotalTroops,
+                inf_tier: setup[myRole].batches[0].inf_tier, inf_tg: setup[myRole].batches[0].inf_tg,
+                cav_tier: setup[myRole].batches[0].cav_tier, cav_tg: setup[myRole].batches[0].cav_tg,
+                arc_tier: setup[myRole].batches[0].arc_tier, arc_tg: setup[myRole].batches[0].arc_tg
+            }];
+
+            let currentScore = 0;
+            let currentWins = 0;
+
+            // 3. Execution Logic
+            if (mode === 'current') {
+                const res = runCombatSim(testSetup, 'average', 'average');
+                currentScore = calculateFitness(res, myRole);
+            } 
+            else if (mode === 'custom') {
+                const cInf = parseFloat(document.getElementById('custom-inf').value) || 0;
+                const cCav = parseFloat(document.getElementById('custom-cav').value) || 0;
+                const cArc = parseFloat(document.getElementById('custom-arc').value) || 0;
                 
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
-                if (score > best.score) best = { form: [i, j, k], score };
+                testSetup[oppRole].batches = [{
+                    inf: (cInf / 100) * oppTotalTroops,
+                    cav: (cCav / 100) * oppTotalTroops,
+                    arc: (cArc / 100) * oppTotalTroops,
+                    inf_tier: setup[oppRole].batches[0].inf_tier, inf_tg: setup[oppRole].batches[0].inf_tg,
+                    cav_tier: setup[oppRole].batches[0].cav_tier, cav_tg: setup[oppRole].batches[0].cav_tg,
+                    arc_tier: setup[oppRole].batches[0].arc_tier, arc_tg: setup[oppRole].batches[0].arc_tg
+                }];
+                const res = runCombatSim(testSetup, 'average', 'average');
+                currentScore = calculateFitness(res, myRole);
+            } 
+            else if (mode === 'meta') {
+                META_FORMATIONS.forEach(mf => {
+                    testSetup[oppRole].batches = [{
+                        inf: (mf[0] / 100) * oppTotalTroops,
+                        cav: (mf[1] / 100) * oppTotalTroops,
+                        arc: (mf[2] / 100) * oppTotalTroops,
+                        inf_tier: setup[oppRole].batches[0].inf_tier, inf_tg: setup[oppRole].batches[0].inf_tg,
+                        cav_tier: setup[oppRole].batches[0].cav_tier, cav_tg: setup[oppRole].batches[0].cav_tg,
+                        arc_tier: setup[oppRole].batches[0].arc_tier, arc_tg: setup[oppRole].batches[0].arc_tg
+                    }];
+                    const res = runCombatSim(testSetup, 'average', 'average');
+                    const fitness = calculateFitness(res, myRole);
+                    if (fitness > 0) currentWins++;
+                    currentScore += fitness;
+                });
             }
-        }
 
-        if (dataPoints.a.length > 0) {
-            renderTernary(plotId, dataPoints, best, isBear);
-            resArea.innerText = best.form.join(' / ');
-        } else {
-            resArea.innerText = "Error: No data";
+            // 4. Update Best
+            if (mode === 'meta') {
+                if (currentWins > best.wins || (currentWins === best.wins && currentScore > best.score)) {
+                    best = { form: myForm, score: currentScore, wins: currentWins };
+                }
+            } else {
+                if (currentScore > best.score) {
+                    best = { form: myForm, score: currentScore };
+                }
+            }
+
+            // Data for the Heatmap
+            dataPoints.a.push(i);
+            dataPoints.b.push(j);
+            dataPoints.c.push(k);
+            dataPoints.z.push(currentScore);
         }
-    }, 50);
+    }
+
+    // 5. Finalize Results
+    resArea.innerText = best.form.join(' / ');
+    if (mode === 'meta') {
+        const wr = (best.wins / META_FORMATIONS.length * 100).toFixed(0);
+        scoreArea.innerText = `Winrate: ${wr}% | Avg Fitness: ${Math.round(best.score / META_FORMATIONS.length).toLocaleString()}`;
+    } else {
+        scoreArea.innerText = `Fitness Score: ${Math.round(best.score).toLocaleString()}`;
+    }
+
+    renderTernary('ternary-plot', dataPoints, best, false);
 };
+
+function calculateFitness(simResult, myRole) {
+    const mySurv = sumTroops(myRole === 'atk' ? simResult.m_cur : simResult.e_cur);
+    const oppSurv = sumTroops(myRole === 'atk' ? simResult.e_cur : simResult.m_cur);
+    
+    // Logic: Survivor Gap. 
+    // Positive means you won, Negative means you lost.
+    return mySurv - oppSurv;
+}
 
 // Helper specific to the Bear Tab's custom inputs
 function calculateBearDamage(setup, formation) {
