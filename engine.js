@@ -4,11 +4,11 @@ import { GROWTH_TEMPLATES, WIDGET_GROWTH } from './constants.js';
 
 export function isAlive(a) { return ((a.inf || 0) + (a.cav || 0) + (a.arc || 0)) > 1; }
 
-export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 1000, isBear = false, isOptimizing = false) {
+export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nWaves = 1000, isBear = false) {
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
     const defP = isBear ? {
-        counts: { inf: 1000000, cav: 0, arc: 0 },
+        counts: { inf: 5000, cav: 0, arc: 0 },
         avgBase: { inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
         weights: { inf: { t7: 0, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
@@ -18,41 +18,60 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     let m_cur = { ...atkP.counts }, e_cur = { ...defP.counts };
     let wave = 0;
-    let activeBuffs = { atk: [], def: [] };
     let triggers = { atk: {}, def: {} };
 
-    // --- CORE COMBAT LOOP ---
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
         
-        // 1. Initialize Buckets for this wave
         let buckets = {
             atk: { inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 } },
             def: { inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 } }
         };
 
-        // 2. Apply Hero Skills
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
             h.passives.forEach(p => applyToBucket(buckets[side], p, 1.0));
-            
             h.actives.forEach(act => {
-                let uptime = 0;
-                if (isStochastic) {
-                    if (act.interval) {
-                        if (wave >= act.minWave && (wave - act.minWave) % act.interval < act.duration) uptime = 1.0;
-                    } else {
-                        if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) {
-                            uptime = 1.0;
-                            triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
-                        }
-                    }
-                } else {
-                    uptime = act.interval ? (act.duration / act.interval) : (1 - Math.pow(1 - act.p, act.duration));
+                let uptime = isStochastic ? (Math.random() < (1 - Math.pow(1 - act.p, act.instances)) ? 1 : 0) : act.p;
+                if (uptime > 0) {
+                    applyToBucket(buckets[side], act, uptime);
+                    if (isStochastic) triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
                 }
-                if (uptime > 0) applyToBucket(buckets[side], act, uptime);
             });
         });
+
+        // SIMULTANEOUS DAMAGE: Calculate losses into temp variables
+        let losses = { atk: {inf:0,cav:0,arc:0}, def: {inf:0,cav:0,arc:0} };
+
+        // Attacker -> Defender
+        ['inf', 'cav', 'arc'].forEach(u => {
+            if (m_cur[u] <= 0) return;
+            const target = e_cur.inf > 0 ? 'inf' : (e_cur.cav > 0 ? 'cav' : 'arc');
+            const totalAtk = atkP.avgBase[u].atk * (1 + (setup.atk.stats[`${u}_att`]/100)) * (1 + buckets.atk[u][101]) * buckets.atk[u][102] * buckets.atk[u][103];
+            const oppHP = defP.avgBase[target].hp * (1 + (setup.def.stats[`${target}_hp`]/100)) * (1 + buckets.def[target][201]) * buckets.def[target][202];
+            losses.def[target] += (Math.sqrt(m_cur[u]) * totalAtk * atkP.avgBase[u].leth * (1 + (setup.atk.stats[`${u}_leth`]/100))) / (oppHP * 100);
+        });
+
+        // Defender -> Attacker (Unless Bear)
+        if (!isBear) {
+            ['inf', 'cav', 'arc'].forEach(u => {
+                if (e_cur[u] <= 0) return;
+                const target = m_cur.inf > 0 ? 'inf' : (m_cur.cav > 0 ? 'cav' : 'arc');
+                const totalAtk = defP.avgBase[u].atk * (1 + (setup.def.stats[`${u}_att`]/100)) * (1 + buckets.def[u][101]) * buckets.def[u][102] * buckets.def[u][103];
+                const oppHP = atkP.avgBase[target].hp * (1 + (setup.atk.stats[`${target}_hp`]/100)) * (1 + buckets.atk[target][201]) * buckets.atk[target][202];
+                losses.atk[target] += (Math.sqrt(e_cur[u]) * totalAtk * defP.avgBase[u].leth * (1 + (setup.def.stats[`${u}_leth`]/100))) / (oppHP * 100);
+            });
+        }
+
+        // Apply losses simultaneously
+        ['inf', 'cav', 'arc'].forEach(u => {
+            m_cur[u] = Math.max(0, m_cur[u] - losses.atk[u]);
+            e_cur[u] = Math.max(0, e_cur[u] - losses.def[u]);
+        });
+    }
+
+    return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) };
+}
 
         // 3. Resolve Damage
         const sides = [['atk', 'def', m_cur, e_cur, atkP, defP], ['def', 'atk', e_cur, m_cur, defP, atkP]];
