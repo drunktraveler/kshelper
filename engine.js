@@ -8,7 +8,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const isStochastic = (atkLuck === 'stochastic');
     const atkP = processBatches(setup.atk.batches);
     const defP = isBear ? {
-        counts: { inf: 5000, cav: 0, arc: 0 },
+        counts: { inf: 1000000, cav: 0, arc: 0 },
         avgBase: { inf: { atk: 0, def: 10, leth: 10, hp: 83.3333 }, cav: {atk:0,def:0,leth:0,hp:0}, arc: {atk:0,def:0,leth:0,hp:0} },
         weights: { inf: { t7: 0, tg3: 0, tg5: 0 }, cav: {t7:0,tg3:0,tg5:0}, arc: {t7:0,tg3:0,tg5:0} }
     } : processBatches(setup.def.batches);
@@ -72,39 +72,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 
     return { m_cur, e_cur, wave, atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic), def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic) };
 }
-
-        // 3. Resolve Damage
-        const sides = [['atk', 'def', m_cur, e_cur, atkP, defP], ['def', 'atk', e_cur, m_cur, defP, atkP]];
-        sides.forEach(([s, opp, self_cur, opp_cur, selfP, oppP]) => {
-            ['inf', 'cav', 'arc'].forEach(u => {
-                if (self_cur[u] <= 0) return;
-                
-                // Offense Calculation
-                const b = buckets[s][u];
-                const totalAtk = selfP.avgBase[u].atk * (1 + (setup[s].stats[`${u}_att`]/100)) * (1 + b[101]) * b[102] * b[103] * b[104] * b[105] * b[106];
-                const totalLeth = selfP.avgBase[u].leth * (1 + (setup[s].stats[`${u}_leth`]/100));
-                
-                // Defense Calculation (Opponent)
-                const targetUnit = isBear ? 'inf' : (opp_cur.inf > 0 ? 'inf' : (opp_cur.cav > 0 ? 'cav' : 'arc'));
-                const ob = buckets[opp][targetUnit];
-                const oppHP = oppP.avgBase[targetUnit].hp * (1 + (setup[opp].stats[`${targetUnit}_hp`]/100)) * (1 + ob[201]) * ob[202] * ob[203] * ob[204] * ob[205];
-                
-                const rawDmg = (Math.sqrt(self_cur[u]) * totalAtk * totalLeth) / (oppHP || 1);
-                const dodgeRoll = ob[250] > 0 ? (Math.random() < ob[250] ? 0 : 1) : 1;
-                
-                opp_cur[targetUnit] -= (rawDmg * dodgeRoll) / 100;
-                if (opp_cur[targetUnit] < 0) opp_cur[targetUnit] = 0;
-            });
-        });
-    } // End While
-
-    return {
-        m_cur, e_cur, wave,
-        atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic),
-        def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic)
-    };
-}
-
 
 function applyToBucket(buckets, skill, uptime) {
     const affectedUnits = skill.units || ["inf", "cav", "arc"];
