@@ -158,15 +158,24 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
-            <div class="space-y-4">
-                <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
-                    <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
-                    <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
-                    <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
-                </div>
-                <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-4 rounded-xl text-xs uppercase font-black tracking-widest">Optimize vs Mirror</button>
-                <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600/40 border border-purple-500/20 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Common Formations</button>
+    <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
+    <div class="space-y-4">
+        <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
+            <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
+            <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
+            <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
+        </div>
+                <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Battle Sim Enemy</button>
+                <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Meta List</button>
+        <div class="p-4 bg-slate-900/50 border border-slate-800 rounded-xl space-y-3">
+            <span class="text-[9px] font-black uppercase text-slate-500">Target Custom Formation (%)</span>
+            <div class="grid grid-cols-3 gap-2">
+                <input type="number" id="custom-inf" class="input-dark !py-1 text-[10px]" placeholder="Inf" value="33">
+                <input type="number" id="custom-cav" class="input-dark !py-1 text-[10px]" placeholder="Cav" value="33">
+                <input type="number" id="custom-arc" class="input-dark !py-1 text-[10px]" placeholder="Arc" value="34">
+            </div>
+            <button onclick="window.runOptimizer('custom')" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-[9px] uppercase font-black transition-all">Optimize vs Custom</button>
+        </div>
             </div>
         </div>
     </div>
@@ -215,9 +224,7 @@
         <span class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Chosen Leaders</span>
         <span class="text-[9px] text-slate-500 font-bold uppercase">Click to Configure (Inf / Cav / Arc)</span>
     </div>
-    <div class="flex justify-center gap-4" id="bear-hero-grid">
-        <!-- Will be populated by JS -->
-    </div>
+    <div class="flex justify-center gap-4 bear-hero-grid" id="bear-hero-grid"></div>
 </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div id="bear-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl overflow-hidden p-2"></div>
