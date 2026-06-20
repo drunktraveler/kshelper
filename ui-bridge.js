@@ -605,22 +605,30 @@ function renderNakedStats() {
 
 // --- 6. SIMULATION & OPTIMIZERS ---
 function gatherSetup() {
-    const getStats = (s) => { 
+    const getStats = (side) => { 
         const obj = {}; 
-        document.querySelectorAll(`input[data-side="${s}"]`).forEach(i => obj[i.dataset.stat] = parseFloat(i.value)||0); 
+        // Important: Pull from any input with data-side=side, regardless of which tab it's in
+        document.querySelectorAll(`input[data-side="${side}"][data-stat]`).forEach(i => {
+            obj[i.dataset.stat] = parseFloat(i.value) || 0;
+        }); 
         return obj; 
     };
-    const collect = (side) => Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
-        inf_tier: parseInt(el.querySelector('.batch-tier-inf').value),
-        inf_tg: parseInt(el.querySelector('.batch-tg-inf').value),
-        inf: parseFloat(el.querySelector('.batch-inf').value)||0,
-        cav_tier: parseInt(el.querySelector('.batch-tier-cav').value),
-        cav_tg: parseInt(el.querySelector('.batch-tg-cav').value),
-        cav: parseFloat(el.querySelector('.batch-cav').value)||0,
-        arc_tier: parseInt(el.querySelector('.batch-tier-arc').value),
-        arc_tg: parseInt(el.querySelector('.batch-tg-arc').value),
-        arc: parseFloat(el.querySelector('.batch-arc').value)||0
-    }));
+
+    const collect = (side) => {
+        // We use the Battle Sim container as the primary source of truth for batches
+        return Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
+            inf_tier: parseInt(el.querySelector('.batch-tier-inf').value),
+            inf_tg: parseInt(el.querySelector('.batch-tg-inf').value),
+            inf: parseFloat(el.querySelector('.batch-inf').value) || 0,
+            cav_tier: parseInt(el.querySelector('.batch-tier-cav').value),
+            cav_tg: parseInt(el.querySelector('.batch-tg-cav').value),
+            cav: parseFloat(el.querySelector('.batch-cav').value) || 0,
+            arc_tier: parseInt(el.querySelector('.batch-tier-arc').value),
+            arc_tg: parseInt(el.querySelector('.batch-tg-arc').value),
+            arc: parseFloat(el.querySelector('.batch-arc').value) || 0
+        }));
+    };
+
     return { 
         atk: { batches: collect('atk'), stats: getStats('atk'), heroes: state.atk.heroes }, 
         def: { batches: collect('def'), stats: getStats('def'), heroes: state.def.heroes } 
