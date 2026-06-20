@@ -10,6 +10,10 @@ let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let optRole = 'atk'; 
 
+const META_FORMATIONS = [
+    [50,20,30], [60,20,20], [40,20,40], [33,33,34], [10,10,80], [50,0,50], [55,15,30], [50,10,40], [60, 40, 0]
+];
+
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
     def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
@@ -39,7 +43,6 @@ window.init = () => {
 };
 
 function sumTroops(counts) {
-    if (!counts) return 0;
     return (counts.inf || 0) + (counts.cav || 0) + (counts.arc || 0);
 }
 
@@ -153,23 +156,25 @@ window.setOptRole = (role) => {
 };
 
 function buildStatTable() {
-    // We populate both the main battle table and the optimizer version
-    const tables = [document.getElementById('stat-table'), document.getElementById('opt-stat-table')];
+    const containers = [
+        { el: document.getElementById('stat-table'), side: 'battle' },
+        { el: document.getElementById('opt-stat-table'), side: 'opt' }
+    ];
     
-    tables.forEach(table => {
-        if(!table) return;
-        const units = ["Inf", "Cav", "Arc"], cats = [{ l: "Atk", k: "att" }, { l: "Def", k: "def" }, { l: "Leth", k: "leth" }, { l: "HP", k: "hp" }];
-        table.innerHTML = '';
+    containers.forEach(cont => {
+        if(!cont.el) return;
+        const units = ["Infantry", "Cavalry", "Archer"], cats = [{ l: "Attack", k: "att" }, { l: "Defense", k: "def" }, { l: "Lethality", k: "leth" }, { l: "Health", k: "hp" }];
+        cont.el.innerHTML = '';
         units.forEach(u => cats.forEach(c => {
             const row = document.createElement('div'); 
             row.className = "stat-row";
-            const key = `${u.toLowerCase()}_${c.k}`;
+            const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
             row.innerHTML = `
-                <input type="number" data-stat="${key}" data-side="atk" oninput="window.syncStat(this)" class="text-emerald-500 font-bold w-12 bg-transparent text-center" value="1000">
-                <div class="text-[8px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div>
-                <input type="number" data-stat="${key}" data-side="def" oninput="window.syncStat(this)" class="text-red-500 font-bold w-12 bg-transparent text-center" value="1000">
+                <input type="number" step="0.1" data-side="atk" data-stat="${key}" oninput="window.syncStat(this)" class="text-emerald-500 font-bold w-16 bg-transparent text-center" value="1000.0">
+                <div class="text-[9px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div>
+                <input type="number" step="0.1" data-side="def" data-stat="${key}" oninput="window.syncStat(this)" class="text-red-500 font-bold w-16 bg-transparent text-center" value="1000.0">
             `;
-            table.appendChild(row);
+            cont.el.appendChild(row);
         }));
     });
 }
@@ -761,45 +766,96 @@ function getBearSpecificVolume(heroes, formation, bearConfig) {
 }
 
 window.runOptimizer = async (mode) => {
-    const isBear = mode === 'bear';
-    const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
-    const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
-    
+    const resArea = document.getElementById('opt-best-form');
+    const scoreArea = document.getElementById('opt-best-score');
     resArea.innerText = "Analyzing...";
 
+    // Use a small delay so the "Analyzing" text shows up
     setTimeout(() => {
+        const setup = gatherSetup();
+        const myRole = optRole; // 'atk' or 'def'
+        const oppRole = myRole === 'atk' ? 'def' : 'atk';
+        
+        let totalTroops = 0;
+        setup[myRole].batches.forEach(b => totalTroops += (b.inf + b.cav + b.arc));
+        
+        let best = { form: [0, 0, 0], score: -Infinity, wins: 0 };
         let dataPoints = { a: [], b: [], c: [], z: [] };
-        let best = { form: [0, 0, 0], score: -1 };
 
-        const bearConfig = isBear ? {
-            inf_acc: { att: parseFloat(document.getElementById('bear-inf-att').value), leth: parseFloat(document.getElementById('bear-inf-leth').value) },
-            cav_acc: { att: parseFloat(document.getElementById('bear-cav-att').value), leth: parseFloat(document.getElementById('bear-cav-leth').value) },
-            arc_acc: { att: parseFloat(document.getElementById('bear-arc-att').value), leth: parseFloat(document.getElementById('bear-arc-leth').value) },
-            inf_tier: document.getElementById('bear-inf-tier').value,
-            cav_tier: document.getElementById('bear-cav-tier').value,
-            arc_tier: document.getElementById('bear-arc-tier').value,
-            inf_tg: document.getElementById('bear-inf-tg').value,
-            cav_tg: document.getElementById('bear-cav-tg').value,
-            arc_tg: document.getElementById('bear-arc-tg').value
-        } : null;
-
-        // Use 2% steps to prevent performance lag and NaN creation
-        for (let i = 0; i <= 100; i += 2) {
+        // 5151 Iterations
+        for (let i = 0; i <= 100; i += 2) { // Step 2 for performance, change to 1 for max precision
             for (let j = 0; j <= 100 - i; j += 2) {
-                let k = 100 - i - j;
-                let score = isBear ? calculateBearDamage(bearConfig, [i, j, k]) : 0; // PVP logic handled elsewhere
+                const k = 100 - i - j;
+                const myForm = [i, j, k];
                 
-                if (score > best.score) best = { score, form: [i, j, k] };
-                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
+                // Temp setup for this iteration
+                let testSetup = JSON.parse(JSON.stringify(setup));
+                testSetup[myRole].batches = [{
+                    inf: (i/100) * totalTroops, cav: (j/100) * totalTroops, arc: (k/100) * totalTroops,
+                    inf_tier: setup[myRole].batches[0].inf_tier, inf_tg: setup[myRole].batches[0].inf_tg,
+                    cav_tier: setup[myRole].batches[0].cav_tier, cav_tg: setup[myRole].batches[0].cav_tg,
+                    arc_tier: setup[myRole].batches[0].arc_tier, arc_tg: setup[myRole].batches[0].arc_tg
+                }];
+
+                let currentScore = 0;
+                let currentWins = 0;
+
+                if (mode === 'current') {
+                    const res = runCombatSim(testSetup, 'average', 'average');
+                    currentScore = sumTroops(res.m_cur) - sumTroops(res.e_cur);
+                } else if (mode === 'custom') {
+                    const cInf = parseFloat(document.getElementById('custom-inf').value) || 0;
+                    const cCav = parseFloat(document.getElementById('custom-cav').value) || 0;
+                    const cArc = parseFloat(document.getElementById('custom-arc').value) || 0;
+                    
+                    let oppTotal = 0;
+                    setup[oppRole].batches.forEach(b => oppTotal += (b.inf + b.cav + b.arc));
+                    testSetup[oppRole].batches = [{
+                        inf: (cInf/100)*oppTotal, cav: (cCav/100)*oppTotal, arc: (cArc/100)*oppTotal,
+                        inf_tier: setup[oppRole].batches[0].inf_tier, inf_tg: setup[oppRole].batches[0].inf_tg,
+                        cav_tier: setup[oppRole].batches[0].cav_tier, cav_tg: setup[oppRole].batches[0].cav_tg,
+                        arc_tier: setup[oppRole].batches[0].arc_tier, arc_tg: setup[oppRole].batches[0].arc_tg
+                    }];
+                    const res = runCombatSim(testSetup, 'average', 'average');
+                    currentScore = sumTroops(res.m_cur) - sumTroops(res.e_cur);
+                } else if (mode === 'meta') {
+                    let oppTotal = 0;
+                    setup[oppRole].batches.forEach(b => oppTotal += (b.inf + b.cav + b.arc));
+                    
+                    META_FORMATIONS.forEach(mf => {
+                        testSetup[oppRole].batches = [{
+                            inf: (mf[0]/100)*oppTotal, cav: (mf[1]/100)*oppTotal, arc: (mf[2]/100)*oppTotal,
+                            inf_tier: setup[oppRole].batches[0].inf_tier, inf_tg: setup[oppRole].batches[0].inf_tg,
+                            cav_tier: setup[oppRole].batches[0].cav_tier, cav_tg: setup[oppRole].batches[0].cav_tg,
+                            arc_tier: setup[oppRole].batches[0].arc_tier, arc_tg: setup[oppRole].batches[0].arc_tg
+                        }];
+                        const res = runCombatSim(testSetup, 'average', 'average');
+                        const margin = sumTroops(res.m_cur) - sumTroops(res.e_cur);
+                        if (margin > 0) currentWins++;
+                        currentScore += margin;
+                    });
+                }
+
+                // Scoring Logic
+                if (mode === 'meta') {
+                    if (currentWins > best.wins || (currentWins === best.wins && currentScore > best.score)) {
+                        best = { form: myForm, score: currentScore, wins: currentWins };
+                    }
+                } else {
+                    if (currentScore > best.score) {
+                        best = { form: myForm, score: currentScore };
+                    }
+                }
+                
+                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(currentScore);
             }
         }
 
-        renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
         resArea.innerText = best.form.join(' / ');
-        if(isBear) scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        scoreArea.innerText = mode === 'meta' ? `Winrate: ${(best.wins / META_FORMATIONS.length * 100).toFixed(0)}% | Avg Margin: ${Math.round(best.score/META_FORMATIONS.length).toLocaleString()}` : `Margin: ${Math.round(best.score).toLocaleString()}`;
+        renderTernary('ternary-plot', dataPoints, best, false);
     }, 50);
 };
-
 // Helper specific to the Bear Tab's custom inputs
 function calculateBearDamage(config, formation) {
     const units = ['inf', 'cav', 'arc'];
