@@ -174,7 +174,6 @@ window.setOptRole = (role) => {
 };
 
 // --- 2. GLOBAL UI HANDLERS ---
-const originalShowTab = window.showTab;
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
