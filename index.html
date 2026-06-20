@@ -109,70 +109,60 @@
 </div>
         </div>
 
-        <!-- Formation Tab -->
-        <div id="optimizer-screen" class="hidden max-w-4xl mx-auto space-y-6 pb-12">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-    <!-- Attacker Configuration Panel -->
-<div class="glass-card p-6 border-l-4 border-emerald-500/50">
-    <div class="flex justify-between items-center mb-4">
-        <span class="text-xs font-black text-emerald-500 uppercase">Attacker Config</span>
-        <div id="atk-hero-grid" class="flex gap-1 scale-75 origin-right"></div> <!-- REUSED ID -->
-    </div>
-    <div id="opt-atk-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
-    <div id="opt-atk-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
-    <div class="f-bar atk-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-<div class="atk-hero-grid flex gap-1 scale-75 origin-left"></div>
-</div>
+       <!-- Formation Tab -->
+<div id="optimizer-screen" class="hidden max-w-5xl mx-auto space-y-6 pb-12">
+    <!-- Mirrored Setup Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Attacker (Shared UI) -->
+        <div class="glass-card p-6 border-l-4 border-emerald-500/30">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Setup</span>
+            </div>
+            <div id="opt-atk-batch-container"></div> <!-- Mirror of batches -->
+            <div class="f-bar opt-atk-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+            <div class="atk-hero-grid flex gap-2 mt-4"></div> <!-- Mirror of heroes -->
+        </div>
 
-<!-- Defender Configuration Panel -->
-<div class="glass-card p-6 border-r-4 border-red-500/50">
-    <div class="flex justify-between items-center mb-4">
-        <span class="text-xs font-black text-red-500 uppercase">Defender Config</span>
-        <div id="def-hero-grid" class="flex gap-1 scale-75 origin-right"></div> <!-- REUSED ID -->
-    </div>
-    <div id="opt-def-stats-grid" class="grid grid-cols-4 gap-2 mb-4"></div>
-    <div id="opt-def-tiers" class="grid grid-cols-3 gap-2 border-t border-slate-800 pt-4"></div>
-    <div class="f-bar def-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-<div class="def-hero-grid flex gap-1 scale-75 origin-left"></div>
-</div>
-</div>
-        <div class="glass-card p-8">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
-        <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
-            <button id="opt-role-atk" onclick="window.setOptRole('atk')" class="px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white">I AM ATTACKER</button>
-            <button id="opt-role-def" onclick="window.setOptRole('def')" class="px-3 py-1 text-[10px] font-bold text-slate-500">I AM DEFENDER</button>
+        <!-- Defender (Shared UI) -->
+        <div class="glass-card p-6 border-r-4 border-red-500/30">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Setup</span>
+            </div>
+            <div id="opt-def-batch-container"></div> <!-- Mirror of batches -->
+            <div class="f-bar opt-def-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
+            <div class="def-hero-grid flex gap-2 mt-4"></div> <!-- Mirror of heroes -->
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-        <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
-        <div class="space-y-4">
-            <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
-                <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
-                <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
-                <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
-                <p id="opt-luck-note" class="text-[9px] text-slate-500 mt-2 italic leading-tight"> *Calculated using average luck. Outcomes may vary in actual combat due to skill proc variance.</p>
-                <p id="opt-transparency" class="text-[9px] text-slate-500 mt-2 hidden italic border-t border-slate-800 pt-2"> Note: 'Meta' mode tests against 66 representative compositions.</p>
+    <!-- Mirrored Stats Table (Small version) -->
+    <div class="max-w-2xl mx-auto glass-card p-4">
+        <div id="opt-stat-table" class="space-y-1"></div>
+    </div>
+
+    <!-- Heatmap Controls -->
+    <div class="glass-card p-8">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-black uppercase tracking-tight">Formation Heatmap</h2>
+            <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <button id="opt-role-atk" onclick="window.setOptRole('atk')" class="px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white">I AM ATTACKER</button>
+                <button id="opt-role-def" onclick="window.setOptRole('def')" class="px-3 py-1 text-[10px] font-bold text-slate-500">I AM DEFENDER</button>
             </div>
-            
-            <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Battle Sim Enemy</button>
-            <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Meta (Unknown)</button>
-            
-            <!-- Custom Opponent Block -->
-            <div class="p-4 bg-slate-900/50 border border-slate-800 rounded-xl space-y-3">
-                <span class="text-[9px] font-black uppercase text-slate-500">Custom Target Formation (%)</span>
-                <div class="grid grid-cols-3 gap-2">
-                    <input type="number" id="custom-inf" class="input-dark !py-1 text-[10px]" placeholder="Inf" value="33">
-                    <input type="number" id="custom-cav" class="input-dark !py-1 text-[10px]" placeholder="Cav" value="33">
-                    <input type="number" id="custom-arc" class="input-dark !py-1 text-[10px]" placeholder="Arc" value="34">
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div id="ternary-plot" class="w-full aspect-square bg-slate-950/20 rounded-xl"></div>
+            <div class="space-y-4">
+                <div class="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
+                    <span class="text-[10px] font-black uppercase text-blue-400 tracking-widest">Optimal Result</span>
+                    <div id="opt-best-form" class="text-3xl font-black mt-2">-- / -- / --</div>
+                    <p id="opt-best-score" class="text-xs text-slate-400 mt-1"></p>
                 </div>
-                <button onclick="window.runOptimizer('custom')" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-[9px] uppercase font-black transition-all">Optimize vs Custom</button>
+                <button onclick="window.runOptimizer('current')" class="w-full bg-blue-600 py-4 rounded-xl text-xs uppercase font-black tracking-widest">Optimize vs Mirror</button>
+                <button onclick="window.runOptimizer('meta')" class="w-full bg-purple-600/40 border border-purple-500/20 py-3 rounded-xl text-[10px] uppercase font-black">Optimize vs Common Formations</button>
             </div>
         </div>
     </div>
 </div>
-        </div>
             
 
         <!-- Bear Tab -->
