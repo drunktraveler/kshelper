@@ -109,34 +109,42 @@
 </div>
         </div>
 
-       <!-- Formation Tab -->
+<!-- Formation Tab -->
 <div id="optimizer-screen" class="hidden max-w-5xl mx-auto space-y-6 pb-12">
-    <!-- Mirrored Setup Grid -->
+    <!-- Setup Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Attacker (Shared UI) -->
+        <!-- Attacker -->
         <div class="glass-card p-6 border-l-4 border-emerald-500/30">
             <div class="flex justify-between items-center mb-4">
                 <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Attacker Setup</span>
+                <button onclick="window.addBatch('atk')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
             </div>
-            <div id="opt-atk-batch-container"></div> <!-- Mirror of batches -->
+            <div id="opt-atk-batch-container"></div>
             <div class="f-bar opt-atk-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-            <div class="atk-hero-grid flex gap-2 mt-4"></div> <!-- Mirror of heroes -->
+            <div class="flex justify-between text-[10px] text-slate-600 px-1 mb-4">
+                <span class="atk-inf-pct">0%</span><span class="atk-cav-pct">0%</span><span class="atk-arc-pct">0%</span>
+            </div>
+            <div class="atk-hero-grid flex gap-2"></div>
         </div>
 
-        <!-- Defender (Shared UI) -->
+        <!-- Defender -->
         <div class="glass-card p-6 border-r-4 border-red-500/30">
             <div class="flex justify-between items-center mb-4">
                 <span class="text-[10px] font-black uppercase text-red-500 tracking-widest">Defender Setup</span>
+                <button onclick="window.addBatch('def')" class="text-[10px] font-black text-blue-400 uppercase hover:text-blue-300">+ Player</button>
             </div>
-            <div id="opt-def-batch-container"></div> <!-- Mirror of batches -->
+            <div id="opt-def-batch-container"></div>
             <div class="f-bar opt-def-f-bar mb-1"><div class="f-inf"></div><div class="f-cav"></div><div class="f-arc"></div></div>
-            <div class="def-hero-grid flex gap-2 mt-4"></div> <!-- Mirror of heroes -->
+            <div class="flex justify-between text-[10px] text-slate-600 px-1 mb-4">
+                <span class="def-inf-pct">0%</span><span class="def-cav-pct">0%</span><span class="def-arc-pct">0%</span>
+            </div>
+            <div class="def-hero-grid flex gap-2"></div>
         </div>
     </div>
 
-    <!-- Mirrored Stats Table (Small version) -->
-    <div class="max-w-2xl mx-auto glass-card p-4">
-        <div id="opt-stat-table" class="space-y-1"></div>
+    <!-- Mirrored Stats Table (Decimal Support) -->
+    <div class="max-w-2xl mx-auto glass-card p-2 overflow-hidden">
+        <div id="opt-stat-table" class="space-y-0"></div>
     </div>
 
     <!-- Heatmap Controls -->
