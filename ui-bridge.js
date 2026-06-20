@@ -842,221 +842,250 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         arc: { att: s.arc_att, leth: s.arc_leth, hp: s.arc_hp, def: s.arc_def }
     };
 
-    // ID Buckets per Troop Type
-    const createBuckets = () => ({
-        101: 0, 102: 1, 103: 1, 104: 1, 105: 1, 106: 1,
-        201: 0, 202: 1, 203: 1, 204: 1, 205: 1, 250: 1 
-    });
-
-    let b = { inf: createBuckets(), cav: createBuckets(), arc: createBuckets() };
+    const createB = () => ({ 101:0, 102:0, 103:0, 104:0, 105:0, 106:0, 201:0, 202:0, 203:0, 204:0, 205:0, 250:0 });
+    let b = { inf: createB(), cav: createB(), arc: createB() };
     let wM = { attack: 1.0, defense: 1.0, lethality: 1.0, health: 1.0 };
 
-    const lineup = {}; 
-    leads.forEach(n => { if(n !== "None") lineup[n] = (lineup[n] || 0) + 1; });
-    
-    // 1. LEADERS: Apply Star Stats and Widgets
-     leads.forEach(name => {
-        if (name === "None") return;
+    const processHero = (name, isLead) => {
+        if (name === "None" || !HEROES[name]) return;
         const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5, widget:10, starIndex:30 };
-        const tk = h.type.toLowerCase().slice(0, 3);
         
-        if (isCalibrated) {
-            const star = GROWTH_TEMPLATES[h.template][r.starIndex] || 0;
-            curS[tk].att += star; curS[tk].def += star;
-            if (h.widget) {
-                const wT = WIDGET_STATS[h.template] || [];
-                if (h.widget.stat === "lethality") curS[tk].leth += (wT[r.widget] || 0);
-                if (h.widget.stat === "health") curS[tk].hp += (wT[r.widget] || 0);
+        if (isLead) {
+            const tk = h.type.toLowerCase().slice(0, 3);
+            if (isCalibrated) {
+                // FIXED: GROWTH_TEMPLATES and WIDGET_STATS (Flats) are ALWAYS ON
+                const growth = (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
+                curS[tk].att += growth; curS[tk].def += growth;
+                
+                if (h.widget) {
+                    const flats = WIDGET_STATS[h.template] || [];
+                    const fVal = flats[r.widget] || 0;
+                    if (h.widget.stat === "lethality") curS[tk].leth += fVal;
+                    if (h.widget.stat === "health") curS[tk].hp += fVal;
+                    // Add protection for widgets that might have attack/defense flats
+                    if (h.widget.stat === "attack") curS[tk].att += fVal;
+                    if (h.widget.stat === "defense") curS[tk].def += fVal;
+                }
+            }
+            // FIXED: WIDGET_GROWTH (The 15% Multiplier) is Context Gated
+            if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear")) {
+                if (h.widget && h.widget.context === ctx) {
+                    wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+                }
             }
         }
 
-        // Logic check: Only apply Rally/Garrison widgets if the scenario allows it
-        // scenarioLabel is things like "Rally (Offense)", "Garrison (Defense)", etc.
-        const isRallyOrGarrison = scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear");
-        if (isRallyOrGarrison && h.widget && h.widget.context === ctx) {
-            wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-        }
-    });
-
-    // 2. SKILL PROCESSING
-    const processPool = (heroList, isLeadPool) => {
-        heroList.forEach(name => {
-            if (name === "None") return;
-            const h = HEROES[name], r = roster[name] || { s1:5, s2:5, s3:5 };
+        h.skills.forEach((skill, si) => {
+            if (!isLead && si > 0) return;
+            const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
             
-            h.skills.forEach((skill, si) => {
-                if (!isLeadPool && si > 0) return; // Joiners S1 only
-                
-                const lvl = isLeadPool ? (r[`s${si+1}`] || 5) : 5;
-                const x = skill.values[lvl - 1];
-                const p = skill.getChance(x), mFull = skill.getMagnitude(x);
-                
-                // Account for Wave 5 gate: weight Alcar's S1 at 75% efficiency for total volume
-                let uptime = (1 - Math.pow(1 - p, isBear ? 1 : (skill.duration || 1)));
-                if (skill.minWave) uptime *= 0.75; 
+            // FIXED: Duration 1 for Bear Trap
+            const dur = isBear ? 1 : (skill.duration || 1);
+            let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : (skill.getChance(x));
+            if (dur > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, dur);
 
-                const affectedUnits = skill.units || ["inf", "cav", "arc"];
-
-                skill.ids.forEach((id, idx) => {
-                    if (isBear && id >= 200) return;
-                    const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
-
-                    affectedUnits.forEach(u => {
-                        let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                        const final = mag * uptime;
-
-                        if (id === 101 || id === 201) b[u][id] += final;
-                        else if (id === 250) b[u][id] *= (1 / (1 - final)); // Dodge is a survival multiplier
-                        else b[u][id] *= (1 + final);
-                    });
+            const mFull = skill.getMagnitude(x);
+            skill.ids.forEach((id, idx) => {
+                const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
+                (skill.units || ["inf", "cav", "arc"]).forEach(u => {
+                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                    b[u][id] += (mag * uptime);
                 });
             });
         });
     };
 
-    processPool(leads, true);
-    processPool(joiners, false);
+    leads.forEach(l => processHero(l, true));
+    joiners.forEach(j => processHero(j, false));
 
-    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
-
-    // Offense Volume
-    const getOff = (u) => {
+    const f = [formation[0], formation[1], formation[2]];
+    const getOff = (u, idx) => {
         const stats = curS[u];
-        const mult = (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
-        return Math.sqrt(f[u] * 10000) * (stats.att/100) * (stats.leth/100) * wM.attack * wM.lethality * mult;
+        const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
+        const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
+        
+        // Damage = sqrt(count) * BaseAtk * Stats * Multipliers
+        return Math.sqrt(f[idx] * 1000000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
     };
-    // 1.6x Quality Factor for Cavalry Bypass in PVP
-    const totalD = getOff('inf') + (getOff('cav') * (isBear ? 1.0 : 1.6)) + getOff('arc');
-
+    
+    const totalD = getOff('inf', 0) + getOff('cav', 1) + getOff('arc', 2);
     if (isBear) return totalD;
 
-    // Survival Volume
-    const getSurv = (u) => {
+    const getSurv = (u, idx) => {
         const stats = curS[u];
-        const mult = (1 + b[u][201]) * b[u][202] * b[u][203] * b[u][204] * b[u][205] * b[u][250];
-        return f[u] * (stats.hp/100) * (stats.def/100) * wM.health * wM.defense * mult;
+        const unitBaseHP = u === 'inf' ? 1790 : (u === 'cav' ? 597 : 448);
+        const dodgeMult = 1 / (1 - Math.min(0.9, b[u][250]));
+        const mult = (1 + b[u][201]) * (1 + b[u][202]) * (1 + b[u][203]) * (1 + b[u][204]) * (1 + b[u][205]) * dodgeMult;
+        return (f[idx] * 1000000) * unitBaseHP * (1 + stats.hp/100) * wM.health * (1 + stats.def/100) * wM.defense * mult;
     };
-    const totalS = getSurv('inf') + getSurv('cav') + getSurv('arc');
 
-    return totalD * totalS;
+    return totalD * (getSurv('inf', 0) + getSurv('cav', 1) + getSurv('arc', 2));
 }
 
 window.calculateOptimalLineups = async () => {
     const unlocked = Object.keys(roster).filter(n => roster[n].unlocked && n !== "None");
-    if (unlocked.length < 3) return alert("Unlock 3+ heroes in Roster.");
+    if (unlocked.length < 3) return alert("Please unlock at least one hero of each type in the Roster.");
 
     const resArea = document.getElementById('optimizer-results');
     resArea.classList.remove('hidden');
-    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Combat Efficiency...</div>`;
+    resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Scientific Peak...</div>`;
 
-    // 1. Whitelist & Pivots
-    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric", ];
-    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0]];
-    
-    // 2. Pre-calculate Meta-Mirror Baseline
-    // We assume the opponent is 20% stronger than your naked account
-    const mirrorFactor = 1.2;
-    const scenarios = [
-        { l: "Solo Attack", ctx: "off", bear: false },
-        { l: "Solo Defense", ctx: "def", bear: false },
-        { l: "Rally (Offense)", ctx: "off", rally: true, bear: false },
-        { l: "Garrison (Defense)", ctx: "def", rally: true, bear: false },
-        { l: "Bear Trap", ctx: "off", rally: true, bear: true }
-    ];
+    // Whitelist and Pivots
+    const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
+    const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
 
     const byT = { 
         Inf: unlocked.filter(n => HEROES[n].type === "Inf"),
         Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
+    // Ensure we have at least "None" to prevent loop crashes
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
-    await new Promise(r => setTimeout(r, 100));
+    const scenarios = [
+        { l: "Solo Attack", ctx: "off", bear: false, rally: false },
+        { l: "Solo Defense", ctx: "def", bear: false, rally: false },
+        { l: "Rally (Offense)", ctx: "off", bear: false, rally: true },
+        { l: "Garrison (Defense)", ctx: "def", bear: false, rally: true },
+        { l: "Bear Trap", ctx: "off", bear: true, rally: true }
+    ];
+
+    await new Promise(r => setTimeout(r, 50));
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // Calculate the scenario "Meta Ceiling" once (Average of all pivots)
-        let scenarioBaseline = 0;
+        // 1. Calculate Peak Baseline (No Heroes)
+        let baselinePeak = 0;
         pivots.forEach(p => {
-            scenarioBaseline += getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
+            const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
+            if (v > baselinePeak) baselinePeak = v;
         });
-        scenarioBaseline /= pivots.length;
 
         let candidates = [];
-        // Phase 1: Combinatorial Search
-        for (let i of byT.Inf) {
+
+        // 2. Step through Leader Combinations (Strict 1 per type)
+         for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
-                    let bestPV = -1, bestJ = [];
-                    
-                    // Greedy Joiner Fill
                     let curJ = [];
-                    if (s.rally || s.bear) {
+
+                    // JOINER GREEDY FILL
+                    if (s.rally) {
                         for (let slot=0; slot<4; slot++) {
-                            let bj = "None", mv = -1;
-                            jPool.forEach(cand => {
-                                // Test joiner across all pivots to find "Universal" strength
-                                let totalV = 0;
+                            let bj = "None", bestSlotV = -1;
+                            jPool.forEach(heroName => {
+                                let peakWithCandidate = -1;
                                 pivots.forEach(p => {
-                                    totalV += getSystemVolume(leads, [...curJ, cand], p, s.ctx, s.bear, s.l);
+                                    // FIXED: Passing correct flags to getSystemVolume
+                                    const v = getSystemVolume(leads, [...curJ, heroName], p, s.ctx, s.bear, s.l);
+                                    if (v > peakWithCandidate) peakWithCandidate = v;
                                 });
-                                if (totalV > mv) { mv = totalV; bj = cand; }
+                                if (peakWithCandidate > bestSlotV) {
+                                    bestSlotV = peakWithCandidate;
+                                    bj = heroName;
+                                }
                             });
                             curJ.push(bj);
                         }
                     }
 
-                    // Score this team across all pivots
-                    let teamAvgV = 0;
+                    // Calculate the final Peak Volume for this team across benchmark pivots
+                    let finalPeakVolume = -1;
                     pivots.forEach(p => {
-                        teamAvgV += getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
+                        const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
+                        if (v > finalPeakVolume) finalPeakVolume = v;
                     });
-                    
-                    candidates.push({ leads, joiners: curJ, score: teamAvgV });
+
+                    candidates.push({ leads, joiners: curJ, score: finalPeakVolume });
                 }
             }
         }
 
-        // Phase 2: Sort and Result Generation
+        // 4. Final 2% Resolution Deep Dive for Top 3
         candidates.sort((a,b) => b.score - a.score);
-        const top3 = candidates.slice(0, 3);
-        
-        const card = document.createElement('div');
-        card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
-        card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${s.l}</div>`;
+        const top3Final = candidates.slice(0, 3).map(team => {
+            let sweepBestVol = -1;
+            // High-res sweep to find the absolute ceiling
+            for (let fI = 0; fI <= 100; fI += 2) {
+                for (let fC = 0; fC <= 100 - fI; fC += 2) {
+                    const fA = 100 - fI - fC;
+                    const v = getSystemVolume(team.leads, team.joiners, [fI, fC, fA], s.ctx, s.bear, s.l);
+                    if (v > sweepBestVol) sweepBestVol = v;
+                }
+            }
+            return { ...team, gain: sweepBestVol / baselinePeak };
+        });
 
-        for (let rk = 0; rk < top3.length; rk++) {
-            const team = top3[rk];
-            const gain = (team.score / scenarioBaseline);
-
-            const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
-                const count = team.joiners.filter(x=>x===n).length;
-                return `${n}${count > 1 ? ' x'+count : ''}`;
-            }).join(', ');
-
-            card.innerHTML += `
-            <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
-                <div class="flex items-center gap-5">
-                    <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
-                    <div class="flex -space-x-3">
-                        ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
-                    </div>
-                    <div>
-                        <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n=>n!=="None").join(' / ')}</div>
-                        <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[200px]">${jN || 'Solo Setup'}</div>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
-                    <div class="text-xl font-black text-emerald-400">${gain.toFixed(3)}x</div>
-                </div>
-            </div>`;
-        }
-        resArea.appendChild(card);
-        await new Promise(r => setTimeout(r, 1));
+        // 5. Render
+        renderScenarioResults(s.l, top3Final, resArea);
     }
 };
+
+function renderScenarioResults(title, top3, container) {
+    const card = document.createElement('div');
+    card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
+    card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
+
+    top3.forEach((team, rk) => {
+        // Group joiners for clean display (e.g., Saul x2)
+        const joinerMap = {};
+        team.joiners.forEach(j => { if(j !== "None") joinerMap[j] = (joinerMap[j] || 0) + 1; });
+        const joinerText = Object.entries(joinerMap).map(([name, count]) => `${name}${count > 1 ? ' x' + count : ''}`).join(', ');
+
+        card.innerHTML += `
+        <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
+            <div class="flex items-center gap-5">
+                <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
+                <div class="flex -space-x-3">
+                    ${team.leads.map(n => n !== "None" ? `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>` : '').join('')}
+                </div>
+                <div>
+                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.filter(n => n !== "None").join(' / ')}</div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase truncate max-w-[250px]">${joinerText || 'Solo Configuration'}</div>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Total Efficiency</div>
+                <div class="text-xl font-black text-emerald-400">${team.gain.toFixed(3)}x</div>
+            </div>
+        </div>`;
+    });
+    container.appendChild(card);
+}
+
+function renderScenarioResults(title, top3, container) {
+    const card = document.createElement('div');
+    card.className = "glass-card p-6 border-l-4 border-blue-500 col-span-1 md:col-span-2 mb-6";
+    card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
+
+    top3.forEach((team, rk) => {
+        const jN = [...new Set(team.joiners.filter(n=>n!=="None"))].map(n => {
+            const count = team.joiners.filter(x=>x===n).length;
+            return `${n}${count > 1 ? ' x'+count : ''}`;
+        }).join(', ');
+
+        card.innerHTML += `
+        <div class="flex items-center justify-between py-4 ${rk < 2 ? 'border-b border-slate-800' : ''}">
+            <div class="flex items-center gap-5">
+                <span class="text-slate-600 font-black text-xs">#${rk+1}</span>
+                <div class="flex -space-x-3">
+                    ${team.leads.map(n => `<div class="w-12 h-12 rounded-full border-2 border-blue-500/30 bg-slate-950 overflow-hidden"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div>`).join('')}
+                </div>
+                <div>
+                    <div class="text-[10px] font-black text-white uppercase leading-tight">${team.leads.join(' / ')}</div>
+                    <div class="text-[8px] text-slate-500 font-bold uppercase">${jN || 'Solo Setup'}</div>
+                    <div class="text-[9px] text-blue-400 font-black mt-1">Best Form: ${team.formation.join('/')}</div>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-[8px] text-slate-600 font-black uppercase mb-1">Efficiency Gain</div>
+                <div class="text-xl font-black text-emerald-400">${team.peakGain.toFixed(3)}x</div>
+            </div>
+        </div>`;
+    });
+    container.appendChild(card);
+}
 
 function renderOptimizerCard(scenario, best, container) {
     const card = document.createElement('div');
