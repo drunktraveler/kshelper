@@ -297,26 +297,31 @@ function renderRosterUI() {
         const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
         
-        // Use a conditional class for locked/unlocked state
-        card.className = `p-4 glass-card border-2 transition-all ${r.unlocked ? 'border-blue-500 bg-slate-900/40' : 'opacity-40 border-transparent hover:border-slate-700'}`;
+        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/40' : 'opacity-40 border-transparent hover:border-slate-800'}`;
         
-        // 1. Header with Toggle Logic (Clicking the name/image toggles unlock)
+        // Card-wide toggle
+        card.onclick = () => window.toggleHeroLock(n);
+
         let html = `
-            <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="window.toggleHeroLock('${n}')">
-                <div class="flex items-center gap-3">
-                    <img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 shadow-lg">
-                    <b class="text-sm tracking-tight">${n}</b>
-                </div>
-                <div class="text-[10px] font-black uppercase ${r.unlocked ? 'text-blue-500' : 'text-slate-600'}">
-                    ${r.unlocked ? 'Unlocked' : 'Locked'}
-                </div>
+            <div class="flex items-center gap-3 mb-4">
+                <img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700">
+                <b class="text-sm">${n}</b>
             </div>
         `;
 
-        // 2. Control Panel (Only visible if hero is unlocked)
         if(r.unlocked) {
-            // Skill Selectors
-            html += `<div class="space-y-3 border-t border-slate-800 pt-3">`;
+            // Container for controls - Stop propagation here so clicking buttons doesn't toggle lock
+            html += `<div class="space-y-4 border-t border-slate-800 pt-4" onclick="event.stopPropagation()">`;
+            
+            // 1. Star Grade First
+            html += `
+                <div>
+                    <div class="text-[8px] uppercase font-black text-blue-400 mb-1">Hero Star Grade</div>
+                    ${renderStarSelector(n, r.starIndex)}
+                </div>
+            `;
+
+            // 2. Skills
             h.skills.forEach((s, i) => {
                 html += `
                     <div>
@@ -325,25 +330,15 @@ function renderRosterUI() {
                     </div>`;
             });
 
-            // Widget Selector (FIXED: Now calling the picker)
+            // 3. Widget Last
             html += `
-                <div class="mt-4 pt-3 border-t border-slate-800">
-                    <div class="text-[8px] uppercase font-black text-amber-500 mb-1">Widget Level (0-10)</div>
+                <div class="pt-2">
+                    <div class="text-[8px] uppercase font-black text-amber-500 mb-1">Widget Level</div>
                     ${renderWidgetPicker(n, r.widget)}
                 </div>
             `;
-
-            // Star Selector (Crucial for GROWTH_TEMPLATES)
-            html += `
-                <div class="mt-4">
-                    <div class="text-[8px] uppercase font-black text-blue-400 mb-1">Hero Star Grade</div>
-                    ${renderStarSelector(n, r.starIndex)}
-                </div>
-            `;
+            
             html += `</div>`;
-        } else {
-            // Placeholder for locked heroes
-            html += `<div class="text-[10px] text-slate-500 italic text-center py-4">Click header to configure</div>`;
         }
 
         card.innerHTML = html;
