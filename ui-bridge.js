@@ -38,6 +38,11 @@ window.init = () => {
     window.showTab('battle');
 };
 
+function sumTroops(counts) {
+    if (!counts) return 0;
+    return (counts.inf || 0) + (counts.cav || 0) + (counts.arc || 0);
+}
+
 window.syncFormationUI = () => {
     const sides = ['atk', 'def'];
     const stats = ['att', 'def', 'leth', 'hp'];
