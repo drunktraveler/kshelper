@@ -17,72 +17,75 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
     const defH = isBear ? { passives:[], actives:[] } : getHeroData(setup.def);
 
     let m_cur = { ...atkP.counts }, e_cur = { ...defP.counts };
-    const totalStartAtk = Object.values(m_cur).reduce((a, b) => a + b, 0);
-    const totalStartDef = isBear ? 1000000 : Object.values(e_cur).reduce((a, b) => a + b, 0);
-    const sq_min = Math.sqrt(Math.min(totalStartAtk, totalStartDef));
-
-    let wave = 0, triggers = { atk: {}, def: {} };
+    let wave = 0;
     let activeBuffs = { atk: [], def: [] };
+    let triggers = { atk: {}, def: {} };
 
+    // --- CORE COMBAT LOOP ---
     while (isAlive(m_cur) && (isBear || isAlive(e_cur)) && wave < nWaves) {
         wave++;
-        let waveMults = { 
-            atk: { inf: { off: 1, surv: 1, dodge: false }, cav: { off: 1, surv: 1, dodge: false }, arc: { off: 1, surv: 1, dodge: false } },
-            def: { inf: { off: 1, surv: 1, dodge: false }, cav: { off: 1, surv: 1, dodge: false }, arc: { off: 1, surv: 1, dodge: false } }
+        
+        // 1. Initialize Buckets for this wave
+        let buckets = {
+            atk: { inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 } },
+            def: { inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 }, arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:0 } }
         };
 
+        // 2. Apply Hero Skills
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
-            // ID Buckets per troop type
-            let b = {
-                inf: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false },
-                cav: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false },
-                arc: { 101:0, 102:1, 103:1, 104:1, 105:1, 106:1, 201:0, 202:1, 203:1, 204:1, 205:1, 250:false }
-            };
-
-            const currentActiveSkills = [...h.passives];
-
-            if (isStochastic) {
-        activeBuffs[side] = activeBuffs[side].filter(b => b.expires > wave);
-        h.actives.forEach(act => {
-            let procced = false;
+            h.passives.forEach(p => applyToBucket(buckets[side], p, 1.0));
             
-            // NEW: Periodic Logic (Alcar S1)
-            if (act.minWave && act.interval) {
-                if (wave >= act.minWave && (wave - act.minWave) % act.interval < act.duration) {
-                    procced = true;
-                }
-            } else {
-                // Standard Random Chance
-                if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) procced = true;
-            }
-
-            if (procced) {
-                // If it's periodic, we don't need to add it to activeBuffs multiple times
-                // just apply it to the bucket immediately for this wave
-                if (act.interval) {
-                    applyToBucket(b, act, 1.0); 
+            h.actives.forEach(act => {
+                let uptime = 0;
+                if (isStochastic) {
+                    if (act.interval) {
+                        if (wave >= act.minWave && (wave - act.minWave) % act.interval < act.duration) uptime = 1.0;
+                    } else {
+                        if (Math.random() < (1 - Math.pow(1 - act.p, act.instances))) {
+                            uptime = 1.0;
+                            triggers[side][act.name] = (triggers[side][act.name] || 0) + 1;
+                        }
+                    }
                 } else {
-                    activeBuffs[side].push({ ...act, expires: wave + act.duration });
+                    uptime = act.interval ? (act.duration / act.interval) : (1 - Math.pow(1 - act.p, act.duration));
                 }
-            }
+                if (uptime > 0) applyToBucket(buckets[side], act, uptime);
+            });
         });
-        activeBuffs[side].forEach(ab => applyToBucket(b, ab, 1.0));
-    } else {
-        h.actives.forEach(act => {
-            let uptime = 0;
-            if (act.minWave && act.interval) {
-                // Periodic Uptime: (Duration / Interval) adjusted for start wave
-                const effectiveWaves = Math.max(0, nWaves - act.minWave + 1);
-                uptime = (act.duration / act.interval) * (effectiveWaves / nWaves);
-            } else {
-                uptime = (1 - Math.pow(1 - act.p, act.duration || 1));
-                if (act.minWave) uptime *= (Math.max(0, nWaves - act.minWave + 1) / nWaves);
-            }
-            applyToBucket(b, act, uptime);
+
+        // 3. Resolve Damage
+        const sides = [['atk', 'def', m_cur, e_cur, atkP, defP], ['def', 'atk', e_cur, m_cur, defP, atkP]];
+        sides.forEach(([s, opp, self_cur, opp_cur, selfP, oppP]) => {
+            ['inf', 'cav', 'arc'].forEach(u => {
+                if (self_cur[u] <= 0) return;
+                
+                // Offense Calculation
+                const b = buckets[s][u];
+                const totalAtk = selfP.avgBase[u].atk * (1 + (setup[s].stats[`${u}_att`]/100)) * (1 + b[101]) * b[102] * b[103] * b[104] * b[105] * b[106];
+                const totalLeth = selfP.avgBase[u].leth * (1 + (setup[s].stats[`${u}_leth`]/100));
+                
+                // Defense Calculation (Opponent)
+                const targetUnit = isBear ? 'inf' : (opp_cur.inf > 0 ? 'inf' : (opp_cur.cav > 0 ? 'cav' : 'arc'));
+                const ob = buckets[opp][targetUnit];
+                const oppHP = oppP.avgBase[targetUnit].hp * (1 + (setup[opp].stats[`${targetUnit}_hp`]/100)) * (1 + ob[201]) * ob[202] * ob[203] * ob[204] * ob[205];
+                
+                const rawDmg = (Math.sqrt(self_cur[u]) * totalAtk * totalLeth) / (oppHP || 1);
+                const dodgeRoll = ob[250] > 0 ? (Math.random() < ob[250] ? 0 : 1) : 1;
+                
+                opp_cur[targetUnit] -= (rawDmg * dodgeRoll) / 100;
+                if (opp_cur[targetUnit] < 0) opp_cur[targetUnit] = 0;
+            });
         });
-    }
-});
+    } // End While
+
+    return {
+        m_cur, e_cur, wave,
+        atk_logs: finalizeLogs('atk', triggers, atkH, atkP, defP, isStochastic),
+        def_logs: finalizeLogs('def', triggers, defH, defP, atkP, isStochastic)
+    };
+}
+
 
 function applyToBucket(buckets, skill, uptime) {
     const affectedUnits = skill.units || ["inf", "cav", "arc"];
@@ -90,9 +93,9 @@ function applyToBucket(buckets, skill, uptime) {
         const rawM = Array.isArray(skill.m) ? skill.m[idx] : skill.m;
         affectedUnits.forEach(u => {
             let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-            let final = mag * skill.instances * uptime;
+            let final = mag * (skill.instances || 1) * uptime;
             if (id === 101 || id === 201) buckets[u][id] += final;
-            else if (id === 250) buckets[u][id] = isNaN(buckets[u][id]) ? final : buckets[u][id] + final;
+            else if (id === 250) buckets[u][id] = Math.max(buckets[u][id], final); // Dodge is usually max-value
             else buckets[u][id] *= (1 + final);
         });
     });
@@ -239,21 +242,20 @@ function getHeroData(sideSetup) {
         h.data.skills.forEach((s, si) => {
             const instances = h.lead + (si === 0 ? h.joiner : 0);
             if (instances === 0) return;
-
             const lvl = h.levels[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
+            if (x === undefined) return;
             const p = s.getChance(x);
             const m = s.getMagnitude(x);
 
             const skillObj = { 
-                name: `${name} ${s.name}`, p, m, ids: s.ids, 
+                name: `${name} S${si+1}`, p, m, ids: s.ids, 
                 duration: s.duration || 1, instances,
                 units: s.units || null,
-                minWave: s.minWave || 0
+                minWave: s.minWave || 0,
+                interval: s.interval || 0
             };
-
-            if (p >= 1.0) passives.push(skillObj);
-            else actives.push(skillObj);
+            if (p >= 1.0) passives.push(skillObj); else actives.push(skillObj);
         });
     }
     return { passives, actives };
