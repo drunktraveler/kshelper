@@ -165,6 +165,12 @@ function buildStatTable() {
     }));
 }
 
+window.toggleHeroLock = (name) => {
+    roster[name].unlocked = !roster[name].unlocked;
+    localStorage.setItem('ks_roster', JSON.stringify(roster));
+    renderRosterUI();
+};
+
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
     const btn = document.getElementById('toggle-details-btn');
@@ -283,16 +289,64 @@ function renderStarSelector(name, currentIndex) {
 }
 
 function renderRosterUI() {
-    const grid = document.getElementById('roster-grid'); if(!grid) return; grid.innerHTML = '';
+    const grid = document.getElementById('roster-grid'); 
+    if(!grid) return; 
+    grid.innerHTML = '';
+
     Object.keys(HEROES).sort().forEach(n => {
         const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
-        card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-        card.className = `p-4 glass-card border-2 cursor-pointer ${r.unlocked ? 'border-blue-500' : 'opacity-40 border-transparent'}`;
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-slate-700"><b>${n}</b></div>`;
+        
+        // Use a conditional class for locked/unlocked state
+        card.className = `p-4 glass-card border-2 transition-all ${r.unlocked ? 'border-blue-500 bg-slate-900/40' : 'opacity-40 border-transparent hover:border-slate-700'}`;
+        
+        // 1. Header with Toggle Logic (Clicking the name/image toggles unlock)
+        let html = `
+            <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="window.toggleHeroLock('${n}')">
+                <div class="flex items-center gap-3">
+                    <img src="./assets/${n.toLowerCase()}.png" class="w-10 h-10 rounded-full border border-slate-700 shadow-lg">
+                    <b class="text-sm tracking-tight">${n}</b>
+                </div>
+                <div class="text-[10px] font-black uppercase ${r.unlocked ? 'text-blue-500' : 'text-slate-600'}">
+                    ${r.unlocked ? 'Unlocked' : 'Locked'}
+                </div>
+            </div>
+        `;
+
+        // 2. Control Panel (Only visible if hero is unlocked)
         if(r.unlocked) {
-            h.skills.forEach((s,i) => { card.innerHTML += `<div class="mt-2 text-[8px] uppercase font-bold text-slate-500">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)], true)}`; });
+            // Skill Selectors
+            html += `<div class="space-y-3 border-t border-slate-800 pt-3">`;
+            h.skills.forEach((s, i) => {
+                html += `
+                    <div>
+                        <div class="text-[8px] uppercase font-black text-slate-500 mb-1">${s.name}</div>
+                        ${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)], true)}
+                    </div>`;
+            });
+
+            // Widget Selector (FIXED: Now calling the picker)
+            html += `
+                <div class="mt-4 pt-3 border-t border-slate-800">
+                    <div class="text-[8px] uppercase font-black text-amber-500 mb-1">Widget Level (0-10)</div>
+                    ${renderWidgetPicker(n, r.widget)}
+                </div>
+            `;
+
+            // Star Selector (Crucial for GROWTH_TEMPLATES)
+            html += `
+                <div class="mt-4">
+                    <div class="text-[8px] uppercase font-black text-blue-400 mb-1">Hero Star Grade</div>
+                    ${renderStarSelector(n, r.starIndex)}
+                </div>
+            `;
+            html += `</div>`;
+        } else {
+            // Placeholder for locked heroes
+            html += `<div class="text-[10px] text-slate-500 italic text-center py-4">Click header to configure</div>`;
         }
+
+        card.innerHTML = html;
         grid.appendChild(card);
     });
 }
