@@ -9,28 +9,31 @@ let nakedStats = JSON.parse(localStorage.getItem('ks_naked_stats')) || null;
 let activeSlot = { side: null, index: null };
 let modalTemp = { s1: 5, s2: 5, s3: 5 };
 let optRole = 'atk'; 
-// Helper to sum objects
-const sumTroops = (c) => (c.inf || 0) + (c.cav || 0) + (c.arc || 0);
 
 let state = {
     atk: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
-    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
+    def: { heroes: Array(7).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) },
+    bear: { heroes: Array(3).fill(null).map(() => ({ name: "None", s1: 5, s2: 5, s3: 5, starIndex: 30, widgetLv: 10 })) }
 };
 
 // --- 1. INITIALIZATION ---
 window.init = () => {
-    Object.keys(HEROES).forEach(n => { if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; });
-    const mainSel = document.getElementById('hero-select');
-    const calibSels = document.querySelectorAll('.rep-hero');
-    [mainSel, ...calibSels].forEach(sel => {
-        if(!sel) return;
-        sel.innerHTML = '<option value="None">None</option>';
-        Object.keys(HEROES).sort().forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
+    Object.keys(HEROES).forEach(n => { 
+        if(!roster[n]) roster[n] = { unlocked: false, s1: 5, s2: 5, s3: 5, widget: 10, starIndex: 30 }; 
     });
-    if(mainSel) mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index);
+    
+    const mainSel = document.getElementById('hero-select');
+    if (mainSel) {
+        mainSel.innerHTML = '<option value="None">None</option>';
+        Object.keys(HEROES).sort().forEach(n => { mainSel.innerHTML += `<option value="${n}">${n}</option>`; });
+        mainSel.onchange = (e) => renderSkillsInModal(e.target.value, activeSlot.index, activeSlot.side);
+    }
+    
     buildStatTable();
-    window.addBatch('atk', true); window.addBatch('def', true);
-    window.updateGrids(); renderRosterUI(); 
+    window.addBatch('atk', true); 
+    window.addBatch('def', true);
+    window.updateGrids(); 
+    renderRosterUI(); 
     if(nakedStats) renderNakedStats();
     window.showTab('battle');
 };
@@ -152,7 +155,7 @@ function buildStatTable() {
     units.forEach(u => cats.forEach(c => {
         const row = document.createElement('div'); row.className = "stat-row";
         const key = `${u.toLowerCase().slice(0,3)}_${c.k}`;
-        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#10b981; font-weight:800; width:70px;" value="1000"><div style="font-size:9px; font-weight:900; color:#64748b; text-align:center; flex-grow:1;">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" oninput="window.updateStatColors(this)" style="background:transparent; border:none; color:#ef4444; font-weight:800; width:70px; text-align:right;" value="1000">`;
+        row.innerHTML = `<input type="number" data-side="atk" data-stat="${key}" class="text-emerald-500 font-bold w-16 bg-transparent text-center" value="1000"><div class="text-[9px] font-black text-slate-500 flex-grow text-center uppercase">${u} ${c.l}</div><input type="number" data-side="def" data-stat="${key}" class="text-red-500 font-bold w-16 bg-transparent text-center" value="1000">`;
         table.appendChild(row);
     }));
 }
@@ -175,14 +178,15 @@ const originalShowTab = window.showTab;
 window.showTab = (tab) => {
     const screens = { battle: 'battle-tab', formation: 'optimizer-screen', bear: 'bear-tab', roster: 'roster-tab' };
     const btns = { battle: 'btn-tab-battle', formation: 'btn-tab-form', bear: 'btn-tab-bear', roster: 'btn-tab-roster' };
+    
     Object.keys(screens).forEach(k => {
         const el = document.getElementById(screens[k]);
         if (el) el.classList.toggle('hidden', k !== tab);
         const b = document.getElementById(btns[k]);
         if (b) b.className = (k === tab) ? "px-4 py-2 bg-blue-600 rounded-lg text-xs font-bold text-white shadow-lg" : "px-4 py-2 text-slate-500 hover:text-white text-xs font-bold";
     });
-    if (tab === 'formation') window.syncFormationUI();
-    originalShowTab(tab);
+
+    if (tab === 'bear' || tab === 'battle') window.updateGrids();
 };
 
 window.addBatch = (side, initial = false) => {
@@ -246,11 +250,11 @@ window.updateStatColors = (el) => {
 };
 
 // --- 3. ROSTER RENDERERS ---
-function renderLevelPicker(hero, key, current, isRoster = true) {
+function renderLevelPicker(hero, key, current, isRoster) {
     let h = `<div class="flex gap-1">`;
     for(let i=1; i<=5; i++) {
-        const action = isRoster ? `window.updateRoster('${hero}','${key}',${i})` : `window.updateModalLevel('${key}',${i})`;
-        h += `<button onclick="event.stopPropagation(); ${action}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}">${i}</button>`;
+        const act = isRoster ? `window.updateRoster('${hero}','${key}',${i})` : `window.updateModalLevel('${key}',${i})`;
+        h += `<button onclick="event.stopPropagation(); ${act}" class="w-6 h-6 rounded text-[10px] font-bold ${current == i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500'}">${i}</button>`;
     }
     return h + `</div>`;
 }
@@ -280,66 +284,73 @@ function renderRosterUI() {
         const h = HEROES[n], r = roster[n];
         const card = document.createElement('div');
         card.onclick = () => { roster[n].unlocked = !roster[n].unlocked; localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
-        card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/50 shadow-lg shadow-blue-900/20' : 'opacity-40 border-transparent bg-slate-950/20'}`;
-        let skillsHtml = h.skills.map((s, i) => `<div class="mt-2" onclick="event.stopPropagation()"><div class="text-[8px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)])}</div>`).join('');
-        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shadow-inner"><img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover"></div><div class="font-bold text-xs uppercase tracking-tighter">${n}</div></div>${r.unlocked ? `<div class="space-y-3"><div><span class="text-[8px] text-slate-500 font-black uppercase">Development Level</span>${renderStarSelector(n, r.starIndex)}</div>${skillsHtml}${h.widget ? `<div class="pt-2 border-t border-slate-800" onclick="event.stopPropagation()"><span class="text-[8px] text-amber-500 font-black uppercase block mb-1">Widget Level</span>${renderWidgetPicker(n, r.widget)}</div>` : ''}</div>` : ''}`;
+        card.className = `p-4 glass-card border-2 cursor-pointer ${r.unlocked ? 'border-blue-500' : 'opacity-40 border-transparent'}`;
+        card.innerHTML = `<div class="flex items-center gap-3 mb-2"><img src="./assets/${n.toLowerCase()}.png" class="w-8 h-8 rounded-full border border-slate-700"><b>${n}</b></div>`;
+        if(r.unlocked) {
+            h.skills.forEach((s,i) => { card.innerHTML += `<div class="mt-2 text-[8px] uppercase font-bold text-slate-500">${s.name}</div>${renderLevelPicker(n, 's'+(i+1), r['s'+(i+1)], true)}`; });
+        }
         grid.appendChild(card);
     });
 }
+
 window.updateRoster = (n,k,v) => { roster[n][k]=parseInt(v); localStorage.setItem('ks_roster', JSON.stringify(roster)); renderRosterUI(); };
 
 // --- 4. BATTLE LOGIC ---
 window.openHeroModal = (side, index) => {
-    activeSlot = { side, index }; const h = state[side].heroes[index];
+    activeSlot = { side, index };
+    const h = state[side].heroes[index];
     modalTemp = { s1: h.s1, s2: h.s2, s3: h.s3 };
     document.getElementById('hero-select').value = h.name;
-    renderSkillsInModal(h.name, index);
+    renderSkillsInModal(h.name, index, side);
     document.getElementById('heroModal').classList.replace('hidden', 'flex');
 };
-window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index); };
 
-function renderSkillsInModal(name, slot) {
+window.updateModalLevel = (k, v) => { modalTemp[k] = v; renderSkillsInModal(document.getElementById('hero-select').value, activeSlot.index, activeSlot.side); };
+
+function renderSkillsInModal(name, index, side) {
     const container = document.getElementById('skill-inputs'); 
     container.innerHTML = '';
     if(name === "None") return;
     
-    const h = HEROES[name]; 
-    const max = (slot < 3) ? h.skills.length : 1;
+    const h = HEROES[name];
+    // Leaders (atk/def index 0-2 or bear) get all skills. Joiners get S1 only.
+    const isLead = (side === 'bear' || index < 3);
+    const max = isLead ? h.skills.length : 1;
     
     for(let i=0; i<max; i++) {
-        const skill = h.skills[i];
+        const s = h.skills[i];
         const div = document.createElement('div');
-        div.className = "p-3 bg-slate-950/50 rounded-lg border border-slate-800 mb-2";
-        
-        // Show what units are affected if it's restricted
-        const unitTag = skill.units ? `<span class="text-[7px] bg-blue-900 text-blue-200 px-1 rounded ml-2">${skill.units.join(', ').toUpperCase()}</span>` : '';
-        
-        div.innerHTML = `
-            <div class="flex justify-between items-center mb-2">
-                <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">${skill.name}${unitTag}</div>
-                <div class="text-[8px] text-slate-600 font-bold">ID: ${skill.ids.join('+')}</div>
-            </div>
-            ${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}
-        `;
+        div.className = "mb-4";
+        div.innerHTML = `<div class="text-[9px] text-slate-500 font-black uppercase mb-1">${s.name}</div>${renderLevelPicker(name, 's'+(i+1), modalTemp['s'+(i+1)], false)}`;
         container.appendChild(div);
     }
 }
 
 window.saveHeroConfig = () => {
     const name = document.getElementById('hero-select').value;
-    state[activeSlot.side].heroes[activeSlot.index] = { name, ...modalTemp, starIndex: 30, widgetLv: roster[name]?.widget || 0 };
-    window.updateGrids(); document.getElementById('heroModal').classList.replace('flex', 'hidden');
+    state[activeSlot.side].heroes[activeSlot.index] = { 
+        name, ...modalTemp, 
+        starIndex: roster[name]?.starIndex || 30, 
+        widgetLv: roster[name]?.widget || 10 
+    };
+    window.updateGrids(); 
+    document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
 window.updateGrids = () => {
-    ['atk','def'].forEach(side => {
-        const container = document.getElementById(`${side}-hero-grid`); if(!container) return; container.innerHTML = '';
+    ['atk','def','bear'].forEach(side => {
+        const container = document.getElementById(`${side}-hero-grid`);
+        if(!container) return;
+        container.innerHTML = '';
         state[side].heroes.forEach((h, i) => {
             const div = document.createElement('div');
-            div.className = `hero-circle ${i < 3 ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
+            const isLead = (side === 'bear' || i < 3);
+            div.className = `hero-circle ${isLead ? 'hero-leader' : ''} ${h.name !== 'None' ? 'active' : ''}`;
             if (h.name !== 'None') {
-                div.innerHTML = `<span style="position:absolute;z-index:1">${h.name[0]}</span><img src="./assets/${h.name.toLowerCase()}.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2" onerror="this.style.opacity='0'">`;
-            } else { div.innerText = (i + 1); }
+                div.innerHTML = `<img src="./assets/${h.name.toLowerCase()}.png" class="absolute inset-0 w-full h-full object-cover z-10">`;
+            } else {
+                div.innerHTML = `<span class="text-[10px]">${side === 'bear' ? ['I','C','A'][i] : (i+1)}</span>`;
+            }
             div.onclick = () => window.openHeroModal(side, i);
             container.appendChild(div);
         });
@@ -608,135 +619,86 @@ window.runOptimizer = async (mode) => {
     const resArea = document.getElementById(isBear ? 'bear-opt-form' : 'opt-best-form');
     const scoreArea = document.getElementById(isBear ? 'bear-comparison' : 'opt-best-score');
     
-    if (!resArea) return;
     resArea.innerText = "Analyzing...";
 
-    // Give UI thread air to render "Analyzing..."
-    setTimeout(async () => {
-        try {
-            let dataPoints = { a: [], b: [], c: [], z: [] };
-            let best = { form: [0, 0, 0], score: -Infinity };
+    setTimeout(() => {
+        let dataPoints = { a: [], b: [], c: [], z: [] };
+        let best = { form: [0, 0, 0], score: -1 };
 
-            if (isBear) {
-                // --- 1. BEAR TRAP SCIENTIFIC LOGIC ---
-                let potentials = { inf: 0, cav: 0, arc: 0 };
-                let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
-                let wAtk = 1.0, wLeth = 1.0;
+        const bearConfig = isBear ? {
+            inf_acc: { att: parseFloat(document.getElementById('bear-inf-att').value), leth: parseFloat(document.getElementById('bear-inf-leth').value) },
+            cav_acc: { att: parseFloat(document.getElementById('bear-cav-att').value), leth: parseFloat(document.getElementById('bear-cav-leth').value) },
+            arc_acc: { att: parseFloat(document.getElementById('bear-arc-att').value), leth: parseFloat(document.getElementById('bear-arc-leth').value) },
+            inf_tier: document.getElementById('bear-inf-tier').value,
+            cav_tier: document.getElementById('bear-cav-tier').value,
+            arc_tier: document.getElementById('bear-arc-tier').value,
+            inf_tg: document.getElementById('bear-inf-tg').value,
+            cav_tg: document.getElementById('bear-cav-tg').value,
+            arc_tg: document.getElementById('bear-arc-tg').value
+        } : null;
 
-                // A. Process Current Attacker Heroes (State from Sim Tab)
-                state.atk.heroes.forEach((h, idx) => {
-                    if (h.name === "None" || !HEROES[h.name]) return;
-                    const d = HEROES[h.name], r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
-                    const isLead = idx < 3;
-
-                    if (isLead && d.widget && d.widget.context === 'off') {
-                        const val = WIDGET_GROWTH[r.widget] || 0;
-                        if (d.widget.stat === "attack") wAtk += val;
-                        if (d.widget.stat === "lethality") wLeth += val;
-                    }
-
-                    d.skills.forEach((s, si) => {
-                        if (!isLead && si > 0) return; // Joiners S1 only
-                        const x = s.values[(r[`s${si + 1}`] || 5) - 1];
-                        const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : s.getChance(x);
-                        
-                        s.ids.forEach((id, idxM) => {
-                            if (id >= 200) return; // Debuffs ignored
-                            const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idxM] : s.getMagnitude(x);
-                            ['inf', 'cav', 'arc'].forEach(u => {
-                                let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
-                                if (id === 101) m101[u] += val * uptime;
-                                if (id === 102) m102[u] += val * uptime;
-                            });
-                        });
-                    });
-                });
-
-                // B. Calculate Base Unit Potentials
-                ['inf', 'cav', 'arc'].forEach(u => {
-                    const t = parseInt(document.getElementById(`bear-${u}-tier`).value);
-                    const tg = parseInt(document.getElementById(`bear-${u}-tg`).value);
-                    const longU = u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry');
-                    
-                    const base = UNITS[longU][t][tg];
-                    const accAtt = parseFloat(document.getElementById(`bear-${u}-att`).value) || 0;
-                    const accLeth = parseFloat(document.getElementById(`bear-${u}-leth`).value) || 0;
-                    
-                    let abil = 1.0;
-                    if (u === 'arc') {
-                        const effP = (tg >= 5 ? 0.3 : (tg >= 3 ? 0.2 : 0));
-                        abil *= (1 + (effP * 0.5)) * 1.1; // Incl. Ranged Strike
-                    }
-                    if (u === 'cav' && tg >= 3) {
-                        const effP = (tg >= 5 ? 0.15 : 0.1);
-                        abil *= (1 + (effP * 1.0));
-                    }
-
-                    const tA = base[0] * (1 + accAtt / 100) * wAtk * m101[u];
-                    const tL = base[2] * (1 + accLeth / 100) * wLeth * m102[u];
-                    potentials[u] = (1000 * tA * tL * abil) / 8333.33;
-                });
-
-                // C. Formation Search
-                for (let i = 0; i <= 100; i++) {
-                    for (let j = 0; j <= 100 - i; j++) {
-                        let k = 100 - i - j;
-                        const score = (Math.sqrt(i * 10000) * potentials.inf) +
-                                      (Math.sqrt(j * 10000) * potentials.cav) +
-                                      (Math.sqrt(k * 10000) * potentials.arc);
-                        if (score > best.score) best = { score, form: [i, j, k] };
-                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
-                    }
-                }
-                scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
-
-            } else {
-                // --- 2. PVP FORMATION LOGIC (Simulation Sweep) ---
-                const mySide = optRole;
-                const oppSide = mySide === 'atk' ? 'def' : 'atk';
-                const setup = gatherSetup();
-
-                // Simple representative opponent (Standard Meta)
-                const opp = JSON.parse(JSON.stringify(setup[oppSide]));
-                if (mode === 'custom') {
-                    const i = parseFloat(document.getElementById('custom-inf').value) || 33;
-                    const c = parseFloat(document.getElementById('custom-cav').value) || 33;
-                    const a = parseFloat(document.getElementById('custom-arc').value) || 34;
-                    const tot = i + c + a || 1;
-                    opp.batches = [{ inf: (i/tot)*1000000, cav: (c/tot)*1000000, arc: (a/tot)*1000000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
-                }
-
-                for (let i = 0; i <= 100; i += 2) {
-                    for (let j = 0; j <= 100 - i; j += 2) {
-                        let k = 100 - i - j;
-                        const testSetup = { atk: {}, def: {} };
-                        const myConfig = JSON.parse(JSON.stringify(setup[mySide]));
-                        myConfig.batches = [{ inf: i*10000, cav: j*10000, arc: k*10000, inf_tier:10, cav_tier:10, arc_tier:10, inf_tg:3, cav_tg:3, arc_tg:3 }];
-                        
-                        testSetup[mySide] = myConfig;
-                        testSetup[oppSide] = opp;
-
-                        const r = runCombatSim(testSetup, 'average', 'average', 1000, false, true);
-                        const mS = (r.m_cur.inf + r.m_cur.cav + r.m_cur.arc);
-                        const oS = (r.e_cur.inf + r.e_cur.cav + r.e_cur.arc);
-                        const res = mS - oS;
-
-                        if (res > best.score) best = { score: res, form: [i, j, k] };
-                        dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(res);
-                    }
-                }
-                scoreArea.innerHTML = `Survival Margin: <span class="text-blue-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
+        // Use 2% steps to prevent performance lag and NaN creation
+        for (let i = 0; i <= 100; i += 2) {
+            for (let j = 0; j <= 100 - i; j += 2) {
+                let k = 100 - i - j;
+                let score = isBear ? calculateBearDamage(bearConfig, [i, j, k]) : 0; // PVP logic handled elsewhere
+                
+                if (score > best.score) best = { score, form: [i, j, k] };
+                dataPoints.a.push(i); dataPoints.b.push(j); dataPoints.c.push(k); dataPoints.z.push(score);
             }
-
-            renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
-            resArea.innerText = `${best.form[0]} / ${best.form[1]} / ${best.form[2]}`;
-
-        } catch (err) {
-            console.error("Optimizer Crash:", err);
-            resArea.innerText = "Error";
         }
+
+        renderTernary(isBear ? 'bear-plot' : 'ternary-plot', dataPoints, best, isBear);
+        resArea.innerText = best.form.join(' / ');
+        if(isBear) scoreArea.innerHTML = `Predicted Dmg: <span class="text-emerald-400 font-bold">${Math.round(best.score).toLocaleString()}</span>`;
     }, 50);
 };
+
+// Helper specific to the Bear Tab's custom inputs
+function calculateBearDamage(config, formation) {
+    const units = ['inf', 'cav', 'arc'];
+    const longUnits = ['infantry', 'cavalry', 'archers'];
+    let b = { inf: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1}, cav: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1}, arc: {101:0, 102:1, 103:1, 104:1, 105:1, 106:1} };
+    let wM = { attack: 1.0, lethality: 1.0 };
+
+    state.bear.heroes.forEach((h) => {
+        if (h.name === "None") return;
+        const d = HEROES[h.name];
+        const r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
+
+        if (d.widget && d.widget.context === 'off') wM[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+
+        d.skills.forEach((s, si) => {
+            const x = s.values[(r[`s${si+1}`] || 5) - 1];
+            let uptime = s.interval ? (1 / s.interval) : s.getChance(x);
+            const mFull = s.getMagnitude(x);
+            s.ids.forEach((id, mIdx) => {
+                if (id >= 200) return;
+                (s.units || ["inf", "cav", "arc"]).forEach(u => {
+                    const rawM = Array.isArray(mFull) ? mFull[mIdx] : mFull;
+                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                    if (id === 101) b[u][id] += (mag * uptime);
+                    else b[u][id] *= (1 + (mag * uptime));
+                });
+            });
+        });
+    });
+
+    let totalDmg = 0;
+    units.forEach((u, idx) => {
+        const pct = formation[idx];
+        if (pct <= 0) return;
+        const unitBase = UNITS[longUnits[idx]][config[`${u}_tier`]][config[`${u}_tg`]];
+        const acc = config[`${u}_acc`];
+        let abil = (u === 'arc') ? 1.1 : 1.0; 
+        if (u === 'cav' && config[`${u}_tg`] >= 3) abil *= (1 + (config[`${u}_tg`] >= 5 ? 0.15 : 0.1));
+
+        const totalAtk = unitBase[0] * (1 + acc.att/100) * wM.attack * (1 + b[u][101]) * b[u][102] * b[u][103] * b[u][104] * b[u][105] * b[u][106];
+        const totalLeth = unitBase[2] * (1 + acc.leth/100) * wM.lethality;
+        totalDmg += (Math.sqrt(pct * 10000) * 1000 * totalAtk * totalLeth * abil) / 83333.3;
+    });
+    return isNaN(totalDmg) ? 0 : totalDmg;
+}
 
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
@@ -785,47 +747,96 @@ function calculateBearPotentials(config) {
 function renderTernary(id, data, best, isBear) {
     const traces = [
         { 
-            type: 'scatterternary', a: data.a, b: data.b, c: data.c, mode: 'markers', 
-            name: 'Heatmap',
+            type: 'scatterternary',
+            a: data.a,
+            b: data.b,
+            c: data.c,
+            mode: 'markers',
+            name: 'Efficiency',
             marker: { 
                 color: data.z, 
                 colorscale: 'Viridis', 
-                size: 4, 
-                opacity: 0.7,
-                showscale: false 
+                size: 5, 
+                opacity: 0.8,
+                showscale: false,
+                line: { width: 0 }
             },
             hoverinfo: 'none'
         },
-        // Standard Reference Marker (50/20/30 or 10/10/80)
+        // Standard Reference Point (e.g., 50/20/30)
         { 
-            type: 'scatterternary', a: [isBear ? 10 : 50], b: [isBear ? 10 : 20], c: [isBear ? 80 : 30], 
-            name: 'Standard Reference', mode: 'markers', 
-            marker: { size: 14, symbol: 'circle-open', color: 'white', line: { width: 3 } } 
+            type: 'scatterternary',
+            a: [isBear ? 10 : 50],
+            b: [isBear ? 10 : 20],
+            c: [isBear ? 80 : 30],
+            name: 'Standard Meta',
+            mode: 'markers',
+            marker: { 
+                size: 12, 
+                symbol: 'circle-open', 
+                color: 'rgba(255,255,255,0.4)', 
+                line: { width: 2 } 
+            } 
         },
-        // Best Result Marker (Cyan Star)
+        // Optimal Point (The Cyan Star)
         { 
-            type: 'scatterternary', a: [best.form[0]], b: [best.form[1]], c: [best.form[2]], 
-            name: 'Optimal Point', mode: 'markers', 
-            marker: { size: 20, symbol: 'star', color: '#00f2ff', line: { width: 1.5, color: 'black' } } 
+            type: 'scatterternary',
+            a: [best.form[0]],
+            b: [best.form[1]],
+            c: [best.form[2]],
+            name: 'Optimal',
+            mode: 'markers',
+            marker: { 
+                size: 18, 
+                symbol: 'star', 
+                color: '#00f2ff', 
+                line: { width: 1.5, color: '#080a0f' } 
+            } 
         }
     ];
 
     const layout = {
         ternary: { 
-            sum: 100, 
-            aaxis: { title: 'INF', titlefont: { size: 12, color: '#3b82f6' }, tickfont: { color: '#64748b' }, min: 0 }, 
-            baxis: { title: 'CAV', titlefont: { size: 12, color: '#f59e0b' }, tickfont: { color: '#64748b' }, min: 0 }, 
-            caxis: { title: 'ARC', titlefont: { size: 12, color: '#10b981' }, tickfont: { color: '#64748b' }, min: 0 } 
+            sum: 100,
+            aaxis: { 
+                title: 'INF', 
+                titlefont: { size: 12, color: '#3b82f6', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            baxis: { 
+                title: 'CAV', 
+                titlefont: { size: 12, color: '#f59e0b', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            caxis: { 
+                title: 'ARC', 
+                titlefont: { size: 12, color: '#10b981', family: 'Inter, sans-serif' }, 
+                tickfont: { color: '#64748b', size: 10 }, 
+                gridcolor: 'rgba(255,255,255,0.05)',
+                linecolor: 'rgba(255,255,255,0.1)'
+            },
+            bgcolor: 'rgba(0,0,0,0)'
         },
-        paper_bgcolor: 'rgba(0,0,0,0)', 
+        paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#94a3b8', family: 'Inter, sans-serif' },
-        margin: { l: 10, r: 10, t: 40, b: 20 }, 
-        showlegend: false
+        margin: { l: 20, r: 20, t: 40, b: 20 },
+        showlegend: false,
+        hovermode: false,
+        font: { family: 'Inter, sans-serif' }
     };
 
-    Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
+    const config = { 
+        displayModeBar: false, 
+        responsive: true 
+    };
+
+    Plotly.newPlot(id, traces, layout, config);
 }
+
 // --- UPDATED SYSTEM VOLUME LOGIC ---
 function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) {
     const rawStats = JSON.parse(localStorage.getItem('ks_naked_stats'));
