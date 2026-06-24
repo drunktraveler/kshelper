@@ -590,59 +590,84 @@ window.handleSimulation = async () => {
     const mode = document.getElementById('sim-mode-select').value;
     
     let rFinal, rBest, rWorst;
+    let winAtk = 0, winDef = 0;
 
     if (mode === 'monte-carlo') {
         let results = [];
         for (let i = 0; i < 100; i++) {
             results.push(runCombatSim(setup, 'stochastic', 'stochastic'));
         }
-        // Sort by Net Survivors (Margin)
+
+        // Sort by Net Survivors (Margin) to find the 5th and 95th percentile
         results.sort((a, b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
 
-        // Range: 5th Worst (index 4) to 5th Best (index 95)
-        rWorst = results[4]; 
-        rBest = results[95];
-        rFinal = results[50]; // Median
+        rWorst = results[4];    // 5th Worst Run
+        rBest = results[95];    // 5th Best Run
+        rFinal = results[50];   // Median Run
 
-        let winAtk = results.filter(r => sumTroops(r.m_cur) > sumTroops(r.e_cur)).length;
-        let winDef = results.filter(r => sumTroops(r.e_cur) > sumTroops(r.m_cur)).length;
+        results.forEach(r => {
+            const m = sumTroops(r.m_cur), e = sumTroops(r.e_cur);
+            if (m > e) winAtk++; else if (e > m) winDef++;
+        });
 
         document.getElementById('result-waves').innerHTML = `
             <span class="text-blue-400 font-black uppercase">Stochastic Analysis (100 Runs)</span><br>
-            Win Rate: ${winAtk}% Atk / ${winDef}% Def<br>
+            Win Rate: ${winAtk}% Atk / ${winDef}% Def / ${100 - winAtk - winDef}% Draw<br>
             Median Duration: ${rFinal.wave} Phases`;
     } else {
+        // Deterministic mode logic
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
+        
         document.getElementById('result-waves').innerHTML = `
             <span class="text-emerald-500 font-black uppercase">Deterministic Analysis</span><br>
-            Combat Duration: ${rFinal.wave} Phases`;
+            Duration: ${rFinal.wave} Phases`;
     }
 
-    // Display Integers
-    document.getElementById('res-atk-total').innerText = Math.floor(sumTroops(rFinal.m_cur)).toLocaleString();
-    document.getElementById('res-def-total').innerText = Math.floor(sumTroops(rFinal.e_cur)).toLocaleString();
+    // --- FIX: DEFINE VARIABLES FOR UI AND LUCK BAR ---
+    const sAtk = Math.floor(sumTroops(rFinal.m_cur));
+    const sDef = Math.floor(sumTroops(rFinal.e_cur));
     
+    // UI Updates (Integers)
+    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
+    document.getElementById('res-def-total').innerText = sDef.toLocaleString();
+    
+    // Range Labels (Using the 5th and 95th Percentile results)
     document.getElementById('res-atk-range').innerText = `Range: ${Math.floor(sumTroops(rWorst.m_cur)).toLocaleString()} - ${Math.floor(sumTroops(rBest.m_cur)).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${Math.floor(sumTroops(rBest.e_cur)).toLocaleString()} - ${Math.floor(sumTroops(rWorst.e_cur)).toLocaleString()}`;
 
+    // Luck Bar Logic
+    // We get the total starting troops of the first batch for a baseline scale
+    const totalStartAtk = sumTroops(setup.atk.batches[0]);
+    const totalStartDef = sumTroops(setup.def.batches[0]);
+    const totalStart = totalStartAtk + totalStartDef;
+
+    const score = (sAtk - sDef) / (totalStart || 1);
     const bar = document.getElementById('luck-bar-inner');
-    const score = (sAtk - sDef) / (sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]) || 1);
-    bar.style.left = "50%"; bar.style.width = Math.abs(score * 50) + "%";
-    bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
+    if (bar) {
+        bar.style.left = "50%"; 
+        bar.style.width = Math.abs(score * 50) + "%";
+        bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
+    }
 
-    document.getElementById('result-waves').innerHTML = `
-        <span class="text-blue-400 font-black uppercase">${mode} Analysis</span><br>
-        ${winRateText ? winRateText + '<br>' : ''}
-        Representative Duration: ${rFinal.wave} Waves`;
-
+    // Combat Detail Rendering
     const logHTML = (side, data) => `
-        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Multipliers</div>
-        <div class="text-slate-300 font-bold text-[9px] mb-2">[Troop Efficiency] ${data.troopEff || 'None'}</div>
-        ${data.skills.map(s => `<div class="flex justify-between border-b border-slate-900/50 py-0.5"><span class="text-slate-400">${s.name}</span> <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span></div>`).join('')}
+        <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Combat Buffs</div>
+        <div class="text-slate-300 font-bold text-[9px] mb-2">[Army Efficiency] ${data.troopEff || 'None'}</div>
+        ${data.skills.map(s => `
+            <div class="flex justify-between border-b border-slate-900/50 py-0.5">
+                <span class="text-slate-400">${s.name}</span> 
+                <span class="${s.isPassive?'text-blue-400':'text-amber-500'} font-black">${s.val}</span>
+            </div>
+        `).join('')}
     `;
-    document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
+    
+    const detailsBox = document.getElementById('battle-details');
+    if (detailsBox) {
+        detailsBox.innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
+    }
 };
 
 window.runOptimizer = async (mode) => {
