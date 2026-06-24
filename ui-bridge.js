@@ -43,6 +43,7 @@ window.init = () => {
 };
 
 function sumTroops(counts) {
+    if (!counts) return 0;
     return (counts.inf || 0) + (counts.cav || 0) + (counts.arc || 0);
 }
 
@@ -52,7 +53,6 @@ window.syncFormationUI = () => {
     const units = ['inf', 'cav', 'arc'];
 
     sides.forEach(side => {
-        // 1. Sync Heroes
         const heroCont = document.getElementById(`opt-${side}-heroes`);
         if (heroCont) {
             heroCont.innerHTML = '';
@@ -64,7 +64,6 @@ window.syncFormationUI = () => {
             });
         }
 
-        // 2. Sync Stats (Mirroring the Sim Tab Stat Table)
         const statGrid = document.getElementById(`opt-${side}-stats-grid`);
         if (statGrid) {
             statGrid.innerHTML = '';
@@ -75,13 +74,12 @@ window.syncFormationUI = () => {
                     statGrid.innerHTML += `
                         <div>
                             <label class="text-[7px] text-slate-500 uppercase font-black block mb-1">${u} ${s}</label>
-                            <input type="number" value="${val}" oninput="window.globalStatUpdate('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
+                            <input type="number" step="0.1" value="${val}" oninput="window.globalStatUpdate('${side}', '${key}', this.value)" class="input-dark !py-1 !text-[10px]">
                         </div>`;
                 });
             });
         }
 
-        // 3. Sync Tiers (Mirroring the first batch of the Sim Tab)
         const tierGrid = document.getElementById(`opt-${side}-tiers`);
         if (tierGrid) {
             tierGrid.innerHTML = '';
@@ -105,14 +103,15 @@ window.syncFormationUI = () => {
     });
 };
 
-// Global Handlers to keep both tabs in perfect sync
 window.globalStatUpdate = (side, key, val) => {
-    document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`).value = val;
+    const el = document.querySelector(`input[data-side="${side}"][data-stat="${key}"]`);
+    if (el) el.value = val;
     window.syncFormationUI();
 };
 
 window.globalTierUpdate = (side, unit, type, val) => {
-    document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`).value = val;
+    const el = document.querySelector(`#${side}-batch-container .batch-${type}-${unit}`);
+    if (el) el.value = val;
     window.syncFormationUI();
 };
 
@@ -120,11 +119,14 @@ window.syncOptimizerUI = () => {
     const mySide = optRole;
     const oppSide = optRole === 'atk' ? 'def' : 'atk';
 
-    document.getElementById('opt-my-label').innerText = mySide.toUpperCase();
-    document.getElementById('opt-opp-label').innerText = oppSide.toUpperCase();
+    const myLbl = document.getElementById('opt-my-label');
+    const oppLbl = document.getElementById('opt-opp-label');
+    if (myLbl) myLbl.innerText = mySide.toUpperCase();
+    if (oppLbl) oppLbl.innerText = oppSide.toUpperCase();
 
     const renderMinis = (side, targetId) => {
         const container = document.getElementById(targetId);
+        if (!container) return;
         container.innerHTML = '';
         state[side].heroes.slice(0,3).forEach(h => {
             const div = document.createElement('div');
@@ -138,20 +140,14 @@ window.syncOptimizerUI = () => {
 
     renderMinis(mySide, 'opt-my-heroes');
     renderMinis(oppSide, 'opt-opp-heroes');
-    
-    // Sync initial stats from Battle Sim inputs
-    const myStats = Array.from(document.querySelectorAll(`input[data-side="${mySide}"]`));
-    const oppStats = Array.from(document.querySelectorAll(`input[data-side="${oppSide}"]`));
-    
-    // Using simple Atk/Leth averages for the mirror mirror
-    if (myStats.length) document.getElementById('opt-my-atk').value = myStats[0].value;
-    if (oppStats.length) document.getElementById('opt-opp-atk').value = oppStats[0].value;
 };
 
-// Update window.setOptRole to trigger sync
-const oldSetOptRole = window.setOptRole;
 window.setOptRole = (role) => {
-    oldSetOptRole(role);
+    optRole = role;
+    const atkBtn = document.getElementById('opt-role-atk');
+    const defBtn = document.getElementById('opt-role-def');
+    if (atkBtn) atkBtn.className = role === 'atk' ? "px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
+    if (defBtn) defBtn.className = role === 'def' ? "px-3 py-1 text-[10px] font-bold rounded bg-red-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
     window.syncOptimizerUI();
 };
 
@@ -179,7 +175,6 @@ function buildStatTable() {
     });
 }
 
-// Sync function: when you change a stat in one tab, find all inputs with the same stat/side and update them
 window.syncStat = (el) => {
     const val = el.value;
     const stat = el.dataset.stat;
@@ -190,9 +185,8 @@ window.syncStat = (el) => {
 };
 
 window.syncBatch = (batchId, side, sourceEl) => {
-    // Bi-directional sync: Find all rows with this ID
     const rows = document.querySelectorAll(`[data-batch-id="${batchId}"]`);
-    const className = sourceEl.className.split(' ')[0]; // e.g. batch-inf or batch-tier-inf
+    const className = sourceEl.className.split(' ')[0]; 
     
     rows.forEach(row => {
         const target = row.querySelector(`.${className}`);
@@ -218,14 +212,9 @@ window.toggleHeroLock = (name) => {
 window.toggleDetails = () => {
     const box = document.getElementById('battle-details');
     const btn = document.getElementById('toggle-details-btn');
+    if (!box || !btn) return;
     const isHidden = box.classList.toggle('hidden');
     btn.innerText = isHidden ? 'View Combat Buffs +' : 'Hide Combat Buffs -';
-};
-
-window.setOptRole = (role) => {
-    optRole = role;
-    document.getElementById('opt-role-atk').className = role === 'atk' ? "px-3 py-1 text-[10px] font-bold rounded bg-blue-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
-    document.getElementById('opt-role-def').className = role === 'def' ? "px-3 py-1 text-[10px] font-bold rounded bg-red-600 text-white" : "px-3 py-1 text-[10px] font-bold text-slate-500";
 };
 
 // --- 2. GLOBAL UI HANDLERS ---
@@ -249,7 +238,7 @@ window.addBatch = (side, initial = false) => {
         document.getElementById(`opt-${side}-batch-container`)
     ];
 
-    const batchId = 'batch-' + Date.now();
+    const batchId = 'batch-' + Date.now() + '-' + Math.floor(Math.random()*1000);
     const types = [
         { label: 'Infantry', key: 'inf', color: 'text-blue-400', def: 500000 },
         { label: 'Cavalry', key: 'cav', color: 'text-amber-400', def: 200000 },
@@ -289,18 +278,15 @@ window.addBatch = (side, initial = false) => {
 
 window.updateFormation = (side) => {
     let i=0, c=0, a=0;
-    // We only need to read from one container because they are synced
     const rows = document.querySelectorAll(`#${side}-batch-container > div`);
     
     rows.forEach(row => {
-        i += parseFloat(row.querySelector('.batch-inf').value) || 0;
-        c += parseFloat(row.querySelector('.batch-cav').value) || 0;
-        a += parseFloat(row.querySelector('.batch-arc').value) || 0;
+        i += parseFloat(row.querySelector('.batch-inf')?.value) || 0;
+        c += parseFloat(row.querySelector('.batch-cav')?.value) || 0;
+        a += parseFloat(row.querySelector('.batch-arc')?.value) || 0;
     });
 
     const total = i + c + a;
-    
-    // Target both the standard bar and the opt (optimizer) bar
     const bars = [
         document.querySelector(`.${side}-f-bar`), 
         document.querySelector(`.opt-${side}-f-bar`)
@@ -308,16 +294,11 @@ window.updateFormation = (side) => {
 
     bars.forEach(bar => {
         if (!bar) return;
-        const pctI = total > 0 ? (i / total * 100) : 0;
-        const pctC = total > 0 ? (c / total * 100) : 0;
-        const pctA = total > 0 ? (a / total * 100) : 0;
-
-        bar.children[0].style.width = pctI + '%';
-        bar.children[1].style.width = pctC + '%';
-        bar.children[2].style.width = pctA + '%';
+        bar.children[0].style.width = (total > 0 ? (i / total * 100) : 0) + '%';
+        bar.children[1].style.width = (total > 0 ? (c / total * 100) : 0) + '%';
+        bar.children[2].style.width = (total > 0 ? (a / total * 100) : 0) + '%';
     });
 
-    // Update the text labels (0%) in both tabs
     const labels = {
         inf: document.querySelectorAll(`.${side}-inf-pct`),
         cav: document.querySelectorAll(`.${side}-cav-pct`),
@@ -378,8 +359,6 @@ function renderRosterUI() {
         const card = document.createElement('div');
         
         card.className = `p-4 glass-card border-2 transition-all cursor-pointer ${r.unlocked ? 'border-blue-500 bg-slate-900/40' : 'opacity-40 border-transparent hover:border-slate-800'}`;
-        
-        // Card-wide toggle
         card.onclick = () => window.toggleHeroLock(n);
 
         let html = `
@@ -390,10 +369,7 @@ function renderRosterUI() {
         `;
 
         if(r.unlocked) {
-            // Container for controls - Stop propagation here so clicking buttons doesn't toggle lock
             html += `<div class="space-y-4 border-t border-slate-800 pt-4" onclick="event.stopPropagation()">`;
-            
-            // 1. Star Grade First
             html += `
                 <div>
                     <div class="text-[8px] uppercase font-black text-blue-400 mb-1">Hero Star Grade</div>
@@ -401,7 +377,6 @@ function renderRosterUI() {
                 </div>
             `;
 
-            // 2. Skills
             h.skills.forEach((s, i) => {
                 html += `
                     <div>
@@ -410,14 +385,12 @@ function renderRosterUI() {
                     </div>`;
             });
 
-            // 3. Widget Last
             html += `
                 <div class="pt-2">
                     <div class="text-[8px] uppercase font-black text-amber-500 mb-1">Widget Level</div>
                     ${renderWidgetPicker(n, r.widget)}
                 </div>
             `;
-            
             html += `</div>`;
         }
 
@@ -446,7 +419,6 @@ function renderSkillsInModal(name, index, side) {
     if(name === "None") return;
     
     const h = HEROES[name];
-    // Leaders (atk/def index 0-2 or bear) get all skills. Joiners get S1 only.
     const isLead = (side === 'bear' || index < 3);
     const max = isLead ? h.skills.length : 1;
     
@@ -470,11 +442,10 @@ window.saveHeroConfig = () => {
     document.getElementById('heroModal').classList.replace('flex', 'hidden');
 };
 
+// FIXED: Now targets both DOM classes and direct IDs to prevent empty lists
 window.updateGrids = () => {
     ['atk','def','bear'].forEach(side => {
-        const containers = document.querySelectorAll(`.${side}-hero-grid`);
-        if (!containers.length) return;
-
+        const containers = document.querySelectorAll(`.${side}-hero-grid, #${side}-hero-grid`);
         containers.forEach(container => {
             container.innerHTML = '';
             state[side].heroes.forEach((h, i) => {
@@ -503,8 +474,6 @@ window.toggleAccountStats = () => {
 window.reverseEngineerAccount = () => {
     const reportType = document.getElementById('report-type').value;
     const reportHeroNames = Array.from(document.querySelectorAll('.rep-hero')).map(sel => sel.value);
-    
-    // Logic: Solo = no widgets. Rally = Offense widgets. Garrison = Defense widgets.
     const widgetCtx = reportType === 'rally' ? 'off' : (reportType === 'garrison' ? 'def' : 'none');
 
     const tBuffs = {
@@ -590,7 +559,6 @@ function renderNakedStats() {
 function gatherSetup() {
     const getStats = (side) => { 
         const obj = {}; 
-        // Important: Pull from any input with data-side=side, regardless of which tab it's in
         document.querySelectorAll(`input[data-side="${side}"][data-stat]`).forEach(i => {
             obj[i.dataset.stat] = parseFloat(i.value) || 0;
         }); 
@@ -598,7 +566,6 @@ function gatherSetup() {
     };
 
     const collect = (side) => {
-        // We use the Battle Sim container as the primary source of truth for batches
         return Array.from(document.querySelectorAll(`#${side}-batch-container > div`)).map(el => ({
             inf_tier: parseInt(el.querySelector('.batch-tier-inf').value),
             inf_tg: parseInt(el.querySelector('.batch-tg-inf').value),
@@ -643,7 +610,6 @@ window.handleSimulation = async () => {
         results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
         rWorst = results[0]; rBest = results[99];
     } else {
-        // Deterministic Range Assignment
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
@@ -675,90 +641,6 @@ window.handleSimulation = async () => {
     document.getElementById('battle-details').innerHTML = logHTML('atk', rFinal.atk_logs) + logHTML('def', rFinal.def_logs);
 };
 
-function totalInstances(heroes, name) { return heroes.filter(h => h.name === name).length; }
-function isLead(heroes, name) { return heroes.slice(0,3).some(h => h.name === name); }
-
-function getBearSpecificVolume(heroes, formation, bearConfig) {
-    // bearConfig contains: { inf_base, cav_base, arc_base, inf_acc, cav_acc, arc_acc, weights }
-    
-    let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
-    let wAtk = 1.0, wLeth = 1.0;
-
-    const lineup = {}; 
-    heroes.forEach((h, idx) => { if(h.name !== "None") lineup[h.name] = (lineup[h.name] || 0) + 1; });
-    const leadNames = Object.keys(lineup);
-    
-    // Process All 7 Heroes (Leads All, Joiners S1)
-    // Note: Bear Tab uses currently selected ATK heroes
-    state.atk.heroes.forEach((h, idx) => {
-        if (h.name === "None") return;
-        const data = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
-        const isLead = idx < 3;
-
-        // Offense Widgets (Leads Only)
-        if (isLead && data.widget && data.widget.context === 'off') {
-            const val = WIDGET_GROWTH[r.widget] || 0;
-            if (data.widget.stat === "attack") wAtk += val;
-            if (data.widget.stat === "lethality") wLeth += val;
-        }
-
-        // Skills (Only 1XX)
-        data.skills.forEach((s, si) => {
-            if (!isLead && si > 0) return; // Joiners S1 only
-            
-            const x = s.values[(r[`s${si+1}`] || 5) - 1];
-            const p = s.getChance(x), mFull = s.getMagnitude(x);
-            // S3 permanent for Alcar, otherwise 1-wave uptime
-            const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : p; 
-
-            s.ids.forEach((id, idx) => {
-                if (id >= 200) return; // Immune to debuffs
-                const m = Array.isArray(mFull) ? mFull[idx] : mFull;
-                ['inf', 'cav', 'arc'].forEach(u => {
-                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
-                    if (id === 101) m101[u] += val * uptime;
-                    if (id === 102) m102[u] += val * uptime;
-                });
-            });
-        });
-    });
-
-    const f = { inf: formation[0], cav: formation[1], arc: formation[2] };
-    let totalDmg = 0;
-
-    ['inf', 'cav', 'arc'].forEach(u => {
-        if (f[u] <= 0) return;
-        
-        // 1. Base Stats from bearConfig (UNITS table)
-        const base = bearConfig[`${u}_base`];
-        const acc = bearConfig[`${u}_acc`];
-        const w = bearConfig.weights[u];
-
-        // 2. Ability EV
-        let abil = 1.0;
-        if (u === 'arc') {
-            const effP = (0.3 * w.tg5) + (0.2 * (w.tg3 - w.tg5));
-            abil *= (1 + (effP * 0.5)); // Howling Wind
-            abil *= 1.1; // Ranged Strike (Always on vs Bear)
-        }
-        if (u === 'cav' && w.tg3 > 0) {
-            const effP = (0.15 * w.tg5) + (0.1 * (w.tg3 - w.tg5));
-            abil *= (1 + (effP * 1.0)); // Assault Lance
-        }
-
-        // 3. Final Multipliers
-        const totalAtk = base[0] * (1 + acc.att/100) * wAtk * m101[u];
-        const totalLeth = base[2] * (1 + acc.leth/100) * wLeth * m102[u];
-
-        // 4. Engine Formula
-        // sqrt(count) * 1000 * Atk * Leth * RPS(1.0) * Abil / (10 * 83.3333 * 100)
-        const d = (Math.sqrt(f[u] * 10000) * 1000 * totalAtk * totalLeth * abil) / 83333.3;
-        totalDmg += d;
-    });
-
-    return totalDmg;
-}
-
 window.runOptimizer = async (mode) => {
     const isBear = (mode === 'bear');
     const plotId = isBear ? 'bear-plot' : 'ternary-plot';
@@ -772,23 +654,19 @@ window.runOptimizer = async (mode) => {
     let best = { form: [0, 0, 0], score: -Infinity, wins: 0 };
     let dataPoints = { a: [], b: [], c: [], z: [] };
 
-    // Common setup for PVP
     const myRole = optRole;
     const oppRole = myRole === 'atk' ? 'def' : 'atk';
     let myTotal = 0;
     setup[myRole].batches.forEach(b => myTotal += (b.inf + b.cav + b.arc));
 
-    // 5151 Iterations (Step 2 for speed, 1 for precision)
     for (let i = 0; i <= 100; i += 2) {
         for (let j = 0; j <= 100 - i; j += 2) {
             const k = 100 - i - j;
             let score = 0;
 
             if (isBear) {
-                // HIGH SPEED BEAR FORMULA
                 score = calculateBearDamage(setup, [i, j, k]);
             } else {
-                // PVP SIMULATION
                 let testSetup = JSON.parse(JSON.stringify(setup));
                 testSetup[myRole].batches = [{
                     inf: (i/100)*myTotal, cav: (j/100)*myTotal, arc: (k/100)*myTotal,
@@ -826,39 +704,14 @@ window.runOptimizer = async (mode) => {
     renderTernary(plotId, dataPoints, best, isBear);
 };
 
-function calculateFitness(simResult, myRole) {
-    const mySurv = sumTroops(myRole === 'atk' ? simResult.m_cur : simResult.e_cur);
-    const oppSurv = sumTroops(myRole === 'atk' ? simResult.e_cur : simResult.m_cur);
-    
-    // Logic: Survivor Gap. 
-    // Positive means you won, Negative means you lost.
-    return mySurv - oppSurv;
-}
-
-// Helper specific to the Bear Tab's custom inputs
+// FIXED: Alcar S3 Part 2 (Global 25%) now correctly applies to Infantry
 function calculateBearDamage(setup, formation) {
     const bearConfig = {
-        inf: { 
-            tier: parseInt(document.getElementById('bear-inf-tier').value), 
-            tg: parseInt(document.getElementById('bear-inf-tg').value), 
-            att: parseFloat(document.getElementById('bear-inf-att').value)||0, 
-            leth: parseFloat(document.getElementById('bear-inf-leth').value)||0 
-        },
-        cav: { 
-            tier: parseInt(document.getElementById('bear-cav-tier').value), 
-            tg: parseInt(document.getElementById('bear-cav-tg').value), 
-            att: parseFloat(document.getElementById('bear-cav-att').value)||0, 
-            leth: parseFloat(document.getElementById('bear-cav-leth').value)||0 
-        },
-        arc: { 
-            tier: parseInt(document.getElementById('bear-arc-tier').value), 
-            tg: parseInt(document.getElementById('bear-arc-tg').value), 
-            att: parseFloat(document.getElementById('bear-arc-att').value)||0, 
-            leth: parseFloat(document.getElementById('bear-arc-leth').value)||0 
-        }
+        inf: { tier: parseInt(document.getElementById('bear-inf-tier')?.value||10), tg: parseInt(document.getElementById('bear-inf-tg')?.value||3), att: parseFloat(document.getElementById('bear-inf-att')?.value)||0, leth: parseFloat(document.getElementById('bear-inf-leth')?.value)||0 },
+        cav: { tier: parseInt(document.getElementById('bear-cav-tier')?.value||10), tg: parseInt(document.getElementById('bear-cav-tg')?.value||3), att: parseFloat(document.getElementById('bear-cav-att')?.value)||0, leth: parseFloat(document.getElementById('bear-cav-leth')?.value)||0 },
+        arc: { tier: parseInt(document.getElementById('bear-arc-tier')?.value||10), tg: parseInt(document.getElementById('bear-arc-tg')?.value||3), att: parseFloat(document.getElementById('bear-arc-att')?.value)||0, leth: parseFloat(document.getElementById('bear-arc-leth')?.value)||0 }
     };
 
-    // 1. Skill Buckets (Sum within ID, Multiply across IDs)
     let buckets = {
         inf: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
         cav: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
@@ -867,29 +720,23 @@ function calculateBearDamage(setup, formation) {
 
     state.bear.heroes.forEach(h => {
         if (h.name === "None" || !HEROES[h.name]) return;
-        
-        const d = HEROES[h.name];
-        const r = roster[h.name] || { s1: 5, s2: 5, s3: 5 };
+        const d = HEROES[h.name], r = roster[h.name] || { s1: 5, s2: 5, s3: 5 };
 
         d.skills.forEach((s, si) => {
             const lvl = r[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
-            const uptime = s.interval ? (s.duration / s.interval) : s.getChance(x);
+            const uptime = s.interval ? (2 / 10) : s.getChance(x);
             const mFull = s.getMagnitude(x);
 
             s.ids.forEach((id, idx) => {
                 if (id >= 200) return; 
-
-                // Get magnitude for this specific ID
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
                     let mag = 0;
                     if (typeof rawM === 'object' && rawM !== null) {
-                        // If it's an object, only apply if the unit key exists (Alcar S3 Part 1)
                         mag = rawM[u] || 0;
                     } else {
-                        // If it's a number, apply it to all units in the 'units' array (Alcar S3 Part 2)
                         mag = rawM;
                     }
                     
@@ -899,18 +746,16 @@ function calculateBearDamage(setup, formation) {
                 });
             });
         });
-    };
+    });
 
     let totalDamage = 0;
     ['inf', 'cav', 'arc'].forEach((u, i) => {
-        const pct = formation[i]; // Percentage (0.0 to 1.0)
+        const pct = formation[i] / 100;
         if (pct <= 0) return;
 
         const unitKey = (u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry'));
         const stats = UNITS[unitKey][bearConfig[u].tier][bearConfig[u].tg];
         
-        // 2. Attribute Calculation (Account Stats * Skill Multipliers)
-        // Multiplicative across ID buckets: (1+ID101) * (1+ID102)...
         let skillMult = 1.0;
         [101, 102, 103, 104, 105, 106].forEach(id => {
             skillMult *= (1 + buckets[u][id]);
@@ -919,10 +764,9 @@ function calculateBearDamage(setup, formation) {
         const tA = stats[0] * (1 + (bearConfig[u].att / 100)) * skillMult;
         const tL = stats[2] * (1 + (bearConfig[u].leth / 100));
 
-        // 3. Archer/Cavalry Ability Amplifiers
         let abil = 1.0;
         if (u === 'arc') {
-            abil = 1.1; // Base Archer Passive
+            abil = 1.1; 
             if (bearConfig[u].tier >= 7) abil += 0.1; 
             if (bearConfig[u].tg >= 5) abil += 0.15; 
             else if (bearConfig[u].tg >= 3) abil += 0.1; 
@@ -931,155 +775,44 @@ function calculateBearDamage(setup, formation) {
             else if (bearConfig[u].tg >= 3) abil = 1.1;
         }
 
-        // 4. Combat Formula Execution
-        // count = pct * 5000
-        // divisor = 833.333
-        // round multiplier = 10
-        // bear bonus = 1.25
         const count = pct * 5000; 
         const troopDmg = (Math.sqrt(count) * tA * tL * abil * 1.25) / 833.333;
-        
         totalDamage += (troopDmg * 10);
     });
 
     return isNaN(totalDamage) ? 0 : totalDamage;
 }
 
-function calculateBearPotentials(config) {
-    let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
-    let wAtk = 1.0, wLeth = 1.0;
-
-    state.atk.heroes.forEach((h, idx) => {
-        if (h.name === "None") return;
-        const d = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
-        const isLead = idx < 3;
-
-        if (isLead && d.widget && d.widget.context === 'off') {
-            const val = WIDGET_GROWTH[r.widget] || 0;
-            if (d.widget.stat === "attack") wAtk += val;
-            if (d.widget.stat === "lethality") wLeth += val;
-        }
-
-        d.skills.forEach((s, si) => {
-            if (!isLead && si > 0) return;
-            const x = s.values[(r[`s${si+1}`] || 5) - 1];
-            const uptime = (h.name === "Alcar" && si === 2) ? 1.0 : s.getChance(x);
-            s.ids.forEach((id, idx) => {
-                if (id >= 200) return;
-                const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idx] : s.getMagnitude(x);
-                ['inf', 'cav', 'arc'].forEach(u => {
-                    let val = (typeof m === 'object' && m !== null) ? (m[u] || 0) : m;
-                    if (id === 101) m101[u] += val * uptime;
-                    if (id === 102) m102[u] += val * uptime;
-                });
-            });
-        });
-    });
-
-    const out = {};
-    ['inf', 'cav', 'arc'].forEach(u => {
-        let abil = 1.0;
-        if (u === 'arc') abil *= (1 + ((config.weights.arc.tg5 ? 0.3 : (config.weights.arc.tg3 ? 0.2 : 0)) * 0.5)) * 1.1;
-        if (u === 'cav') abil *= (1 + ((config.weights.cav.tg5 ? 0.15 : (config.weights.cav.tg3 ? 0.1 : 0)) * 1.0));
-        
-        const tA = config[`${u}_base`][0] * (1 + config[`${u}_acc`].att/100) * wAtk * m101[u];
-        const tL = config[`${u}_base`][2] * (1 + config[`${u}_acc`].leth/100) * wLeth * m102[u];
-        out[u] = (1000 * tA * tL * abil) / 8333.33;
-    });
-    return out;
-}
-
 function renderTernary(id, data, best, isBear) {
     const traces = [
         { 
             type: 'scatterternary',
-            a: data.a,
-            b: data.b,
-            c: data.c,
-            mode: 'markers',
-            name: 'Efficiency',
-            marker: { 
-                color: data.z, 
-                colorscale: 'Viridis', 
-                size: 5, 
-                opacity: 0.8,
-                showscale: false,
-                line: { width: 0 }
-            },
+            a: data.a, b: data.b, c: data.c,
+            mode: 'markers', name: 'Efficiency',
+            marker: { color: data.z, colorscale: 'Viridis', size: 5, opacity: 0.8 },
             hoverinfo: 'none'
         },
-        // Standard Reference Point (e.g., 50/20/30)
         { 
             type: 'scatterternary',
-            a: [isBear ? 10 : 50],
-            b: [isBear ? 10 : 20],
-            c: [isBear ? 80 : 30],
-            name: 'Standard Meta',
-            mode: 'markers',
-            marker: { 
-                size: 12, 
-                symbol: 'circle-open', 
-                color: 'rgba(255,255,255,0.4)', 
-                line: { width: 2 } 
-            } 
-        },
-        // Optimal Point (The Cyan Star)
-        { 
-            type: 'scatterternary',
-            a: [best.form[0]],
-            b: [best.form[1]],
-            c: [best.form[2]],
-            name: 'Optimal',
-            mode: 'markers',
-            marker: { 
-                size: 18, 
-                symbol: 'star', 
-                color: '#00f2ff', 
-                line: { width: 1.5, color: '#080a0f' } 
-            } 
+            a: [best.form[0]], b: [best.form[1]], c: [best.form[2]],
+            name: 'Optimal', mode: 'markers',
+            marker: { size: 18, symbol: 'star', color: '#00f2ff', line: { width: 1.5, color: '#080a0f' } } 
         }
     ];
 
     const layout = {
         ternary: { 
             sum: 100,
-            aaxis: { 
-                title: 'INF', 
-                titlefont: { size: 12, color: '#3b82f6', family: 'Inter, sans-serif' }, 
-                tickfont: { color: '#64748b', size: 10 }, 
-                gridcolor: 'rgba(255,255,255,0.05)',
-                linecolor: 'rgba(255,255,255,0.1)'
-            },
-            baxis: { 
-                title: 'CAV', 
-                titlefont: { size: 12, color: '#f59e0b', family: 'Inter, sans-serif' }, 
-                tickfont: { color: '#64748b', size: 10 }, 
-                gridcolor: 'rgba(255,255,255,0.05)',
-                linecolor: 'rgba(255,255,255,0.1)'
-            },
-            caxis: { 
-                title: 'ARC', 
-                titlefont: { size: 12, color: '#10b981', family: 'Inter, sans-serif' }, 
-                tickfont: { color: '#64748b', size: 10 }, 
-                gridcolor: 'rgba(255,255,255,0.05)',
-                linecolor: 'rgba(255,255,255,0.1)'
-            },
+            aaxis: { title: 'INF', titlefont: { size: 12, color: '#3b82f6' } },
+            baxis: { title: 'CAV', titlefont: { size: 12, color: '#f59e0b' } },
+            caxis: { title: 'ARC', titlefont: { size: 12, color: '#10b981' } },
             bgcolor: 'rgba(0,0,0,0)'
         },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        margin: { l: 20, r: 20, t: 40, b: 20 },
-        showlegend: false,
-        hovermode: false,
-        font: { family: 'Inter, sans-serif' }
+        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 20, r: 20, t: 40, b: 20 }, showlegend: false
     };
 
-    const config = { 
-        displayModeBar: false, 
-        responsive: true 
-    };
-
-    Plotly.newPlot(id, traces, layout, config);
+    Plotly.newPlot(id, traces, layout, { displayModeBar: false, responsive: true });
 }
 
 // --- UPDATED SYSTEM VOLUME LOGIC ---
@@ -1109,7 +842,6 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         if (isLead) {
             const tk = h.type.toLowerCase().slice(0, 3);
             if (isCalibrated) {
-                // FIXED: GROWTH_TEMPLATES and WIDGET_STATS (Flats) are ALWAYS ON
                 const growth = (GROWTH_TEMPLATES[h.template][r.starIndex] || 0);
                 curS[tk].att += growth; curS[tk].def += growth;
                 
@@ -1118,12 +850,10 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
                     const fVal = flats[r.widget] || 0;
                     if (h.widget.stat === "lethality") curS[tk].leth += fVal;
                     if (h.widget.stat === "health") curS[tk].hp += fVal;
-                    // Add protection for widgets that might have attack/defense flats
                     if (h.widget.stat === "attack") curS[tk].att += fVal;
                     if (h.widget.stat === "defense") curS[tk].def += fVal;
                 }
             }
-            // FIXED: WIDGET_GROWTH (The 15% Multiplier) is Context Gated
             if (scenarioLabel.includes("Rally") || scenarioLabel.includes("Garrison") || scenarioLabel.includes("Bear")) {
                 if (h.widget && h.widget.context === ctx) {
                     wM[h.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
@@ -1134,8 +864,6 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         h.skills.forEach((skill, si) => {
             if (!isLead && si > 0) return;
             const x = skill.values[(isLead ? (r[`s${si+1}`]||5) : 5) - 1];
-            
-            // FIXED: Duration 1 for Bear Trap
             const dur = isBear ? 1 : (skill.duration || 1);
             let uptime = skill.interval ? Math.min(1.0, dur / skill.interval) : (skill.getChance(x));
             if (dur > 1 && !skill.interval) uptime = 1 - Math.pow(1 - uptime, dur);
@@ -1159,8 +887,6 @@ function getSystemVolume(leads, joiners, formation, ctx, isBear, scenarioLabel) 
         const stats = curS[u];
         const mult = (1 + b[u][101]) * (1 + b[u][102]) * (1 + b[u][103]) * (1 + b[u][104]) * (1 + b[u][105]) * (1 + b[u][106]);
         const unitBaseAtk = u === 'inf' ? 472 : (u === 'cav' ? 1416 : 1888);
-        
-        // Damage = sqrt(count) * BaseAtk * Stats * Multipliers
         return Math.sqrt(f[idx] * 1000000) * unitBaseAtk * (1 + stats.att/100) * wM.attack * (1 + stats.leth/100) * wM.lethality * mult;
     };
     
@@ -1186,7 +912,6 @@ window.calculateOptimalLineups = async () => {
     resArea.classList.remove('hidden');
     resArea.innerHTML = `<div class="col-span-full p-12 text-center text-blue-500 animate-pulse font-black uppercase tracking-widest">Calculating Scientific Peak...</div>`;
 
-    // Whitelist and Pivots
     const jPool = ["Saul", "Hilde", "Alcar", "Chenko", "Amane", "Howard", "Gordon", "Fahd", "Eric"];
     const pivots = [[50,20,30], [70,30,0], [60,20,20], [33,33,34], [50,0,50], [60,40,0], [10,10,80]];
 
@@ -1195,7 +920,6 @@ window.calculateOptimalLineups = async () => {
         Cav: unlocked.filter(n => HEROES[n].type === "Cav"),
         Arc: unlocked.filter(n => HEROES[n].type === "Arc")
     };
-    // Ensure we have at least "None" to prevent loop crashes
     ['Inf', 'Cav', 'Arc'].forEach(t => { if(byT[t].length === 0) byT[t] = ["None"]; });
 
     const scenarios = [
@@ -1210,7 +934,6 @@ window.calculateOptimalLineups = async () => {
     resArea.innerHTML = '';
 
     for (const s of scenarios) {
-        // 1. Calculate Peak Baseline (No Heroes)
         let baselinePeak = 0;
         pivots.forEach(p => {
             const v = getSystemVolume(["None","None","None"], [], p, s.ctx, s.bear, s.l);
@@ -1218,22 +941,18 @@ window.calculateOptimalLineups = async () => {
         });
 
         let candidates = [];
-
-        // 2. Step through Leader Combinations (Strict 1 per type)
          for (let i of byT.Inf) {
             for (let c of byT.Cav) {
                 for (let a of byT.Arc) {
                     const leads = [i, c, a];
                     let curJ = [];
 
-                    // JOINER GREEDY FILL
                     if (s.rally) {
                         for (let slot=0; slot<4; slot++) {
                             let bj = "None", bestSlotV = -1;
                             jPool.forEach(heroName => {
                                 let peakWithCandidate = -1;
                                 pivots.forEach(p => {
-                                    // FIXED: Passing correct flags to getSystemVolume
                                     const v = getSystemVolume(leads, [...curJ, heroName], p, s.ctx, s.bear, s.l);
                                     if (v > peakWithCandidate) peakWithCandidate = v;
                                 });
@@ -1246,7 +965,6 @@ window.calculateOptimalLineups = async () => {
                         }
                     }
 
-                    // Calculate the final Peak Volume for this team across benchmark pivots
                     let finalPeakVolume = -1;
                     pivots.forEach(p => {
                         const v = getSystemVolume(leads, curJ, p, s.ctx, s.bear, s.l);
@@ -1258,11 +976,9 @@ window.calculateOptimalLineups = async () => {
             }
         }
 
-        // 4. Final 2% Resolution Deep Dive for Top 3
         candidates.sort((a,b) => b.score - a.score);
         const top3Final = candidates.slice(0, 3).map(team => {
             let sweepBestVol = -1;
-            // High-res sweep to find the absolute ceiling
             for (let fI = 0; fI <= 100; fI += 2) {
                 for (let fC = 0; fC <= 100 - fI; fC += 2) {
                     const fA = 100 - fI - fC;
@@ -1270,10 +986,9 @@ window.calculateOptimalLineups = async () => {
                     if (v > sweepBestVol) sweepBestVol = v;
                 }
             }
-            return { ...team, gain: sweepBestVol / baselinePeak };
+            return { ...team, gain: sweepBestVol / (baselinePeak||1) };
         });
 
-        // 5. Render
         renderScenarioResults(s.l, top3Final, resArea);
     }
 };
@@ -1284,7 +999,6 @@ function renderScenarioResults(title, top3, container) {
     card.innerHTML = `<div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6">${title}</div>`;
 
     top3.forEach((team, rk) => {
-        // Group joiners for clean display (e.g., Saul x2)
         const joinerMap = {};
         team.joiners.forEach(j => { if(j !== "None") joinerMap[j] = (joinerMap[j] || 0) + 1; });
         const joinerText = Object.entries(joinerMap).map(([name, count]) => `${name}${count > 1 ? ' x' + count : ''}`).join(', ');
@@ -1310,44 +1024,6 @@ function renderScenarioResults(title, top3, container) {
     container.appendChild(card);
 }
 
-function renderOptimizerCard(scenario, best, container) {
-    const card = document.createElement('div');
-    card.className = "glass-card p-6 border-t-2 border-blue-500 flex flex-col md:flex-row justify-between items-center gap-4 mb-4";
-    
-    card.innerHTML = `
-        <div class="flex flex-col md:flex-row items-center gap-6 w-full">
-            <div class="text-center md:text-left min-w-[140px]">
-                <div class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">${scenario.l}</div>
-                <div class="text-2xl font-black text-white">${best.score.toFixed(3)}x</div>
-            </div>
-            <div class="flex -space-x-3">
-                ${best.leaders.map(n => n !== "None" ? `
-                    <div class="w-14 h-14 rounded-full border-2 border-blue-500 bg-slate-800 overflow-hidden shadow-lg z-10">
-                        <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.opacity='0'">
-                        <span class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/20">${n[0]}</span>
-                    </div>
-                ` : '').join('')}
-            </div>
-            ${best.joiners.length > 0 ? `
-                <div class="flex flex-wrap gap-1 justify-center opacity-60">
-                    ${best.joiners.map(n => n !== "None" ? `
-                        <div class="w-10 h-10 rounded-full border border-slate-700 bg-slate-900 overflow-hidden relative">
-                            <img src="./assets/${n.toLowerCase()}.png" class="w-full h-full object-cover" onerror="this.style.opacity='0'">
-                            <span class="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white/10">${n[0]}</span>
-                        </div>
-                    ` : '').join('')}
-                </div>
-            ` : ''}
-        </div>
-    `;
-    container.appendChild(card);
-}
-
-function calcPowerScore(leaders, joiners, ctx, isRally, isBear) {
-    const scenario = isBear ? "Bear Trap" : (isRally ? "Rally" : "Solo");
-    return getSystemVolume(leaders, joiners, [33, 33, 34], ctx, isBear, scenario);
-}
-
-document.getElementById('heroModal').addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
+document.getElementById('heroModal')?.addEventListener('mousedown', (e) => { if (e.target.id === 'heroModal') document.getElementById('heroModal').classList.replace('flex', 'hidden'); });
 
 document.addEventListener('DOMContentLoaded', window.init);
