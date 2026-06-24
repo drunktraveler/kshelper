@@ -843,22 +843,47 @@ function calculateBearDamage(setup, formation) {
         arc: { tier: document.getElementById('bear-arc-tier').value, tg: document.getElementById('bear-arc-tg').value, att: parseFloat(document.getElementById('bear-arc-att').value)||0, leth: parseFloat(document.getElementById('bear-arc-leth').value)||0 }
     };
 
-    let b = { inf: {101:0, 102:1}, cav: {101:0, 102:1}, arc: {101:0, 102:1} };
+    // Initialize buckets with 1.0 for multiplicative scaling
+    let b = { 
+        inf: { 101: 0, mult: 1.0 }, 
+        cav: { 101: 0, mult: 1.0 }, 
+        arc: { 101: 0, mult: 1.0 } 
+    };
     let wM = { attack: 1.0, lethality: 1.0 };
 
     state.bear.heroes.forEach(h => {
-        if (h.name === "None") return;
-        const d = HEROES[h.name], r = roster[h.name] || { s1:5, s2:5, s3:5, widget:10 };
-        if (d.widget && d.widget.context === 'off') wM[d.widget.stat] += (WIDGET_GROWTH[r.widget]||0);
+        if (h.name === "None" || !HEROES[h.name]) return;
+        
+        const d = HEROES[h.name];
+        const r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
+
+        // 1. Process Widgets
+        if (d.widget && d.widget.context === 'off') {
+            wM[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
+        }
+
+        // 2. Process Skills (Correctly handling Alcar's Objects)
         d.skills.forEach((s, si) => {
-            const x = s.values[(r[`s${si+1}`]||5)-1];
-            const uptime = s.interval ? (s.duration/s.interval) : s.getChance(x);
+            const lvl = r[`s${si+1}`] || 5;
+            const x = s.values[lvl - 1];
+            const uptime = s.interval ? (s.duration / s.interval) : s.getChance(x);
+            const mFull = s.getMagnitude(x);
+
             s.ids.forEach((id, idx) => {
-                if (id >= 200) return;
-                const m = Array.isArray(s.getMagnitude(x)) ? s.getMagnitude(x)[idx] : s.getMagnitude(x);
+                if (id >= 200) return; // Ignore survival skills for Bear
+
+                const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
+
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
-                    if (id === 101) b[u][101] += (m * uptime);
-                    else b[u][102] *= (1 + (m * uptime));
+                    // FIX: Check if magnitude is an object (Alcar/Hilde style) or a number
+                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                    
+                    if (id === 101) {
+                        b[u][101] += (mag * uptime);
+                    } else {
+                        // All other 1xx IDs (102, 103, 104, 105, 106) are multiplicative
+                        b[u].mult *= (1 + (mag * uptime));
+                    }
                 });
             });
         });
@@ -866,14 +891,29 @@ function calculateBearDamage(setup, formation) {
 
     let total = 0;
     ['inf', 'cav', 'arc'].forEach((u, i) => {
-        if (formation[i] <= 0) return;
-        const stats = UNITS[u==='arc'?'archers':(u==='inf'?'infantry':'cavalry')][bearConfig[u].tier][bearConfig[u].tg];
-        const tA = stats[0] * (1 + (bearConfig[u].att/100) + b[u][101]) * b[u][102] * wM.attack;
-        const tL = stats[2] * (1 + (bearConfig[u].leth/100)) * wM.lethality;
-        let abil = (u === 'arc' ? 1.1 : (u === 'cav' && bearConfig[u].tg >= 3 ? 1.1 : 1.0));
-        total += (Math.sqrt(formation[i] * 10000) * 1000 * tA * tL * abil) / 8333.33;
+        const pct = formation[i];
+        if (pct <= 0) return;
+
+        const longU = (u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry'));
+        const stats = UNITS[longU][bearConfig[u].tier][bearConfig[u].tg];
+        
+        // Attack Formula: Base * (1 + AccAtk% + SkillAdd%) * SkillMults * WidgetMults
+        const tA = stats[0] * (1 + (bearConfig[u].att / 100) + b[u][101]) * b[u].mult * wM.attack;
+        
+        // Lethality Formula: Base * (1 + AccLeth%) * WidgetLethMult
+        const tL = stats[2] * (1 + (bearConfig[u].leth / 100)) * wM.lethality;
+
+        // Hidden Unit Passives (Ranged Strike / Assault Lance)
+        let abil = 1.0;
+        if (u === 'arc') abil = 1.1;
+        if (u === 'cav' && bearConfig[u].tg >= 3) abil = (bearConfig[u].tg >= 5 ? 1.15 : 1.1);
+
+        // Standard Combat Denominator
+        const troopDmg = (Math.sqrt(pct * 10000) * 1000 * tA * tL * abil) / 8333.33;
+        total += troopDmg;
     });
-    return total;
+
+    return isNaN(total) ? 0 : total;
 }
 
 function calculateBearPotentials(config) {
