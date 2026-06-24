@@ -899,6 +899,7 @@ function calculateBearDamage(setup, formation) {
                 });
             });
         });
+    };
 
     let totalDamage = 0;
     ['inf', 'cav', 'arc'].forEach((u, i) => {
