@@ -53,63 +53,77 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             const oT = triggers[opp];
 
             ['inf', 'cav', 'arc'].forEach(u => {
-                if (self_cur[u] <= 0) return;
+                const count = self_cur[u];
+                if (count <= 1) return;
 
                 // --- A. TARGETING & BYPASS (Ambusher) ---
                 let target = opp_cur.inf > 1 ? 'inf' : (opp_cur.cav > 1 ? 'cav' : 'arc');
+                if (opp_cur[target] <= 0) return; 
+
                 let bypassActive = false;
-                
-                // Ambusher: 20% to bypass Inf/Cav to hit Arc
                 if (u === 'cav' && selfP.weights.cav.t7 > 0 && opp_cur.arc > 1 && target !== 'arc') {
                     const bypassRate = 0.20 * selfP.weights.cav.t7;
                     if (isStochastic) {
-                        if (Math.random() < bypassRate) { target = 'arc'; bypassActive = true; sT['Ambusher'] = (sT['Ambusher']||0)+1; }
+                        if (Math.random() < bypassRate) { 
+                            target = 'arc'; bypassActive = true; sT['Ambusher'] = (sT['Ambusher']||0)+1; 
+                        }
                     } else { bypassActive = true; }
                 }
 
-                ['inf', 'cav', 'arc'].forEach(u => {
-        if (self_cur[u] <= 0) return;
+                // --- B. OFFENSIVE ABILITIES ---
+                let offMod = 1.0;
+                if (u === 'arc') {
+                    const vRate = 0.10 * selfP.weights.arc.t7; // Volley
+                    if (isStochastic) { if(Math.random() < vRate) { offMod *= 2.0; sT['Volley'] = (sT['Volley']||0)+1; } }
+                    else { offMod *= (1 + vRate); }
 
-        // ... Ability Procs (Volley, Assault Lance, etc.) remain same ...
+                    const hwRate = (selfP.weights.arc.tg5 > 0 ? 0.30 : (selfP.weights.arc.tg3 > 0 ? 0.20 : 0)) * (selfP.weights.arc.tg5 || selfP.weights.arc.tg3);
+                    if (isStochastic) { if(Math.random() < hwRate) { offMod *= 1.5; sT['Howling Wind'] = (sT['Howling Wind']||0)+1; } }
+                    else { offMod *= (1 + (hwRate * 0.5)); }
+                }
+                if (u === 'cav') {
+                    const alRate = (selfP.weights.cav.tg5 > 0 ? 0.15 : (selfP.weights.cav.tg3 > 0 ? 0.10 : 0)) * (selfP.weights.cav.tg5 || selfP.weights.cav.tg3);
+                    if (isStochastic) { if(Math.random() < alRate) { offMod *= 2.0; sT['Assault Lance'] = (sT['Assault Lance']||0)+1; } }
+                    else { offMod *= (1 + alRate); }
+                }
 
-        // 1. RPS Logic (Offensive Multipliers)
-        let rps = 1.0;
-        if (u === 'inf' && target === 'cav') rps = 1.10; 
-        if (u === 'cav' && target === 'arc') rps = 1.10; 
-        if (u === 'arc' && target === 'inf') rps = 1.10; 
+                // --- C. RPS & DEFENSE ---
+                let rps = 1.0;
+                if (u === 'inf' && target === 'cav') rps = 1.10; // Master Brawler
+                if (u === 'cav' && target === 'arc') rps = 1.10; // Charge
+                if (u === 'arc' && target === 'inf') rps = 1.10; // Ranged Strike
 
-        // 2. The Corrected Formula
-        const b = buckets[side][u];
-        const ob = buckets[opp][target];
+                let defMod = 1.0;
+                if (target === 'inf' && u === 'cav' && oppP.weights.inf.t7 > 0) defMod *= 1.10; // Bands of Steel
+                if (target === 'inf') {
+                    const usRate = (oppP.weights.inf.tg5 > 0 ? 0.375 : (oppP.weights.inf.tg3 > 0 ? 0.25 : 0)) * (oppP.weights.inf.tg5 || oppP.weights.inf.tg3);
+                    if (isStochastic) { if(Math.random() < usRate) { defMod *= (1 / 0.64); oT['Unyielding Shield'] = (oT['Unyielding Shield']||0)+1; } }
+                    else { defMod *= (1 / (1 - (usRate * 0.36))); }
+                }
 
-        // Offense: Base * AccStat * HeroBuckets * AbilityProcs
-        const totalOff = selfP.avgBase[u].atk * (setup[side].stats[`${u}_att`]/100) * 
-                         (1+b[101]) * (1+b[102]) * (1+b[103]) * (1+b[104]) * (1+b[105]) * (1+b[106]) * offMod;
-        
-        const totalLeth = (setup[side].stats[`${u}_leth`]/100) * selfP.avgBase[u].leth;
-        
-        // EffHP: (Hero Defense) * (Account Def * Base Def) * (Account HP * Base HP) * DefAbilities
-        const heroDefMult = (1+ob[201]) * (1+ob[202]) * (1+ob[203]) * (1+ob[204]) * (1+ob[205]);
-        const effHP = heroDefMult * (setup[opp].stats[`${target}_def`]/100) * oppP.avgBase[target].def * 
-                      (setup[opp].stats[`${target}_hp`]/100) * oppP.avgBase[target].hp * defMod;
+                // --- D. CALCULATION ---
+                const b = buckets[side][u];
+                const ob = buckets[opp][target];
+                const statsS = setup[side].stats;
+                const statsO = setup[opp].stats;
 
-        // Damage Result (Multiplied by RPS as an offensive modifier)
-        let finalDmg = (Math.sqrt(self_cur[u]) * army_min_sqrt * totalOff * totalLeth) / (effHP || 1) * rps * 100;
+                const totalOff = selfP.avgBase[u].atk * (statsS[`${u}_att`]/100) * (1+b[101]) * (1+b[102]) * (1+b[103]) * (1+b[104]) * (1+b[105]) * (1+b[106]) * offMod;
+                const totalLeth = (statsS[`${u}_leth`]/100) * selfP.avgBase[u].leth;
+                
+                const heroDefMult = (1+ob[201]) * (1+ob[202]) * (1+ob[203]) * (1+ob[204]) * (1+ob[205]);
+                const effHP = heroDefMult * (statsO[`${target}_def`]/100) * oppP.avgBase[target].def * (statsO[`${target}_hp`]/100) * oppP.avgBase[target].hp * defMod;
 
-        // 3. Clamping (Overkill Handling)
-        // Ensure we don't "kill" more troops than exist in the current target stack
-        const currentTargetCount = opp_cur[target];
-        const actualLoss = Math.min(currentTargetCount, finalDmg);
-        
-        // Special Ambusher Bypass Handling
-        if (!isStochastic && bypassActive && u === 'cav' && opp_cur.arc > 0) {
-            losses[opp]['arc'] += Math.min(opp_cur.arc, finalDmg * 0.20);
-            losses[opp][target] += Math.min(opp_cur[target], finalDmg * 0.80);
-        } else {
-            losses[opp][target] += actualLoss;
-        }
-    });
-};
+                let finalDmg = (Math.sqrt(count) * army_min_sqrt * totalOff * totalLeth) / (effHP || 1) * rps * 100;
+
+                // Clamping/Overkill and Simultaneous application
+                if (!isStochastic && bypassActive && u === 'cav' && opp_cur.arc > 1) {
+                    losses[opp]['arc'] += Math.min(opp_cur.arc - losses[opp]['arc'], finalDmg * 0.20);
+                    losses[opp][target] += Math.min(opp_cur[target] - losses[opp][target], finalDmg * 0.80);
+                } else {
+                    losses[opp][target] += Math.min(opp_cur[target] - losses[opp][target], finalDmg);
+                }
+            });
+        };
 
         runSide('atk', 'def', m_cur, e_cur, atkP, defP);
         if (!isBear) runSide('def', 'atk', e_cur, m_cur, defP, atkP);
@@ -130,15 +144,12 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
 function createBuckets() { return { 101:0, 102:0, 103:0, 104:0, 105:0, 106:0, 201:0, 202:0, 203:0, 204:0, 205:0 }; }
 
 function applyToBucket(buckets, skill, uptime) {
-    const affectedUnits = skill.units || ["inf", "cav", "arc"];
+    const units = skill.units || ["inf", "cav", "arc"];
     skill.ids.forEach((id, idx) => {
         const rawM = Array.isArray(skill.m) ? skill.m[idx] : skill.m;
-        affectedUnits.forEach(u => {
+        units.forEach(u => {
             let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-            let final = mag * (skill.instances || 1) * uptime;
-            if (id === 101 || id === 201) buckets[u][id] += final;
-            else if (id === 250) buckets[u][id] = Math.max(buckets[u][id], final); // Dodge is usually max-value
-            else buckets[u][id] *= (1 + final);
+            buckets[u][id] += (mag * (skill.instances || 1) * uptime);
         });
     });
 }
@@ -168,6 +179,47 @@ function processBatches(batches) {
         } 
     });
     return { counts: totals, avgBase, weights };
+}
+
+function getHeroData(sideSetup) {
+    const lineup = {}; 
+    sideSetup.heroes.forEach((h, index) => {
+        if (h.name === "None" || !HEROES[h.name]) return;
+        if (!lineup[h.name]) lineup[h.name] = { lead: 0, joiner: 0, data: HEROES[h.name], levels: { s1: h.s1, s2: h.s2, s3: h.s3 } };
+        if (index < 3) lineup[h.name].lead++; else lineup[h.name].joiner++;
+    });
+
+    let passives = [], actives = [];
+    for (const name in lineup) {
+        const h = lineup[name];
+        h.data.skills.forEach((s, si) => {
+            const instances = h.lead + (si === 0 ? h.joiner : 0);
+            if (instances === 0) return;
+            const lvl = h.levels[`s${si+1}`] || 5;
+            const x = s.values[lvl - 1];
+            if (x === undefined) return;
+            const p = s.getChance(x);
+            const m = s.getMagnitude(x);
+            const skillObj = { name: `${name} S${si+1}`, p, m, ids: s.ids, duration: s.duration || 1, instances, units: s.units };
+            if (p >= 1.0) passives.push(skillObj); else actives.push(skillObj);
+        });
+    }
+    return { passives, actives };
+}
+
+function finalizeLogs(side, triggers, hData, pData, oppP, isStochastic) {
+    let list = [];
+    [...hData.passives, ...hData.actives].forEach(act => {
+        const isP = act.p >= 1.0;
+        let val = isP ? "Passive" : (isStochastic ? `Procs: ${triggers[side][act.name] || 0}` : `Avg Proc: ${(act.p * 100).toFixed(0)}%`);
+        list.push({ name: act.name, val, isPassive: isP });
+    });
+    ["Ambusher", "Volley", "Howling Wind", "Assault Lance", "Unyielding Shield"].forEach(n => {
+        if (triggers[side][n] || (!isStochastic && n !== "Ambusher")) {
+            list.push({ name: n, val: isStochastic ? `Procs: ${triggers[side][n] || 0}` : "Active", isPassive: !isStochastic });
+        }
+    });
+    return { skills: list, troopEff: `Inf ${ (pData.weights.inf.tg3*100).toFixed(0) }% | Cav ${ (pData.weights.cav.tg3*100).toFixed(0) }% | Arc ${ (pData.weights.arc.tg3*100).toFixed(0) }%` };
 }
 
 function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, triggerTracker) {
@@ -263,72 +315,4 @@ function getMultipliers(sideSetup, luckMode, shiftFn, isOptimizing, isBear, trig
         return m; 
     };
     return { selfMult: calc(selfPool), enemyMult: calc(enemyPool), logs };
-}
-
-function getHeroData(sideSetup) {
-    const lineup = {}; 
-    sideSetup.heroes.forEach((h, index) => {
-        if (h.name === "None" || !HEROES[h.name]) return;
-        if (!lineup[h.name]) {
-            lineup[h.name] = { lead: 0, joiner: 0, data: HEROES[h.name], levels: { s1: h.s1, s2: h.s2, s3: h.s3 } };
-        }
-        if (index < 3) lineup[h.name].lead++; else lineup[h.name].joiner++;
-    });
-
-    let passives = [], actives = [];
-    for (const name in lineup) {
-        const h = lineup[name];
-        h.data.skills.forEach((s, si) => {
-            const instances = h.lead + (si === 0 ? h.joiner : 0);
-            if (instances === 0) return;
-            const lvl = h.levels[`s${si+1}`] || 5;
-            const x = s.values[lvl - 1];
-            if (x === undefined) return;
-            const p = s.getChance(x);
-            const m = s.getMagnitude(x);
-
-            const skillObj = { 
-                name: `${name} S${si+1}`, p, m, ids: s.ids, 
-                duration: s.duration || 1, instances,
-                units: s.units || null,
-                minWave: s.minWave || 0,
-                interval: s.interval || 0
-            };
-            if (p >= 1.0) passives.push(skillObj); else actives.push(skillObj);
-        });
-    }
-    return { passives, actives };
-}
-
-function finalizeLogs(side, triggers, hData, pData, oppP, isStochastic) {
-    let list = [];
-    
-    // 1. Hero Skills
-    [...hData.passives, ...hData.actives].forEach(act => {
-        const isP = act.p >= 1.0;
-        let val = isP ? "Passive" : (isStochastic ? `Triggers: ${triggers[side][act.name] || 0}` : `Avg Proc: ${(act.p * 100).toFixed(0)}%`);
-        list.push({ name: act.name, val, isPassive: isP });
-    });
-
-    // 2. Troop Abilities
-    const troopAbilities = [
-        { name: "Cavalry Ambusher", cond: pData.weights.cav.t7 > 0.5 },
-        { name: "Archer Volley", cond: pData.weights.arc.t7 > 0.5 },
-        { name: "Infantry Bands of Steel", cond: pData.weights.inf.t7 > 0.5 },
-        { name: "Infantry Unyielding Shield", cond: pData.weights.inf.tg3 > 0.5 },
-        { name: "Cavalry Assault Lance", cond: pData.weights.cav.tg3 > 0.5 },
-        { name: "Archer Howling Wind", cond: pData.weights.arc.tg3 > 0.5 }
-    ];
-
-    troopAbilities.forEach(abil => {
-        if (abil.cond) {
-            let val = isStochastic ? `Triggers: ${triggers[side][abil.name] || 0}` : "Active";
-            list.push({ name: abil.name, val, isPassive: !isStochastic });
-        }
-    });
-
-    return { 
-        skills: list, 
-        troopEff: `Inf ${ (pData.weights.inf.tg3*100).toFixed(0) }% | Cav ${ (pData.weights.cav.tg3*100).toFixed(0) }% | Arc ${ (pData.weights.arc.tg3*100).toFixed(0) }%` 
-    };
 }
