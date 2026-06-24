@@ -625,32 +625,35 @@ window.handleSimulation = async () => {
             Duration: ${rFinal.wave} Phases`;
     }
 
-    // --- FIX: DEFINE VARIABLES FOR UI AND LUCK BAR ---
-    const sAtk = Math.floor(sumTroops(rFinal.m_cur));
-    const sDef = Math.floor(sumTroops(rFinal.e_cur));
-    
-    // UI Updates (Integers)
-    document.getElementById('result-screen').classList.remove('hidden');
-    document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
-    document.getElementById('res-def-total').innerText = sDef.toLocaleString();
-    
-    // Range Labels (Using the 5th and 95th Percentile results)
-    document.getElementById('res-atk-range').innerText = `Range: ${Math.floor(sumTroops(rWorst.m_cur)).toLocaleString()} - ${Math.floor(sumTroops(rBest.m_cur)).toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${Math.floor(sumTroops(rBest.e_cur)).toLocaleString()} - ${Math.floor(sumTroops(rWorst.e_cur)).toLocaleString()}`;
+    // 1. Calculate survivors for the median run
+const sAtk = Math.floor(sumTroops(rFinal.m_cur));
+const sDef = Math.floor(sumTroops(rFinal.e_cur));
 
-    // Luck Bar Logic
-    // We get the total starting troops of the first batch for a baseline scale
-    const totalStartAtk = sumTroops(setup.atk.batches[0]);
-    const totalStartDef = sumTroops(setup.def.batches[0]);
-    const totalStart = totalStartAtk + totalStartDef;
+// 2. Update the Big Numbers
+document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
+document.getElementById('res-def-total').innerText = sDef.toLocaleString();
 
-    const score = (sAtk - sDef) / (totalStart || 1);
-    const bar = document.getElementById('luck-bar-inner');
-    if (bar) {
-        bar.style.left = "50%"; 
-        bar.style.width = Math.abs(score * 50) + "%";
-        bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
-    }
+// 3. Update the Range (5th/95th Percentile)
+const atkLow = Math.floor(sumTroops(rWorst.m_cur));
+const atkHigh = Math.floor(sumTroops(rBest.m_cur));
+const defLow = Math.floor(sumTroops(rBest.e_cur));
+const defHigh = Math.floor(sumTroops(rWorst.e_cur));
+
+document.getElementById('res-atk-range').innerText = `Range: ${atkLow.toLocaleString()} - ${atkHigh.toLocaleString()}`;
+document.getElementById('res-def-range').innerText = `Range: ${defLow.toLocaleString()} - ${defHigh.toLocaleString()}`;
+
+// 4. Fix the Luck Bar (Scale based on the army that lost the most)
+const totalAtkStart = sumTroops(setup.atk.batches[0]);
+const totalDefStart = sumTroops(setup.def.batches[0]);
+// Score represents the delta of % remaining
+const atkPct = sAtk / totalAtkStart;
+const defPct = sDef / totalDefStart;
+const barScore = atkPct - defPct;
+
+const bar = document.getElementById('luck-bar-inner');
+bar.style.left = "50%";
+bar.style.width = (Math.abs(barScore) * 50) + "%";
+bar.style.transform = barScore < 0 ? "translateX(-100%)" : "translateX(0%)";
 
     // Combat Detail Rendering
     const logHTML = (side, data) => `
