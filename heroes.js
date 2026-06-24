@@ -36,7 +36,12 @@ export const HEROES = {
         skills: [
             { name: "Rescuing Hands", ids: [201], units: ["inf", "arc"], values: [14, 28, 42, 56, 70], getChance: (X) => 1.0, getMagnitude: (X) => X / 100, minWave: 5, interval: 5, duration: 2 },
             { name: "Praetorian Will", ids: [104], units: ["inf", "cav", "arc"], values: [20, 40, 60, 80, 100], getChance: (X) => 1.0, getMagnitude: (X) => ({ inf: X/100, cav: X/1000, arc: X/1000 }), duration: 0 },
-            { name: "Carpe Diem", ids: [105, 106], units: ["inf", "cav", "arc"], values: [12, 24, 36, 48, 60], getChance: (X) => 1.0, getMagnitude: (X) => [{ inf: X/100 }, { cav: (X * 0.4166) / 100, arc: (X * 0.4166) / 100 }], duration: 0 }
+            { name: "Carpe Diem", ids: [105, 106], units: ["inf", "cav", "arc"], values: [12, 24, 36, 48, 60], getChance: (X) => 1.0, getMagnitude: (X) => [
+                    { inf: X/100 },           // Part 1: 60% to Infantry only (ID 105)
+                    (X * 0.4166) / 100        // Part 2: 25% to ALL units (ID 106)
+                ], 
+                duration: 0 
+            }
         ]
     },
     "Margot": {
