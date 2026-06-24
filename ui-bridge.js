@@ -858,40 +858,43 @@ function calculateBearDamage(setup, formation) {
         }
     };
 
-    // 1. Initialize distinct ID buckets. 
-    // Skills within the same ID add together. Different IDs multiply.
+    // 1. Skill Buckets (Sum within ID, Multiply across IDs)
     let buckets = {
         inf: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
         cav: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
         arc: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 }
     };
-    let wM = { attack: 1.0, lethality: 1.0 };
 
     state.bear.heroes.forEach(h => {
         if (h.name === "None" || !HEROES[h.name]) return;
         
         const d = HEROES[h.name];
-        const r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
-
-        if (d.widget && d.widget.context === 'off') {
-            wM[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
-        }
+        const r = roster[h.name] || { s1: 5, s2: 5, s3: 5 };
 
         d.skills.forEach((s, si) => {
             const lvl = r[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
-            // Bear uptime: Use periodic ratio or proc chance
-            const uptime = s.interval ? (s.duration / s.interval) : s.getChance(x);
+            
+            // BEAR UPTIME LOGIC
+            let uptime = 0;
+            if (s.interval) {
+                // Periodic Logic (e.g., Alcar): Duration is set to 1.
+                // In 10 rounds, if it triggers every 5, it hits on round 5 and 10.
+                // Uptime = 2 triggers / 10 rounds = 0.2
+                uptime = 2 / 10; 
+            } else {
+                // Random Logic: Bear sets duration to 1. 
+                // Probability of proc in any given round is simply p.
+                uptime = s.getChance(x);
+            }
+
             const mFull = s.getMagnitude(x);
-
             s.ids.forEach((id, idx) => {
-                if (id >= 200) return; // Ignore survival IDs
-
+                if (id >= 200) return; // Skip survival
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
                     let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    // Additive within the same ID bucket
                     if (buckets[u][id] !== undefined) {
                         buckets[u][id] += (mag * uptime);
                     }
@@ -900,48 +903,50 @@ function calculateBearDamage(setup, formation) {
         });
     });
 
-    let total = 0;
+    let totalDamage = 0;
     ['inf', 'cav', 'arc'].forEach((u, i) => {
-        const pct = formation[i];
+        const pct = formation[i]; // Percentage (0.0 to 1.0)
         if (pct <= 0) return;
 
         const unitKey = (u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry'));
         const stats = UNITS[unitKey][bearConfig[u].tier][bearConfig[u].tg];
         
-        // 2. Multiplicative logic across ID buckets
-        // Formula: AccountStats * (1 + SumID101) * (1 + SumID102) ...
-        let finalAtkMult = (1 + (bearConfig[u].att / 100)) * wM.attack;
+        // 2. Attribute Calculation (Account Stats * Skill Multipliers)
+        // Multiplicative across ID buckets: (1+ID101) * (1+ID102)...
+        let skillMult = 1.0;
         [101, 102, 103, 104, 105, 106].forEach(id => {
-            finalAtkMult *= (1 + buckets[u][id]);
+            skillMult *= (1 + buckets[u][id]);
         });
 
-        const tA = stats[0] * finalAtkMult;
-        const tL = stats[2] * (1 + (bearConfig[u].leth / 100)) * wM.lethality;
+        const tA = stats[0] * (1 + (bearConfig[u].att / 100)) * skillMult;
+        const tL = stats[2] * (1 + (bearConfig[u].leth / 100));
 
-        // 3. Archer Ability Amplifiers
+        // 3. Archer/Cavalry Ability Amplifiers
         let abil = 1.0;
         if (u === 'arc') {
             abil = 1.1; // Base Archer Passive
-            if (bearConfig[u].tier >= 7) abil += 0.1; // T7 Ability
-            if (bearConfig[u].tg >= 5) abil += 0.15; // TG5 Tech
-            else if (bearConfig[u].tg >= 3) abil += 0.1; // TG3 Tech
+            if (bearConfig[u].tier >= 7) abil += 0.1; 
+            if (bearConfig[u].tg >= 5) abil += 0.15; 
+            else if (bearConfig[u].tg >= 3) abil += 0.1; 
         } else if (u === 'cav') {
             if (bearConfig[u].tg >= 5) abil = 1.15; 
             else if (bearConfig[u].tg >= 3) abil = 1.1;
         }
 
-        // 4. Final Formula Adjustments
-        // - Use actual troop count (5000 base for bear)
-        // - Replace 1000 flat with 1.25 (Bear 25% dmg bonus)
-        // - Correct divisor to 83333.3
-        const count = pct * 5000;
-        const troopDmg = (Math.sqrt(count) * tA * tL * abil * 1.25) / 83333.3;
+        // 4. Combat Formula Execution
+        // count = pct * 5000
+        // divisor = 833.333
+        // round multiplier = 10
+        // bear bonus = 1.25
+        const count = pct * 5000; 
+        const troopDmg = (Math.sqrt(count) * tA * tL * abil * 1.25) / 833.333;
         
-        total += troopDmg;
+        totalDamage += (troopDmg * 10);
     });
 
-    return isNaN(total) ? 0 : total;
+    return isNaN(totalDamage) ? 0 : totalDamage;
 }
+
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let wAtk = 1.0, wLeth = 1.0;
