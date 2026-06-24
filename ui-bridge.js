@@ -593,22 +593,28 @@ window.handleSimulation = async () => {
     let winAtk = 0, winDef = 0, winRateText = "";
 
     if (mode === 'monte-carlo') {
-        let results = [], sumAtkWins = 0, sumDefWins = 0;
-        for (let i = 0; i < 100; i++) {
-            const r = runCombatSim(setup, 'stochastic', 'stochastic');
-            const aV = sumTroops(r.m_cur), dV = sumTroops(r.e_cur);
-            if (aV > dV) { winAtk++; sumAtkWins += aV; } 
-            else if (dV > aV) { winDef++; sumDefWins += dV; }
-            results.push(r);
-        }
-        winRateText = `Atk Wins: ${winAtk}% | Def Wins: ${winDef}%`;
-        rFinal = {
-            m_cur: { inf: winAtk >= winDef ? (winAtk > 0 ? sumAtkWins / winAtk : 0) : 0, cav: 0, arc: 0 },
-            e_cur: { inf: winDef > winAtk ? (winDef > 0 ? sumDefWins / winDef : 0) : 0, cav: 0, arc: 0 },
-            wave: results[0].wave, atk_logs: results[0].atk_logs, def_logs: results[0].def_logs
-        };
-        results.sort((a,b) => sumTroops(a.m_cur) - sumTroops(a.e_cur));
-        rWorst = results[0]; rBest = results[99];
+    let results = [];
+    for (let i = 0; i < 100; i++) {
+        results.push(runCombatSim(setup, 'stochastic', 'stochastic'));
+    }
+
+    // Sort to find Range
+    results.sort((a, b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
+
+    rWorst = results[0];
+    rBest = results[99];
+    rFinal = results[50]; // Median
+
+    let winAtk = 0, winDef = 0;
+    results.forEach(r => {
+        const m = sumTroops(r.m_cur), e = sumTroops(r.e_cur);
+        if (m > e) winAtk++; else if (e > m) winDef++;
+    });
+
+    document.getElementById('result-waves').innerHTML = `
+        <span class="text-blue-400 font-black uppercase">Stochastic Analysis (100x)</span><br>
+        Win Rate: Atk ${winAtk}% | Def ${winDef}% | Draw ${100 - winAtk - winDef}%`;
+
     } else {
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
