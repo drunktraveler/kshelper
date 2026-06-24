@@ -595,10 +595,12 @@ window.handleSimulation = async () => {
         for (let i = 0; i < 100; i++) {
             results.push(runCombatSim(setup, 'stochastic', 'stochastic'));
         }
+        // Sort by Margin (Attacker - Defender)
         results.sort((a, b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
-        rWorst = results[4]; 
-        rBest = results[95];
-        rFinal = results[50];
+        
+        rWorst = results[4];  // 5th Percentile
+        rBest = results[95];  // 95th Percentile
+        rFinal = results[50]; // Median
     } else {
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
@@ -615,10 +617,10 @@ window.handleSimulation = async () => {
     document.getElementById('res-atk-range').innerText = `Range: ${Math.floor(sumTroops(rWorst.m_cur)).toLocaleString()} - ${Math.floor(sumTroops(rBest.m_cur)).toLocaleString()}`;
     document.getElementById('res-def-range').innerText = `Range: ${Math.floor(sumTroops(rBest.e_cur)).toLocaleString()} - ${Math.floor(sumTroops(rWorst.e_cur)).toLocaleString()}`;
 
-    // Luck Bar: Percentage comparison
-    const startA = sumTroops(setup.atk.batches[0]);
-    const startD = sumTroops(setup.def.batches[0]);
-    const score = (sAtk / startA) - (sDef / startD);
+    // Luck Bar Logic: Comparative army percentage remaining
+    const totalStartAtk = sumTroops(setup.atk.batches[0]);
+    const totalStartDef = sumTroops(setup.def.batches[0]);
+    const score = (sAtk / totalStartAtk) - (sDef / totalStartDef);
 
     const bar = document.getElementById('luck-bar-inner');
     if (bar) {
@@ -627,6 +629,7 @@ window.handleSimulation = async () => {
         bar.style.transform = score < 0 ? "translateX(-100%)" : "none";
     }
 
+    // Detail Box
     const logHTML = (side, data) => `
         <div class="${side === 'atk' ? 'text-emerald-500' : 'text-red-500'} font-black border-b border-slate-800 mb-2 mt-4 uppercase text-[10px] pb-1">${side === 'atk' ? 'Attacker' : 'Defender'} Buffs</div>
         <div class="text-slate-300 font-bold text-[9px] mb-2">[Army Efficiency] ${data.troopEff || 'None'}</div>
