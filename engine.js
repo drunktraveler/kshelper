@@ -31,11 +31,12 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             def: { inf: createBuckets(), cav: createBuckets(), arc: createBuckets() }
         };
 
-        // 1. Hero Multiplier Application
+        // 1. Hero Multipliers
         ['atk', 'def'].forEach(side => {
             const h = (side === 'atk' ? atkH : defH);
             h.passives.forEach(p => applyToBucket(buckets[side], p, 1.0));
             h.actives.forEach(act => {
+                // STOCHASTIC: Roll every wave | DETERMINISTIC: Magnitude * Chance (Average)
                 let uptime = isStochastic ? (Math.random() < (1 - Math.pow(1 - act.p, act.instances)) ? 1 : 0) : act.p;
                 if (uptime > 0) {
                     applyToBucket(buckets[side], act, uptime);
@@ -44,7 +45,6 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
             });
         });
 
-        // 2. Damage Buffers (Simultaneous Resolution)
         let losses = { atk: {inf:0,cav:0,arc:0}, def: {inf:0,cav:0,arc:0} };
 
         const runSide = (side, opp, self_cur, opp_cur, selfP, oppP) => {
@@ -55,7 +55,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                 const count = self_cur[u];
                 if (count <= 1) return;
 
-                // --- TARGETING ---
+                // --- A. TARGETING ---
                 let target = opp_cur.inf > 1 ? 'inf' : (opp_cur.cav > 1 ? 'cav' : 'arc');
                 let bypassActive = false;
                 
@@ -67,16 +67,16 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     } else { bypassActive = true; }
                 }
 
-                // --- OFFENSIVE MODIFIERS ---
+                // --- B. OFFENSIVE PROCS ---
                 let offMod = 1.0;
                 if (u === 'arc') {
-                    const vChance = 0.10 * selfP.weights.arc.t7;
-                    const hwChance = (selfP.weights.arc.tg5 > 0 ? 0.30 : (selfP.weights.arc.tg3 > 0 ? 0.20 : 0)) * (selfP.weights.arc.tg5 || selfP.weights.arc.tg3);
+                    const vChance = 0.10 * selfP.weights.arc.t7; // Volley
+                    const hwRate = (selfP.weights.arc.tg5 > 0 ? 0.30 : (selfP.weights.arc.tg3 > 0 ? 0.20 : 0)) * (selfP.weights.arc.tg5 || selfP.weights.arc.tg3);
                     if (isStochastic) {
                         if (Math.random() < vChance) { offMod *= 2.0; sT['Volley'] = (sT['Volley']||0)+1; }
-                        if (Math.random() < hwChance) { offMod *= 1.5; sT['Howling Wind'] = (sT['Howling Wind']||0)+1; }
+                        if (Math.random() < hwRate) { offMod *= 1.5; sT['Howling Wind'] = (sT['Howling Wind']||0)+1; }
                     } else {
-                        offMod *= (1 + vChance) * (1 + (hwChance * 0.5));
+                        offMod *= (1 + vChance) * (1 + (hwRate * 0.5));
                     }
                 }
                 if (u === 'cav') {
@@ -88,15 +88,15 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     }
                 }
 
-                // RPS (Moved into Multiplier)
+                // RPS Logic (Offensive Modifiers)
                 let rps = 1.0;
                 if (u === 'inf' && target === 'cav') rps = 1.10; 
                 if (u === 'cav' && target === 'arc') rps = 1.10; 
                 if (u === 'arc' && target === 'inf') rps = 1.10; 
 
-                // --- DEFENSIVE MODIFIERS ---
+                // --- C. DEFENSIVE PROCS ---
                 let defMod = 1.0;
-                if (target === 'inf' && u === 'cav' && oppP.weights.inf.t7 > 0) defMod *= 1.10;
+                if (target === 'inf' && u === 'cav' && oppP.weights.inf.t7 > 0) defMod *= 1.10; // Bands of Steel
                 if (target === 'inf') {
                     const usChance = (oppP.weights.inf.tg5 > 0 ? 0.375 : (oppP.weights.inf.tg3 > 0 ? 0.25 : 0)) * (oppP.weights.inf.tg5 || oppP.weights.inf.tg3);
                     if (isStochastic) {
@@ -106,26 +106,36 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
                     }
                 }
 
-                // --- THE FORMULA ---
+                // --- D. THE FORMULA ---
                 const b = buckets[side][u];
                 const ob = buckets[opp][target];
                 const sS = setup[side].stats;
                 const oS = setup[opp].stats;
 
-                const totalOff = selfP.avgBase[u].atk * (sS[`${u}_att`]/100) * (1+b[101]) * (1+b[102]) * (1+b[103]) * (1+b[104]) * (1+b[105]) * (1+b[106]) * offMod;
-                const totalLeth = (sS[`${u}_leth`]/100) * selfP.avgBase[u].leth;
+                // STATS AS BONUSES: 1 + (Stat / 100)
+                const accAtk = 1 + (sS[`${u}_att`] / 100);
+                const accLeth = 1 + (sS[`${u}_leth`] / 100);
+                const accDef = 1 + (oS[`${target}_def`] / 100);
+                const accHP = 1 + (oS[`${target}_hp`] / 100);
+
+                const totalOff = selfP.avgBase[u].atk * accAtk * (1+b[101]) * (1+b[102]) * (1+b[103]) * (1+b[104]) * (1+b[105]) * (1+b[106]) * offMod;
+                const totalLeth = accLeth * selfP.avgBase[u].leth;
                 
                 const heroDefMult = (1+ob[201]) * (1+ob[202]) * (1+ob[203]) * (1+ob[204]) * (1+ob[205]);
-                const effHP = heroDefMult * (oS[`${target}_def`]/100) * oppP.avgBase[target].def * (oS[`${target}_hp`]/100) * oppP.avgBase[target].hp * defMod;
+                const effHP = heroDefMult * accDef * oppP.avgBase[target].def * accHP * oppP.avgBase[target].hp * defMod;
 
-                let finalDmg = (Math.sqrt(count) * army_min_sqrt * totalOff * totalLeth) / (effHP || 1) * rps * 100;
+                // 100 IS IN THE DIVISOR
+                let finalDmg = (Math.sqrt(count) * army_min_sqrt * totalOff * totalLeth) / (effHP * 100 || 1) * rps;
 
-                // --- OVERKILL HANDLING & APPLICATION ---
+                // OVERKILL HANDLING: Losses are lost, clamped to stack remaining
+                const remaining = opp_cur[target] - losses[opp][target];
+                if (remaining <= 0) return;
+
                 if (!isStochastic && bypassActive && u === 'cav' && opp_cur.arc > 1) {
                     losses[opp]['arc'] += Math.min(opp_cur.arc - losses[opp]['arc'], finalDmg * 0.20);
                     losses[opp][target] += Math.min(opp_cur[target] - losses[opp][target], finalDmg * 0.80);
                 } else {
-                    losses[opp][target] += Math.min(opp_cur[target] - losses[opp][target], finalDmg);
+                    losses[opp][target] += Math.min(remaining, finalDmg);
                 }
             });
         };
@@ -133,6 +143,7 @@ export function runCombatSim(setup, atkLuck = 'average', defLuck = 'average', nW
         runSide('atk', 'def', m_cur, e_cur, atkP, defP);
         if (!isBear) runSide('def', 'atk', e_cur, m_cur, defP, atkP);
 
+        // Simultaneous Application
         ['inf', 'cav', 'arc'].forEach(u => {
             m_cur[u] = Math.max(0, m_cur[u] - losses.atk[u]);
             e_cur[u] = Math.max(0, e_cur[u] - losses.def[u]);
@@ -212,7 +223,7 @@ function finalizeLogs(side, triggers, hData, pData, oppP, isStochastic) {
     let list = [];
     [...hData.passives, ...hData.actives].forEach(act => {
         const isP = act.p >= 1.0;
-        let val = isP ? "Passive" : (isStochastic ? `Procs: ${triggers[side][act.name] || 0}` : `Avg Proc: ${(act.p * 100).toFixed(0)}%`);
+        let val = isP ? "Passive" : (isStochastic ? `Procs: ${triggers[side][act.name] || 0}` : `Proc Chance: ${(act.p * 100).toFixed(0)}%`);
         list.push({ name: act.name, val, isPassive: isP });
     });
     ["Ambusher", "Volley", "Howling Wind", "Assault Lance", "Unyielding Shield"].forEach(n => {
