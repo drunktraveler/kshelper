@@ -880,15 +880,16 @@ function calculateBearDamage(setup, formation) {
             s.ids.forEach((id, idx) => {
                 if (id >= 200) return; 
 
+                // Get magnitude for this specific ID
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
                     let mag = 0;
                     if (typeof rawM === 'object' && rawM !== null) {
-                        // STRICT CHECK: If object exists, use value or 0
+                        // If it's an object, only apply if the unit key exists (Alcar S3 Part 1)
                         mag = rawM[u] || 0;
                     } else {
-                        // If it's a number, it applies to all units in s.units
+                        // If it's a number, apply it to all units in the 'units' array (Alcar S3 Part 2)
                         mag = rawM;
                     }
                     
