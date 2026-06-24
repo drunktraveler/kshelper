@@ -590,54 +590,42 @@ window.handleSimulation = async () => {
     const mode = document.getElementById('sim-mode-select').value;
     
     let rFinal, rBest, rWorst;
-    let winAtk = 0, winDef = 0;
 
     if (mode === 'monte-carlo') {
         let results = [];
         for (let i = 0; i < 100; i++) {
             results.push(runCombatSim(setup, 'stochastic', 'stochastic'));
         }
+        // Sort by Net Survivors (Margin)
         results.sort((a, b) => (sumTroops(a.m_cur) - sumTroops(a.e_cur)) - (sumTroops(b.m_cur) - sumTroops(b.e_cur)));
 
-        rWorst = results[0];
-        rBest = results[99];
-        rFinal = results[50];
+        // Range: 5th Worst (index 4) to 5th Best (index 95)
+        rWorst = results[4]; 
+        rBest = results[95];
+        rFinal = results[50]; // Median
 
-        results.forEach(r => {
-            const m = sumTroops(r.m_cur), e = sumTroops(r.e_cur);
-            if (m > e) winAtk++; else if (e > m) winDef++;
-        });
+        let winAtk = results.filter(r => sumTroops(r.m_cur) > sumTroops(r.e_cur)).length;
+        let winDef = results.filter(r => sumTroops(r.e_cur) > sumTroops(r.m_cur)).length;
 
         document.getElementById('result-waves').innerHTML = `
-            <span class="text-blue-400 font-black uppercase">Stochastic Analysis</span><br>
-            Win Rate: Atk ${winAtk}% | Def ${winDef}% | Draw ${100 - winAtk - winDef}%<br>
-            Median Duration: ${rFinal.wave} Waves`;
+            <span class="text-blue-400 font-black uppercase">Stochastic Analysis (100 Runs)</span><br>
+            Win Rate: ${winAtk}% Atk / ${winDef}% Def<br>
+            Median Duration: ${rFinal.wave} Phases`;
     } else {
         rFinal = runCombatSim(setup, 'average', 'average');
         rBest = runCombatSim(setup, 'lucky', 'unlucky'); 
         rWorst = runCombatSim(setup, 'unlucky', 'lucky');
         document.getElementById('result-waves').innerHTML = `
-            <span class="text-emerald-500 font-black uppercase">Quick Analysis</span><br>
-            Duration: ${rFinal.wave} Waves`;
+            <span class="text-emerald-500 font-black uppercase">Deterministic Analysis</span><br>
+            Combat Duration: ${rFinal.wave} Phases`;
     }
 
-    // ROUNDING FOR DISPLAY
-    const sAtk = Math.round(sumTroops(rFinal.m_cur));
-    const sDef = Math.round(sumTroops(rFinal.e_cur));
+    // Display Integers
+    document.getElementById('res-atk-total').innerText = Math.floor(sumTroops(rFinal.m_cur)).toLocaleString();
+    document.getElementById('res-def-total').innerText = Math.floor(sumTroops(rFinal.e_cur)).toLocaleString();
     
-    document.getElementById('res-atk-total').innerText = sAtk.toLocaleString();
-    document.getElementById('res-def-total').innerText = sDef.toLocaleString();
-    
-    // Integers in the range labels
-    const atkLow = Math.round(sumTroops(rWorst.m_cur));
-    const atkHigh = Math.round(sumTroops(rBest.m_cur));
-    const defLow = Math.round(sumTroops(rBest.e_cur));
-    const defHigh = Math.round(sumTroops(rWorst.e_cur));
-
-    document.getElementById('res-atk-range').innerText = `Range: ${atkLow.toLocaleString()} - ${atkHigh.toLocaleString()}`;
-    document.getElementById('res-def-range').innerText = `Range: ${defLow.toLocaleString()} - ${defHigh.toLocaleString()}`;
-
-    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('res-atk-range').innerText = `Range: ${Math.floor(sumTroops(rWorst.m_cur)).toLocaleString()} - ${Math.floor(sumTroops(rBest.m_cur)).toLocaleString()}`;
+    document.getElementById('res-def-range').innerText = `Range: ${Math.floor(sumTroops(rBest.e_cur)).toLocaleString()} - ${Math.floor(sumTroops(rWorst.e_cur)).toLocaleString()}`;
 
     const bar = document.getElementById('luck-bar-inner');
     const score = (sAtk - sDef) / (sumTroops(setup.atk.batches[0]) + sumTroops(setup.def.batches[0]) || 1);
