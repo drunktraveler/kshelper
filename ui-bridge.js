@@ -838,16 +838,32 @@ function calculateFitness(simResult, myRole) {
 // Helper specific to the Bear Tab's custom inputs
 function calculateBearDamage(setup, formation) {
     const bearConfig = {
-        inf: { tier: document.getElementById('bear-inf-tier').value, tg: document.getElementById('bear-inf-tg').value, att: parseFloat(document.getElementById('bear-inf-att').value)||0, leth: parseFloat(document.getElementById('bear-inf-leth').value)||0 },
-        cav: { tier: document.getElementById('bear-cav-tier').value, tg: document.getElementById('bear-cav-tg').value, att: parseFloat(document.getElementById('bear-cav-att').value)||0, leth: parseFloat(document.getElementById('bear-cav-leth').value)||0 },
-        arc: { tier: document.getElementById('bear-arc-tier').value, tg: document.getElementById('bear-arc-tg').value, att: parseFloat(document.getElementById('bear-arc-att').value)||0, leth: parseFloat(document.getElementById('bear-arc-leth').value)||0 }
+        inf: { 
+            tier: parseInt(document.getElementById('bear-inf-tier').value), 
+            tg: parseInt(document.getElementById('bear-inf-tg').value), 
+            att: parseFloat(document.getElementById('bear-inf-att').value)||0, 
+            leth: parseFloat(document.getElementById('bear-inf-leth').value)||0 
+        },
+        cav: { 
+            tier: parseInt(document.getElementById('bear-cav-tier').value), 
+            tg: parseInt(document.getElementById('bear-cav-tg').value), 
+            att: parseFloat(document.getElementById('bear-cav-att').value)||0, 
+            leth: parseFloat(document.getElementById('bear-cav-leth').value)||0 
+        },
+        arc: { 
+            tier: parseInt(document.getElementById('bear-arc-tier').value), 
+            tg: parseInt(document.getElementById('bear-arc-tg').value), 
+            att: parseFloat(document.getElementById('bear-arc-att').value)||0, 
+            leth: parseFloat(document.getElementById('bear-arc-leth').value)||0 
+        }
     };
 
-    // Initialize buckets with 1.0 for multiplicative scaling
-    let b = { 
-        inf: { 101: 0, mult: 1.0 }, 
-        cav: { 101: 0, mult: 1.0 }, 
-        arc: { 101: 0, mult: 1.0 } 
+    // 1. Initialize distinct ID buckets. 
+    // Skills within the same ID add together. Different IDs multiply.
+    let buckets = {
+        inf: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
+        cav: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 },
+        arc: { 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0 }
     };
     let wM = { attack: 1.0, lethality: 1.0 };
 
@@ -857,32 +873,27 @@ function calculateBearDamage(setup, formation) {
         const d = HEROES[h.name];
         const r = roster[h.name] || { s1: 5, s2: 5, s3: 5, widget: 10 };
 
-        // 1. Process Widgets
         if (d.widget && d.widget.context === 'off') {
             wM[d.widget.stat] += (WIDGET_GROWTH[r.widget] || 0);
         }
 
-        // 2. Process Skills (Correctly handling Alcar's Objects)
         d.skills.forEach((s, si) => {
             const lvl = r[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
+            // Bear uptime: Use periodic ratio or proc chance
             const uptime = s.interval ? (s.duration / s.interval) : s.getChance(x);
             const mFull = s.getMagnitude(x);
 
             s.ids.forEach((id, idx) => {
-                if (id >= 200) return; // Ignore survival skills for Bear
+                if (id >= 200) return; // Ignore survival IDs
 
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
-                    // FIX: Check if magnitude is an object (Alcar/Hilde style) or a number
                     let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
-                    
-                    if (id === 101) {
-                        b[u][101] += (mag * uptime);
-                    } else {
-                        // All other 1xx IDs (102, 103, 104, 105, 106) are multiplicative
-                        b[u].mult *= (1 + (mag * uptime));
+                    // Additive within the same ID bucket
+                    if (buckets[u][id] !== undefined) {
+                        buckets[u][id] += (mag * uptime);
                     }
                 });
             });
@@ -894,28 +905,43 @@ function calculateBearDamage(setup, formation) {
         const pct = formation[i];
         if (pct <= 0) return;
 
-        const longU = (u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry'));
-        const stats = UNITS[longU][bearConfig[u].tier][bearConfig[u].tg];
+        const unitKey = (u === 'arc' ? 'archers' : (u === 'inf' ? 'infantry' : 'cavalry'));
+        const stats = UNITS[unitKey][bearConfig[u].tier][bearConfig[u].tg];
         
-        // Attack Formula: Base * (1 + AccAtk% + SkillAdd%) * SkillMults * WidgetMults
-        const tA = stats[0] * (1 + (bearConfig[u].att / 100) + b[u][101]) * b[u].mult * wM.attack;
-        
-        // Lethality Formula: Base * (1 + AccLeth%) * WidgetLethMult
+        // 2. Multiplicative logic across ID buckets
+        // Formula: AccountStats * (1 + SumID101) * (1 + SumID102) ...
+        let finalAtkMult = (1 + (bearConfig[u].att / 100)) * wM.attack;
+        [101, 102, 103, 104, 105, 106].forEach(id => {
+            finalAtkMult *= (1 + buckets[u][id]);
+        });
+
+        const tA = stats[0] * finalAtkMult;
         const tL = stats[2] * (1 + (bearConfig[u].leth / 100)) * wM.lethality;
 
-        // Hidden Unit Passives (Ranged Strike / Assault Lance)
+        // 3. Archer Ability Amplifiers
         let abil = 1.0;
-        if (u === 'arc') abil = 1.1;
-        if (u === 'cav' && bearConfig[u].tg >= 3) abil = (bearConfig[u].tg >= 5 ? 1.15 : 1.1);
+        if (u === 'arc') {
+            abil = 1.1; // Base Archer Passive
+            if (bearConfig[u].tier >= 7) abil += 0.1; // T7 Ability
+            if (bearConfig[u].tg >= 5) abil += 0.15; // TG5 Tech
+            else if (bearConfig[u].tg >= 3) abil += 0.1; // TG3 Tech
+        } else if (u === 'cav') {
+            if (bearConfig[u].tg >= 5) abil = 1.15; 
+            else if (bearConfig[u].tg >= 3) abil = 1.1;
+        }
 
-        // Standard Combat Denominator
-        const troopDmg = (Math.sqrt(pct * 10000) * 1000 * tA * tL * abil) / 8333.33;
+        // 4. Final Formula Adjustments
+        // - Use actual troop count (5000 base for bear)
+        // - Replace 1000 flat with 1.25 (Bear 25% dmg bonus)
+        // - Correct divisor to 83333.3
+        const count = pct * 5000;
+        const troopDmg = (Math.sqrt(count) * tA * tL * abil * 1.25) / 83333.3;
+        
         total += troopDmg;
     });
 
     return isNaN(total) ? 0 : total;
 }
-
 function calculateBearPotentials(config) {
     let m101 = { inf: 1.0, cav: 1.0, arc: 1.0 }, m102 = { inf: 1.0, cav: 1.0, arc: 1.0 };
     let wAtk = 1.0, wLeth = 1.0;
