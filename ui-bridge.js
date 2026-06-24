@@ -874,34 +874,30 @@ function calculateBearDamage(setup, formation) {
         d.skills.forEach((s, si) => {
             const lvl = r[`s${si+1}`] || 5;
             const x = s.values[lvl - 1];
-            
-            // BEAR UPTIME LOGIC
-            let uptime = 0;
-            if (s.interval) {
-                // Periodic Logic (e.g., Alcar): Duration is set to 1.
-                // In 10 rounds, if it triggers every 5, it hits on round 5 and 10.
-                // Uptime = 2 triggers / 10 rounds = 0.2
-                uptime = 2 / 10; 
-            } else {
-                // Random Logic: Bear sets duration to 1. 
-                // Probability of proc in any given round is simply p.
-                uptime = s.getChance(x);
-            }
-
+            const uptime = s.interval ? (s.duration / s.interval) : s.getChance(x);
             const mFull = s.getMagnitude(x);
+
             s.ids.forEach((id, idx) => {
-                if (id >= 200) return; // Skip survival
+                if (id >= 200) return; 
+
                 const rawM = Array.isArray(mFull) ? mFull[idx] : mFull;
 
                 (s.units || ["inf", "cav", "arc"]).forEach(u => {
-                    let mag = (typeof rawM === 'object' && rawM !== null) ? (rawM[u] || 0) : rawM;
+                    let mag = 0;
+                    if (typeof rawM === 'object' && rawM !== null) {
+                        // STRICT CHECK: If object exists, use value or 0
+                        mag = rawM[u] || 0;
+                    } else {
+                        // If it's a number, it applies to all units in s.units
+                        mag = rawM;
+                    }
+                    
                     if (buckets[u][id] !== undefined) {
                         buckets[u][id] += (mag * uptime);
                     }
                 });
             });
         });
-    });
 
     let totalDamage = 0;
     ['inf', 'cav', 'arc'].forEach((u, i) => {
